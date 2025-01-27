@@ -226,7 +226,7 @@ class Chart(abstract.AbstractChart):
         """
         Hides the chart window.\n
         """
-        self._q.put((self._i, 'hide'))
+        Chart.WV.hide(self._i)
 
     def exit(self):
         """
