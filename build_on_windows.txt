@@ -1,0 +1,4 @@
+
+npm install @rollup/plugin-typescript --save-dev
+npm audit fix --force
+npx rollup -c rollup.config.js
