@@ -10,12 +10,12 @@
     "@rollup/plugin-typescript": "^11.1.6",
     "rollup": "^4.13.0",
     "typescript": "^5.4.3",
-    "vite": "^4.3.1"
+    "vite": "^6.2.4"
   },
   "dependencies": {
     "dts-bundle-generator": "^8.0.1",
     "fancy-canvas": "^2.1.0",
-    "lightweight-charts": "^4.1.0-rc2",
+    "lightweight-charts": "^5.0.3",
     "tslib": "^2.6.2"
   }
 }
