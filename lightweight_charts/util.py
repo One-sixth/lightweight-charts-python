@@ -81,21 +81,23 @@ def js_data(data: Union[pd.DataFrame, pd.Series]):
     return json.dumps(filtered_records)
 
 
-def js_zipdata(data: Union[pd.DataFrame, pd.Series]):
-    if isinstance(data, pd.DataFrame):
-        d = data.to_dict(orient='records')
-        filtered_records = [{k: v for k, v in record.items() if v is not None and not pd.isna(v)} for record in d]
-    else:
-        d = data.to_dict()
-        filtered_records = {k: v for k, v in d.items()}
-    raw = json.dumps(filtered_records, ensure_ascii=False).encode("utf-8")
-    compressed = gzip.compress(raw)
-    return base64.b64encode(compressed).decode("ascii")
+# def js_zipdata(data: Union[pd.DataFrame, pd.Series]):
+#     if isinstance(data, pd.DataFrame):
+#         d = data.to_dict(orient='records')
+#         filtered_records = [{k: v for k, v in record.items() if v is not None and not pd.isna(v)} for record in d]
+#     else:
+#         d = data.to_dict()
+#         filtered_records = {k: v for k, v in d.items()}
+#     raw = json.dumps(filtered_records, ensure_ascii=False).encode("utf-8")
+#     compressed = gzip.compress(raw)
+#     return base64.b64encode(compressed).decode("ascii")
 
-def js_zip(data: str):
-    raw = data.encode("utf-8")
-    compressed = gzip.compress(raw)
-    return base64.b64encode(compressed).decode("ascii")
+# 屏蔽这部分
+# def js_zip(data: str):
+#     raw = data.encode("utf-8")
+#     compressed = gzip.compress(raw)
+#     return base64.b64encode(compressed).decode("ascii")
+
 
 def snake_to_camel(s: str):
     components = s.split('_')

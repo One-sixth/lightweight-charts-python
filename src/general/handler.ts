@@ -84,7 +84,7 @@ export class Handler {
 
         this.wrapper.appendChild(this.div);
         window.containerDiv.append(this.wrapper)
-        
+
         // --- add this block to enable mouse‐drag height resizing ---
         const handle = document.createElement('div');
         handle.classList.add('resize-handle');
@@ -117,7 +117,7 @@ export class Handler {
         this.seriesMarkers = createSeriesMarkers(this.series, []);
 
         this.legend = new Legend(this)
-        
+
         document.addEventListener('keydown', (event) => {
             for (let i = 0; i < this.commandFunctions.length; i++) {
                 if (this.commandFunctions[i](event)) break
@@ -145,7 +145,7 @@ export class Handler {
             this.wrapper.style.width = `${100 * this.scale.width}%`
             this.wrapper.style.height = `${chart_height}px`
         }
-      
+
         // TODO definitely a better way to do this
         if (this.scale.height === 0 || this.scale.width === 0) {
             // if (this.legend.div.style.display == 'flex') this.legend.div.style.display = 'none'
@@ -291,7 +291,11 @@ export class Handler {
                     target.chart.setCrosshairPosition(0, param.time, target.series);
                     // update the legend on the target
                     if (point) {
-                        target.legend.legendHandler(point, true);
+                        const event = {
+                            time: param.time,
+                            point: point,
+                        } as any;
+                        target.legend.legendHandler(event, true);
                     }
                 });
             });

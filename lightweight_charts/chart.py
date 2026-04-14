@@ -2,6 +2,7 @@ import asyncio
 import json
 import multiprocessing as mp
 import typing
+from pprint import pp
 
 from . import abstract
 from .util import parse_event_message, FLOAT
@@ -97,7 +98,8 @@ class PyWV:
                     return
                 except JavascriptException as e:
                     msg = eval(str(e))
-                    raise JavascriptException(f"\n\nscript -> '{arg}',\nerror -> {msg['name']}[{msg['line']}:{msg['column']}]\n{msg['message']}")
+                    pp(msg)
+                    # raise JavascriptException(f"\n\nscript -> '{arg}',\nerror -> {msg['name']}[{msg['line']}:{msg['column']}]\n{msg['message']}")
 
 
 class WebviewHandler():

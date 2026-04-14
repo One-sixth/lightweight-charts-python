@@ -125,14 +125,14 @@ class StaticLWC(abstract.AbstractChart):
                 scale_candles_only: bool = False, toolbox=False, autosize=True, template='index.html'):
 
         INDEX = os.path.join(current_dir, 'js', template)
-        with open(INDEX.replace(template, 'styles.css'), 'r') as f:
+        with open(INDEX.replace(template, 'styles.css'), 'r', encoding='utf-8') as f:
             css = f.read()
-        with open(INDEX.replace(template, 'bundle.js'), 'r') as f:
+        with open(INDEX.replace(template, 'bundle.js'), 'r', encoding='utf-8') as f:
             js = f.read()
-        with open(INDEX.replace(template, 'lightweight-charts.js'), 'r') as f:
+        with open(INDEX.replace(template, 'lightweight-charts.js'), 'r', encoding='utf-8') as f:
             lwc = f.read()
 
-        with open(INDEX, 'r') as f:
+        with open(INDEX, 'r', encoding='utf-8') as f:
             self._html_init = f.read() \
                 .replace('<link rel="stylesheet" href="styles.css">', f"<style>{css}</style>") \
                 .replace(' src="./lightweight-charts.js">', f'>{lwc}') \
@@ -201,7 +201,7 @@ class HTMLChart(StaticLWC):
 
     def _load(self):
         html_code = f"{self._html_init}  (async ()=> {{\n {self._html}\n}})();\n </script></body></html>"
-        with open(self.filename, 'w') as file:
+        with open(self.filename, 'w', encoding='utf-8') as file:
             file.write(html_code)
 
 
@@ -381,4 +381,3 @@ class HTMLChart_BN(StaticLWC):
         if df is not None and not df.empty:
             v = series_data(df)
         self.strat_parameters.append(v)
-

@@ -1,5 +1,9 @@
 <div align="center">
 
+# 更新
+
+#
+
 # lightweight-charts-python
 
 [![PyPi Release](https://img.shields.io/pypi/v/lightweight-charts?color=32a852&label=PyPi)](https://pypi.org/project/lightweight-charts/)

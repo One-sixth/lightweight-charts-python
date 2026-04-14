@@ -13,7 +13,7 @@ from .topbar import TopBar
 from .util import (
     BulkRunScript, Pane, Events, IDGen, as_enum, jbool, js_json, TIME, NUM, FLOAT,
     LINE_STYLE, MARKER_POSITION, MARKER_SHAPE, CROSSHAIR_MODE,
-    PRICE_SCALE_MODE, marker_position, marker_shape, js_data, js_zipdata, js_zip
+    PRICE_SCALE_MODE, marker_position, marker_shape, js_data, # js_zipdata, js_zip
 )
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -154,7 +154,7 @@ class SeriesCommon(Pane):
 
     def _set_interval(self, df: pd.DataFrame):
         if not pd.api.types.is_datetime64_any_dtype(df['time']):
-            df['time'] = pd.to_datetime(df['time'])
+            df['time'] = pd.to_datetime(df['time']).dt.tz_localize(None)
         common_interval = df['time'].diff().value_counts()
         if common_interval.empty:
             return
@@ -197,9 +197,10 @@ class SeriesCommon(Pane):
         df = df.copy()
         df.columns = self._format_labels(df, df.columns, df.index, exclude_lowercase)
         self._set_interval(df)
-        if not pd.api.types.is_datetime64_any_dtype(df['time']):
-            df['time'] = pd.to_datetime(df['time'])
-        # Solution for pandas 1.x и 2.x: 
+        assert pd.api.types.is_datetime64_any_dtype(df['time']), "df['time'] must be datetime type."
+        # 清除时区信息
+        df['time'] = df['time'].dt.tz_localize(None)
+        # Solution for pandas 1.x and 2.x:
         df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
         return df
 
@@ -212,26 +213,28 @@ class SeriesCommon(Pane):
     def _single_datetime_format(self, arg) -> float:
         if isinstance(arg, (str, int, float)) or not pd.api.types.is_datetime64_any_dtype(arg):
             try:
-                arg = pd.to_datetime(arg, unit='ms')
+                arg = pd.to_datetime(arg, unit='ms').tz_localize(None)
             except ValueError:
-                arg = pd.to_datetime(arg)
+                arg = pd.to_datetime(arg).tz_localize(None)
         arg = self._interval * (arg.timestamp() // self._interval)+self.offset
         return arg
 
-    def set_zipped(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
-        if df is None or df.empty:
-            self.run_script(f'{self.id}.series.setData([])')
-            self.data = pd.DataFrame()
-            return
-        if format_cols:
-            df = self._df_datetime_format(df, exclude_lowercase=self.name)
-        if self.name:
-            if self.name not in df:
-                raise NameError(f'No column named "{self.name}".')
-            df = df.rename(columns={self.name: 'value'})
-        self.data = df.copy()
-        self._last_bar = df.iloc[-1]
-        self.run_script(f'{self.id}.series.setData(await decodeGzJSON("{js_zipdata(df)}")); ')
+    # def set_zipped(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
+    #     if df is None or df.empty:
+    #         self.run_script(f'{self.id}.series.setData([])')
+    #         self.data = pd.DataFrame()
+    #         return
+    #     if format_cols:
+    #         df = self._df_datetime_format(df, exclude_lowercase=self.name)
+    #     if self.name:
+    #         if self.name not in df:
+    #             raise NameError(f'No column named "{self.name}".')
+    #         df = df.rename(columns={self.name: 'value'})
+    #     self.data = df.copy()
+    #     self._last_bar = df.iloc[-1]
+    #     # 不使用gz压缩
+    #     # self.run_script(f'{self.id}.series.setData(await decodeGzJSON("{js_zipdata(df)}")); ')
+    #     self.run_script(f'{self.id}.series.setData("{js_data(df)}"); ')
 
     def set(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
         if df is None or df.empty:
@@ -256,11 +259,13 @@ class SeriesCommon(Pane):
             self.data.loc[self.data.index[-1]] = self._last_bar
             self.data = pd.concat([self.data, series.to_frame().T], ignore_index=True)
         self._last_bar = series
-        self.run_script(f'{self.id}.series.update({js_data(series)})')
+        self.run_script(f'{self.id}.series.update({js_data(series)});')
 
     def _update_markers(self):
         str_markers = json.dumps(list(self.markers.values()))
-        self.run_script(f'{self.id}.seriesMarkers.setMarkers(await decodeGzJSON("{js_zip(str_markers)}")); ')
+        # 这个语句工作不正常，改成原来，不用压缩的
+        # self.run_script(f'{self.id}.seriesMarkers.setMarkers(await decodeGzJSON("{js_zip(str_markers)}"))')
+        self.run_script(f'{self.id}.seriesMarkers.setMarkers({str_markers}); ')
 
     def marker_list(self, markers: list):
         """
@@ -612,46 +617,52 @@ class Candlestick(SeriesCommon):
         else:
             self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
 
-    def set_zipped(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
-        """
-        Sets the initial data for the chart.\n
-        :param df: columns: date/time, open, high, low, close, volume (if volume enabled).
-        :param keep_drawings: keeps any drawings made through the toolbox. Otherwise, they will be deleted.
-        """
-        if df is None or df.empty:
-            self.run_script(f'{self.id}.series.setData([])')
-            self.run_script(f'{self.id}.volumeSeries.setData([])')
-            self.candle_data = pd.DataFrame()
-            return
-        df = self._df_datetime_format(df)
-        df_copy = df.copy()
-        self.candle_data = df_copy[['time', 'open', 'high', 'low', 'close']]
-        self._last_bar = df.iloc[-1]
-        candle_js_data = js_zipdata(df[['time', 'open', 'high', 'low', 'close']])
-        self.run_script(f'{self.id}.series.setData(await decodeGzJSON("{candle_js_data}"))')
-
-        if 'volume' not in df:
-            return
-        volume = df[['time', 'volume']].rename(columns={'volume': 'value'})
-        volume['color'] = self._volume_down_color
-        volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-        volume_js_data = js_zipdata(volume)
-        self.run_script(f'{self.id}.volumeSeries.setData(await decodeGzJSON("{volume_js_data}"))')
-
-        for line in self._lines:
-            if line.name not in df.columns:
-                continue
-            line.set(df[['time', line.name]], format_cols=False)
-        # set autoScale to true in case the user has dragged the price scale
-        self.run_script(f'''
-            if (!{self.id}.chart.priceScale("right").options.autoScale)
-                {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
-        ''')
-        # TODO keep drawings doesn't work consistenly w
-        if keep_drawings:
-            self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
-        else:
-            self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
+    # def set_zipped(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
+    #     """
+    #     Sets the initial data for the chart.\n
+    #     :param df: columns: date/time, open, high, low, close, volume (if volume enabled).
+    #     :param keep_drawings: keeps any drawings made through the toolbox. Otherwise, they will be deleted.
+    #     """
+    #     if df is None or df.empty:
+    #         self.run_script(f'{self.id}.series.setData([])')
+    #         self.run_script(f'{self.id}.volumeSeries.setData([])')
+    #         self.candle_data = pd.DataFrame()
+    #         return
+    #     df = self._df_datetime_format(df)
+    #     df_copy = df.copy()
+    #     self.candle_data = df_copy[['time', 'open', 'high', 'low', 'close']]
+    #     self._last_bar = df.iloc[-1]
+    #     # 不使用gzip压缩
+    #     # candle_js_data = js_zipdata(df[['time', 'open', 'high', 'low', 'close']])
+    #     # self.run_script(f'{self.id}.series.setData(await decodeGzJSON("{candle_js_data}"))')
+    #     candle_js_data = js_data(df[['time', 'open', 'high', 'low', 'close']])
+    #     self.run_script(f'{self.id}.series.setData("{candle_js_data}"); ')
+    #
+    #     if 'volume' not in df:
+    #         return
+    #     volume = df[['time', 'volume']].rename(columns={'volume': 'value'})
+    #     volume['color'] = self._volume_down_color
+    #     volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+    #     # 不使用压缩
+    #     # volume_js_data = js_zipdata(volume)
+    #     # self.run_script(f'{self.id}.volumeSeries.setData(await decodeGzJSON("{volume_js_data}"))')
+    #     volume_js_data = js_data(volume)
+    #     self.run_script(f'{self.id}.volumeSeries.setData("{volume_js_data}"); ')
+    #
+    #     for line in self._lines:
+    #         if line.name not in df.columns:
+    #             continue
+    #         line.set(df[['time', line.name]], format_cols=False)
+    #     # set autoScale to true in case the user has dragged the price scale
+    #     self.run_script(f'''
+    #         if (!{self.id}.chart.priceScale("right").options.autoScale)
+    #             {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
+    #     ''')
+    #     # TODO keep drawings doesn't work consistenly w
+    #     if keep_drawings:
+    #         self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
+    #     else:
+    #         self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
 
     def update(self, series: pd.Series, _from_tick=False):
         """
@@ -836,8 +847,8 @@ class AbstractChart(Candlestick, Pane):
     def set_visible_range(self, start_time: TIME, end_time: TIME):
         self.run_script(f'''
         {self.id}.chart.timeScale().setVisibleRange({{
-            from: {pd.to_datetime(start_time).timestamp()},
-            to: {pd.to_datetime(end_time).timestamp()}
+            from: {pd.to_datetime(start_time).tz_localize(None).timestamp()},
+            to: {pd.to_datetime(end_time).tz_localize(None).timestamp()}
         }})
         ''')
 

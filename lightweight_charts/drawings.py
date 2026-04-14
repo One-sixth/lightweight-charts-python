@@ -58,8 +58,6 @@ class TwoPointDrawing(Drawing):
     ):
         super().__init__(chart, func)
 
-
-
         options_string = '\n'.join(f'{key}: {val},' for key, val in options.items())
 
         self.run_script(f'''
@@ -246,7 +244,7 @@ class VerticalSpan(Pane):
                  color: str = 'rgba(252, 219, 3, 0.2)'):
         self._chart = series._chart
         super().__init__(self._chart.win)
-        start_time, end_time = pd.to_datetime(start_time), pd.to_datetime(end_time)
+        start_time, end_time = pd.to_datetime(start_time).tz_localize(None), pd.to_datetime(end_time).tz_localize(None)
         self.run_script(f'''
         {self.id} = {self._chart.id}.chart.addHistogramSeries({{
                 color: '{color}',

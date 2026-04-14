@@ -136,7 +136,31 @@ var Lib = (function (exports, lightweightCharts) {
             row.appendChild(div);
             row.appendChild(toggle);
             this.seriesContainer.appendChild(row);
-            const color = series.options().baseLineColor;
+            const options = series.options();
+            // 根据系列类型选择不同的颜色属性
+            let color;
+            const seriesType = series.seriesType();
+            if (seriesType === 'Line' || seriesType === 'Histogram') {
+                color = options.color;
+            }
+            else if (seriesType === 'Area') {
+                color = options.topColor;
+            }
+            else {
+                // 其他时候，检查是否有 color 属性或 topColor 属性，否则回退到 baseLineColor
+                // 检查是否有 color 属性
+                if ('color' in options) {
+                    color = options.color;
+                }
+                // 检查是否有 topColor 属性
+                else if ('topColor' in options) {
+                    color = options.topColor;
+                }
+                // 回退到 baseLineColor
+                else {
+                    color = options.baseLineColor;
+                }
+            }
             this._lines.push({
                 name: name,
                 paneIndex: paneIndex,
@@ -254,7 +278,7 @@ var Lib = (function (exports, lightweightCharts) {
                     const format = e.series.options().priceFormat;
                     price = this.legendItemFormat(data.value, format.precision); // couldn't this just be line.options().precision?
                 }
-                e.div.innerHTML = `<span style="color: ${e.solid};">▨</span>    ${e.name} : ${price}`;
+                e.div.innerHTML = `<span style="color: ${e.solid};">️■</span>    ${e.name} : ${price}`;
             });
         }
     }
@@ -2140,7 +2164,11 @@ var Lib = (function (exports, lightweightCharts) {
                         target.chart.setCrosshairPosition(0, param.time, target.series);
                         // update the legend on the target
                         if (point) {
-                            target.legend.legendHandler(point, true);
+                            const event = {
+                                time: param.time,
+                                point: point,
+                            };
+                            target.legend.legendHandler(event, true);
                         }
                     });
                 });
