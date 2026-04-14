@@ -13,11 +13,12 @@ from .topbar import TopBar
 from .util import (
     BulkRunScript, Pane, Events, IDGen, as_enum, jbool, js_json, TIME, NUM, FLOAT,
     LINE_STYLE, MARKER_POSITION, MARKER_SHAPE, CROSSHAIR_MODE,
-    PRICE_SCALE_MODE, marker_position, marker_shape, js_data,
+    PRICE_SCALE_MODE, marker_position, marker_shape, js_data, js_zipdata, js_zip
 )
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(current_dir, 'js', 'index.html')
+INDEX_BN = os.path.join(current_dir, 'js', 'index_bn.html')
 
 
 class Window:
@@ -55,7 +56,7 @@ class Window:
         self.scripts.extend(self.final_scripts)
         for script in self.scripts:
             initial_script += f'\n{script}'
-        self.script_func(initial_script)
+        self.script_func(f'(async ()=> {{ {initial_script} }})();')
 
     def run_script(self, script: str, run_last: bool = False):
         """
@@ -107,22 +108,18 @@ class Window:
         toolbox: bool = False
     ) -> 'AbstractChart':
         subchart = AbstractChart(
-            self,
-            width,
-            height,
-            scale_candles_only,
-            toolbox,
-            position=position
+            self, width, height, scale_candles_only, toolbox, position=position
         )
         if not sync_id:
             return subchart
-        self.run_script(f'''
-            Lib.Handler.syncCharts(
-                {subchart.id},
-                {sync_id},
-                {jbool(sync_crosshairs_only)}
-            )
-        ''', run_last=True)
+        # self.run_script(f'''
+        #     Lib.Handler.syncCharts(
+        #         {subchart.id},
+        #         {sync_id},
+        #         {jbool(sync_crosshairs_only)}
+        #     )
+        # ''', run_last=True
+        # )
         return subchart
 
     def style(
@@ -140,7 +137,7 @@ class Window:
 
 
 class SeriesCommon(Pane):
-    def __init__(self, chart: 'AbstractChart', name: str = ''):
+    def __init__(self, chart: 'AbstractChart', name: str = '', pane_index: int = 0):
         super().__init__(chart.win)
         self._chart = chart
         if hasattr(chart, '_interval'):
@@ -153,6 +150,7 @@ class SeriesCommon(Pane):
         self.offset = 0
         self.data = pd.DataFrame()
         self.markers = {}
+        self.pane_index = pane_index
 
     def _set_interval(self, df: pd.DataFrame):
         if not pd.api.types.is_datetime64_any_dtype(df['time']):
@@ -183,6 +181,7 @@ class SeriesCommon(Pane):
     def _format_labels(data, labels, index, exclude_lowercase):
         def rename(la, mapper):
             return [mapper[key] if key in mapper else key for key in la]
+
         if 'date' not in labels and 'time' not in labels:
             labels = labels.str.lower()
             if exclude_lowercase:
@@ -200,7 +199,8 @@ class SeriesCommon(Pane):
         self._set_interval(df)
         if not pd.api.types.is_datetime64_any_dtype(df['time']):
             df['time'] = pd.to_datetime(df['time'])
-        df['time'] = df['time'].astype('int64') // 10 ** 9
+        # Solution for pandas 1.x и 2.x: 
+        df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
         return df
 
     def _series_datetime_format(self, series: pd.Series, exclude_lowercase=None):
@@ -217,6 +217,21 @@ class SeriesCommon(Pane):
                 arg = pd.to_datetime(arg)
         arg = self._interval * (arg.timestamp() // self._interval)+self.offset
         return arg
+
+    def set_zipped(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
+        if df is None or df.empty:
+            self.run_script(f'{self.id}.series.setData([])')
+            self.data = pd.DataFrame()
+            return
+        if format_cols:
+            df = self._df_datetime_format(df, exclude_lowercase=self.name)
+        if self.name:
+            if self.name not in df:
+                raise NameError(f'No column named "{self.name}".')
+            df = df.rename(columns={self.name: 'value'})
+        self.data = df.copy()
+        self._last_bar = df.iloc[-1]
+        self.run_script(f'{self.id}.series.setData(await decodeGzJSON("{js_zipdata(df)}")); ')
 
     def set(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
         if df is None or df.empty:
@@ -244,7 +259,8 @@ class SeriesCommon(Pane):
         self.run_script(f'{self.id}.series.update({js_data(series)})')
 
     def _update_markers(self):
-        self.run_script(f'{self.id}.series.setMarkers({json.dumps(list(self.markers.values()))})')
+        str_markers = json.dumps(list(self.markers.values()))
+        self.run_script(f'{self.id}.seriesMarkers.setMarkers(await decodeGzJSON("{js_zip(str_markers)}")); ')
 
     def marker_list(self, markers: list):
         """
@@ -267,10 +283,15 @@ class SeriesCommon(Pane):
                 "color": marker['color'],
                 "shape": marker_shape(marker['shape']),
                 "text": marker['text'],
+                "price": marker.get('price', None),
+                "size": marker.get('size', 1),
             }
             marker_ids.append(marker_id)
         self._update_markers()
         return marker_ids
+
+    def _clear_marker_list(self):
+        self.markers = {}
 
     def marker(self, time: Optional[datetime] = None, position: MARKER_POSITION = 'below',
                shape: MARKER_SHAPE = 'arrow_up', color: str = '#2196F3', text: str = ''
@@ -291,7 +312,7 @@ class SeriesCommon(Pane):
         marker_id = self.win._id_gen.generate()
 
         self.markers[marker_id] = {
-            "time": formatted_time,
+            "time": int(formatted_time),
             "position": marker_position(position),
             "color": color,
             "shape": marker_shape(shape),
@@ -373,13 +394,21 @@ class SeriesCommon(Pane):
         self.markers.clear()
         self._update_markers()
 
-    def price_line(self, label_visible: bool = True, line_visible: bool = True, title: str = ''):
+    def create_price_line(self, price: float = 0.0, color: str = 'rgba(214, 237, 255, 0.6)',
+            style: LINE_STYLE = 'large_dashed', width: int = 1, price_label: bool = False,
+            title: str = ''):
         self.run_script(f'''
-        {self.id}.series.applyOptions({{
-            lastValueVisible: {jbool(label_visible)},
-            priceLineVisible: {jbool(line_visible)},
-            title: '{title}',
-        }})''')
+            {self.id}.series.createPriceLine(
+                {{
+                    price: {price},
+                    color: '{color}',
+                    lineStyle: {as_enum(style, LINE_STYLE)},
+                    lineWidth: {width},
+                    axisLabelVisible: {jbool(price_label)},
+                    title: '{title}',
+                }},
+            )
+        ''')
 
     def precision(self, precision: int):
         """
@@ -425,9 +454,11 @@ class SeriesCommon(Pane):
 
 
 class Line(SeriesCommon):
-    def __init__(self, chart, name, color, style, width, price_line, price_label, price_scale_id=None, crosshair_marker=True):
+    def __init__(self, chart, name, color, style, width, price_line, price_label, price_scale_id=None,
+                 crosshair_marker=True, pane_index: int = 0,
+    ):
 
-        super().__init__(chart, name)
+        super().__init__(chart, name, pane_index)
         self.color = color
 
         self.run_script(f'''
@@ -440,7 +471,7 @@ class Line(SeriesCommon):
                     lastValueVisible: {jbool(price_label)},
                     priceLineVisible: {jbool(price_line)},
                     crosshairMarkerVisible: {jbool(crosshair_marker)},
-                    priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'}
+                    priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
                     {"""autoscaleInfoProvider: () => ({
                             priceRange: {
                                 minValue: 1_000_000_000,
@@ -448,24 +479,10 @@ class Line(SeriesCommon):
                             },
                         }),
                     """ if chart._scale_candles_only else ''}
-                }}
+                }},
+                {pane_index}
             )
         null''')
-
-    # def _set_trend(self, start_time, start_value, end_time, end_value, ray=False, round=False):
-    #     if round:
-    #         start_time = self._single_datetime_format(start_time)
-    #         end_time = self._single_datetime_format(end_time)
-    #     else:
-    #         start_time, end_time = pd.to_datetime((start_time, end_time)).astype('int64') // 10 ** 9
-
-    #     self.run_script(f'''
-    #     {self._chart.id}.chart.timeScale().applyOptions({{shiftVisibleRangeOnNewBar: false}})
-    #     {self.id}.series.setData(
-    #         calculateTrendLine({start_time}, {start_value}, {end_time}, {end_value},
-    #                             {self._chart.id}, {jbool(ray)}))
-    #     {self._chart.id}.chart.timeScale().applyOptions({{shiftVisibleRangeOnNewBar: true}})
-    #     ''')
 
     def delete(self):
         """
@@ -487,8 +504,10 @@ class Line(SeriesCommon):
 
 
 class Histogram(SeriesCommon):
-    def __init__(self, chart, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom):
-        super().__init__(chart, name)
+    def __init__(self, chart, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom,
+                 pane_index: int = 0
+    ):
+        super().__init__(chart, name, pane_index)
         self.color = color
         self.run_script(f'''
         {self.id} = {chart.id}.createHistogramSeries(
@@ -497,10 +516,10 @@ class Histogram(SeriesCommon):
                 color: '{color}',
                 lastValueVisible: {jbool(price_label)},
                 priceLineVisible: {jbool(price_line)},
-                priceScaleId: '{self.id}',
+                priceScaleId: {'undefined'},
                 priceFormat: {{type: "volume"}},
             }},
-            // precision: 2,
+            {pane_index}
         )
         {self.id}.series.priceScale().applyOptions({{
             scaleMargins: {{top:{scale_margin_top}, bottom: {scale_margin_bottom}}}
@@ -537,8 +556,20 @@ class Candlestick(SeriesCommon):
         self._volume_down_color = 'rgba(200,127,130,0.8)'
 
         self.candle_data = pd.DataFrame()
-
         # self.run_script(f'{self.id}.makeCandlestickSeries()')
+
+    def _prepare_data(self, df: pd.DataFrame):
+        if df is None or df.empty:
+            return None, None
+        df = self._df_datetime_format(df)
+        candle_df = df[['time', 'open', 'high', 'low', 'close']]
+
+        if 'volume' not in df:
+            return candle_df, None
+        volume = df[['time','volume']].rename(columns={'volume': 'value'})
+        volume['color'] = self._volume_down_color
+        volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+        return candle_df, volume
 
     def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
         """
@@ -552,16 +583,60 @@ class Candlestick(SeriesCommon):
             self.candle_data = pd.DataFrame()
             return
         df = self._df_datetime_format(df)
-        self.candle_data = df.copy()
+        df_copy = df.copy()
+        self.candle_data = df_copy[['time', 'open', 'high', 'low', 'close']]
         self._last_bar = df.iloc[-1]
-        self.run_script(f'{self.id}.series.setData({js_data(df)})')
+        candle_js_data = js_data(df[['time', 'open', 'high', 'low', 'close']])
+        self.run_script(f'{self.id}.series.setData({candle_js_data})')
 
         if 'volume' not in df:
             return
-        volume = df.drop(columns=['open', 'high', 'low', 'close']).rename(columns={'volume': 'value'})
+        volume = df[['time', 'volume']].rename(columns={'volume': 'value'})
         volume['color'] = self._volume_down_color
         volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-        self.run_script(f'{self.id}.volumeSeries.setData({js_data(volume)})')
+        volume_js_data = js_data(volume)
+        self.run_script(f'{self.id}.volumeSeries.setData({volume_js_data})')
+
+        for line in self._lines:
+            if line.name not in df.columns:
+                continue
+            line.set(df[['time', line.name]], format_cols=False)
+        # set autoScale to true in case the user has dragged the price scale
+        self.run_script(f'''
+            if (!{self.id}.chart.priceScale("right").options.autoScale)
+                {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
+        ''')
+        # TODO keep drawings doesn't work consistenly w
+        if keep_drawings:
+            self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
+        else:
+            self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
+
+    def set_zipped(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
+        """
+        Sets the initial data for the chart.\n
+        :param df: columns: date/time, open, high, low, close, volume (if volume enabled).
+        :param keep_drawings: keeps any drawings made through the toolbox. Otherwise, they will be deleted.
+        """
+        if df is None or df.empty:
+            self.run_script(f'{self.id}.series.setData([])')
+            self.run_script(f'{self.id}.volumeSeries.setData([])')
+            self.candle_data = pd.DataFrame()
+            return
+        df = self._df_datetime_format(df)
+        df_copy = df.copy()
+        self.candle_data = df_copy[['time', 'open', 'high', 'low', 'close']]
+        self._last_bar = df.iloc[-1]
+        candle_js_data = js_zipdata(df[['time', 'open', 'high', 'low', 'close']])
+        self.run_script(f'{self.id}.series.setData(await decodeGzJSON("{candle_js_data}"))')
+
+        if 'volume' not in df:
+            return
+        volume = df[['time', 'volume']].rename(columns={'volume': 'value'})
+        volume['color'] = self._volume_down_color
+        volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+        volume_js_data = js_zipdata(volume)
+        self.run_script(f'{self.id}.volumeSeries.setData(await decodeGzJSON("{volume_js_data}"))')
 
         for line in self._lines:
             if line.name not in df.columns:
@@ -640,7 +715,8 @@ class Candlestick(SeriesCommon):
         entire_text_only: bool = False,
         visible: bool = True,
         ticks_visible: bool = False,
-        minimum_width: int = 0
+        minimum_width: int = 0,
+        perm_width: int = 0
     ):
         self.run_script(f'''
             {self.id}.series.priceScale().applyOptions({{
@@ -655,7 +731,8 @@ class Candlestick(SeriesCommon):
                 entireTextOnly: {jbool(entire_text_only)},
                 visible: {jbool(visible)},
                 ticksVisible: {jbool(ticks_visible)},
-                minimumWidth: {minimum_width}
+                minimumWidth: {minimum_width},
+                permWidth: {perm_width}
             }})''')
 
     def candle_style(
@@ -691,24 +768,29 @@ class Candlestick(SeriesCommon):
 
 
 class AbstractChart(Candlestick, Pane):
+
     def __init__(self, window: Window, width: float = 1.0, height: float = 1.0,
                  scale_candles_only: bool = False, toolbox: bool = False,
-                 autosize: bool = True, position: FLOAT = 'left'):
+                 autosize: bool = True, position: FLOAT = 'left', pane_index:int = 0
+    ):
         Pane.__init__(self, window)
 
         self._lines = []
+        self.subcharts = []
         self._scale_candles_only = scale_candles_only
         self._width = width
         self._height = height
         self.events: Events = Events(self)
 
-        from lightweight_charts.polygon import PolygonAPI
+        from .polygon import PolygonAPI
+
         self.polygon: PolygonAPI = PolygonAPI(self)
 
-        self.run_script(
-            f'{self.id} = new Lib.Handler("{self.id}", {width}, {height}, "{position}", {jbool(autosize)})')
+        self._html_chart_init = f'{self.id} = new Lib.Handler("{self.id}", {width}, {height}, "{position}", {jbool(autosize)})'
+        self.run_script(self._html_chart_init)
 
         Candlestick.__init__(self, self)
+        self.subcharts.append(self.id)
 
         self.topbar: TopBar = TopBar(self)
         if toolbox:
@@ -723,25 +805,27 @@ class AbstractChart(Candlestick, Pane):
     def create_line(
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
             style: LINE_STYLE = 'solid', width: int = 2,
-            price_line: bool = True, price_label: bool = True, price_scale_id: Optional[str] = None
+            price_line: bool = True, price_label: bool = True, price_scale_id: Optional[str] = None,
+            pane_index: int = 0
     ) -> Line:
         """
         Creates and returns a Line object.
         """
-        self._lines.append(Line(self, name, color, style, width, price_line, price_label, price_scale_id))
+        line = Line(self, name, color, style, width, price_line, price_label, price_scale_id, pane_index=pane_index)
+        self._lines.append(line)
         return self._lines[-1]
 
     def create_histogram(
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
             price_line: bool = True, price_label: bool = True,
-            scale_margin_top: float = 0.0, scale_margin_bottom: float = 0.0
+            scale_margin_top: float = 0.0, scale_margin_bottom: float = 0.0,
+            pane_index: int = 0,
     ) -> Histogram:
         """
         Creates and returns a Histogram object.
         """
-        return Histogram(
-            self, name, color, price_line, price_label,
-            scale_margin_top, scale_margin_bottom)
+        hist = Histogram(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index)
+        return hist
 
     def lines(self) -> List[Line]:
         """
@@ -856,17 +940,9 @@ class AbstractChart(Candlestick, Pane):
         """
         Adds a watermark to the chart.
         """
-        self.run_script(f'''
-          {self.id}.chart.applyOptions({{
-              watermark: {{
-                  visible: true,
-                  horzAlign: 'center',
-                  vertAlign: 'center',
-                  ...{js_json(locals())}
-              }}
-          }})''')
+        self.run_script(f'''{self._chart.id}.createWatermark('{text}', {font_size}, '{color}')''')
 
-    def legend(self, visible: bool = False, ohlc: bool = True, percent: bool = True, lines: bool = True,
+    def legend(self, visible: bool = False, ohlc: bool = True, percent: bool = False, lines: bool = True,
                color: str = 'rgb(191, 195, 203)', font_size: int = 11, font_family: str = 'Monaco',
                text: str = '', color_based_on_candle: bool = False):
         """
@@ -957,6 +1033,28 @@ class AbstractChart(Candlestick, Pane):
                         toolbox: bool = False) -> 'AbstractChart':
         if sync is True:
             sync = self.id
-        args = locals()
-        del args['self']
-        return self.win.create_subchart(*args.values())
+        chart = self.win.create_subchart(position, width, height, sync, scale_candles_only,
+                                         sync_crosshairs_only, toolbox)
+        self.subcharts.append(chart.id)
+        return chart
+
+    def sync_charts(self, sync_crosshairs_only: bool = False):
+        if (len(self.subcharts) > 1):
+            self.run_script(f'''
+                Lib.Handler.syncChartsAll
+                    ([{', '.join(self.subcharts)}],
+                    {'true' if sync_crosshairs_only else 'false'}
+                )
+            ''', run_last=True)
+
+    def resize_pane(self, pane_index: int, height: int):
+        self.run_script(f'''
+            if ({self.id}.chart.panes().length > {pane_index}) {{
+                {self.id}.chart.panes()[{pane_index}].setHeight({height});
+            }}
+        ''')
+
+    def remove_pane(self, pane_index: int):
+        self.run_script(f'''
+                    {self.id}.chart.removePane({pane_index});
+            ''')

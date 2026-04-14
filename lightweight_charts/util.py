@@ -1,6 +1,10 @@
 import asyncio
 import json
+import gzip
+import base64
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from tzlocal import get_localzone_name
 from random import choices
 from typing import Literal, Union
 from numpy import isin
@@ -9,7 +13,7 @@ import pandas as pd
 
 class Pane:
     def __init__(self, window):
-        from lightweight_charts import Window
+        from .abstract import Window
         self.win: Window = window
         self.run_script = window.run_script
         self.bulk_run = window.bulk_run
@@ -28,6 +32,19 @@ class IDGen(list):
             return f'window.{var}'
         self.generate()
 
+def format_datetime(dt: datetime, tz: Union[str, ZoneInfo] = None) -> str:
+    if tz is None:
+        # tz = ZoneInfo(get_localzone_name())
+        return dt.strftime('%Y-%m-%d %H:%M')
+    elif isinstance(tz, str):
+        tz = ZoneInfo(tz)
+    # If dt does not contain tzinfo, assume it is in the specified zone
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=tz)
+    else:
+        # Convert datetime to the required timezone
+        dt = dt.astimezone(tz)
+    return dt.strftime('%Y-%m-%d %H:%M GMT%z')
 
 def parse_event_message(window, string):
     name, args = string.split('_~_')
@@ -35,6 +52,24 @@ def parse_event_message(window, string):
     func = window.handlers[name]
     return func, args
 
+def df_data(data: Union[pd.DataFrame, pd.Series]):
+    if isinstance(data, pd.DataFrame):
+        d = data.to_dict(orient='records')
+        filtered_records = [{k: v for k, v in record.items() if v is not None and not pd.isna(v)} for record in d]
+    else:
+        d = data.to_dict()
+        filtered_records = {k: v for k, v in d.items()}
+    return filtered_records
+
+def series_data(data: Union[pd.DataFrame, pd.Series]):
+    filtered_records = []
+    for idx, val in data.items():
+        if isinstance(val, float):
+            val_str = f'{val:.4f}'
+        else:
+            val_str = str(val)
+        filtered_records.append({'index': idx, 'value': val_str})
+    return filtered_records
 
 def js_data(data: Union[pd.DataFrame, pd.Series]):
     if isinstance(data, pd.DataFrame):
@@ -43,8 +78,24 @@ def js_data(data: Union[pd.DataFrame, pd.Series]):
     else:
         d = data.to_dict()
         filtered_records = {k: v for k, v in d.items()}
-    return json.dumps(filtered_records, indent=2)
+    return json.dumps(filtered_records)
 
+
+def js_zipdata(data: Union[pd.DataFrame, pd.Series]):
+    if isinstance(data, pd.DataFrame):
+        d = data.to_dict(orient='records')
+        filtered_records = [{k: v for k, v in record.items() if v is not None and not pd.isna(v)} for record in d]
+    else:
+        d = data.to_dict()
+        filtered_records = {k: v for k, v in d.items()}
+    raw = json.dumps(filtered_records, ensure_ascii=False).encode("utf-8")
+    compressed = gzip.compress(raw)
+    return base64.b64encode(compressed).decode("ascii")
+
+def js_zip(data: str):
+    raw = data.encode("utf-8")
+    compressed = gzip.compress(raw)
+    return base64.b64encode(compressed).decode("ascii")
 
 def snake_to_camel(s: str):
     components = s.split('_')
@@ -66,7 +117,7 @@ def jbool(b: bool): return 'true' if b is True else 'false' if b is False else N
 
 LINE_STYLE = Literal['solid', 'dotted', 'dashed', 'large_dashed', 'sparse_dotted']
 
-MARKER_POSITION = Literal['above', 'below', 'inside']
+MARKER_POSITION = Literal['above', 'below', 'inside', 'atPriceMiddle', 'atPriceTop', 'atPriceBottom']
 
 MARKER_SHAPE = Literal['arrow_up', 'arrow_down', 'circle', 'square']
 
@@ -95,9 +146,12 @@ def marker_shape(shape: MARKER_SHAPE):
 
 def marker_position(p: MARKER_POSITION):
     return {
-        'above': 'aboveBar',
-        'below': 'belowBar',
+        'above' : 'aboveBar',
+        'below' : 'belowBar',
         'inside': 'inBar',
+        'atPriceMiddle': 'atPriceMiddle',
+        'atPriceTop'   : 'atPriceTop',
+        'atPriceBottom': 'atPriceBottom',
     }.get(p)
 
 

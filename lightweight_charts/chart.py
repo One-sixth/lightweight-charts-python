@@ -2,10 +2,8 @@ import asyncio
 import json
 import multiprocessing as mp
 import typing
-import webview
-from webview.errors import JavascriptException
 
-from lightweight_charts import abstract
+from . import abstract
 from .util import parse_event_message, FLOAT
 
 import os
@@ -21,6 +19,7 @@ class CallbackAPI:
 
 
 class PyWV:
+
     def __init__(self, q, emit_q, return_q, loaded_event):
         self.queue = q
         self.return_queue = return_q
@@ -28,6 +27,8 @@ class PyWV:
         self.loaded_event = loaded_event
 
         self.is_alive = True
+
+        import webview
 
         self.callback_api = CallbackAPI(emit_q)
         self.windows: typing.List[webview.Window] = []
@@ -38,6 +39,8 @@ class PyWV:
         self, width, height, x, y, screen=None, on_top=False,
         maximize=False, title=''
     ):
+        import webview
+
         screen = webview.screens[screen] if screen is not None else None
         if maximize:
             if screen is None:
@@ -63,6 +66,9 @@ class PyWV:
 
 
     def loop(self):
+        import webview
+        from webview.errors import JavascriptException
+
         # self.loaded_event.set()
         while self.is_alive:
             i, arg = self.queue.get()
@@ -118,8 +124,7 @@ class WebviewHandler():
         maximize=False, title=''
     ):
         self.function_call_queue.put((
-            'create_window',
-            (width, height, x, y, screen, on_top, maximize, title)
+            'create_window', (width, height, x, y, screen, on_top, maximize, title)
         ))
         self.max_window_num += 1
         return self.max_window_num
@@ -204,7 +209,7 @@ class Chart(abstract.AbstractChart):
     async def show_async(self):
         self.show(block=False)
         try:
-            from lightweight_charts import polygon
+            from . import polygon
             [asyncio.create_task(self.polygon.async_set(*args)) for args in polygon._set_on_load]
             while 1:
                 while Chart.WV.emit_queue.empty() and self.is_alive:
@@ -226,7 +231,7 @@ class Chart(abstract.AbstractChart):
         """
         Hides the chart window.\n
         """
-        Chart.WV.hide(self._i)
+        self._q.put((self._i, 'hide'))
 
     def exit(self):
         """
