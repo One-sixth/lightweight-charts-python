@@ -914,6 +914,8 @@ class AbstractChart(Candlestick, Pane):
 
         self._lines = []
         self.subcharts = []
+        self._drawings = []
+        self._tables = []
         self._price_lines: List['PriceLine'] = []
         self._scale_candles_only = scale_candles_only
         self._width = width
@@ -1034,23 +1036,18 @@ class AbstractChart(Candlestick, Pane):
             delete {subchart_id};
         ''')
 
-    def audit(self, full: bool = False, use_js: bool = False):
+    def audit(self, use_js: bool = False):
         """
         审计当前 chart 的资源状态。
 
-        :param full: True 时返回所有资源的详细信息（类型、ID、参数等）；
-                     False 时只从 JS 端获取简略摘要。
-        :param use_js: True 时从 JS 端获取超详细审计信息，返回 TOML 格式字符串；
+        :param use_js: True 时从 JS 端获取完整审计信息（TOML 格式），
                        False 时纯 Python 侧收集，返回 dict。
         """
         if use_js:
-            data = self.win.run_script_and_get('Lib.Handler.auditFull()', timeout=5)
+            data = self.win.run_script_and_get('Lib.Handler.audit()', timeout=5)
             return tomllib.loads(data)
-        elif full:
-            return self._audit_full()
         else:
-            result = self.win.run_script_and_get('Lib.Handler.audit()', timeout=5)
-            return json.loads(result)
+            return self._audit_full()
 
     def _audit_full(self) -> dict:
         """
@@ -1072,7 +1069,7 @@ class AbstractChart(Candlestick, Pane):
             'drawings': [],
         }
 
-        # --- lines ---
+        # --- lines (including histograms) ---
         for line in self._lines:
             entry = {
                 'id': line.id,
@@ -1109,6 +1106,24 @@ class AbstractChart(Candlestick, Pane):
                     'id': sub_id,
                     'type': 'AbstractChart',
                 })
+
+        # --- drawings ---
+        for d in self._drawings:
+            entry = {
+                'id': d.id,
+                'type': type(d).__name__,
+            }
+            if hasattr(d, 'price'):
+                entry['price'] = d.price
+            info['drawings'].append(entry)
+
+        # --- tables ---
+        for t in self._tables:
+            info['tables'].append({
+                'id': t.id,
+                'type': 'Table',
+                'headings': list(t.headings) if hasattr(t, 'headings') else [],
+            })
 
         # --- window handlers ---
         info['handlers_count'] = len(self.win.handlers)
@@ -1339,7 +1354,10 @@ class AbstractChart(Candlestick, Pane):
     ) -> Table:
         args = locals()
         del args['self']
-        return self.win.create_table(*args.values())
+        tbl = self.win.create_table(*args.values())
+        tbl._chart = self
+        self._tables.append(tbl)
+        return tbl
 
     def screenshot(self) -> bytes:
         """

@@ -22,6 +22,7 @@ class Drawing(Pane):
     def __init__(self, chart, func=None):
         super().__init__(chart.win)
         self.chart = chart
+        chart._drawings.append(self)
 
     def update(self, *points):
         formatted_points = []
@@ -34,6 +35,8 @@ class Drawing(Pane):
         """
         Irreversibly deletes the drawing.
         """
+        if self in self.chart._drawings:
+            self.chart._drawings.remove(self)
         self.run_script(f'''
             {self.id}.detach()
             delete {self.id}
@@ -293,11 +296,14 @@ _vs.setData({json.dumps(data)});
 0
         ''')
         self._data = data
+        self._chart._drawings.append(self)
 
     def delete(self):
         """
         Irreversibly deletes the vertical span.
         """
+        if self in self._chart._drawings:
+            self._chart._drawings.remove(self)
         self.run_script(f'''
             {self._chart.id}.chart.removeSeries({self.id})
             delete {self.id}

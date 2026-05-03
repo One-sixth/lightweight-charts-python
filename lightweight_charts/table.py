@@ -141,6 +141,8 @@ class Table(Pane, dict):
         """
         Irreversibly destroys the table and removes it from the DOM.
         """
+        if hasattr(self, '_chart') and self in self._chart._tables:
+            self._chart._tables.remove(self)
         if self.id in self.win.handlers:
             del self.win.handlers[self.id]
         self.clear()

@@ -38,21 +38,6 @@ export class Handler {
     public static _all: Handler[] = [];
 
     public static audit(): string {
-        return JSON.stringify(Handler._all.map(h => ({
-            id: h.id,
-            hasSeries: !!h.series,
-            hasVolumeSeries: !!h.volumeSeries,
-            hasOpenInterestSeries: !!h.openInterestSeries,
-            hasLegend: !!h.legend,
-            hasTopBar: !!h._topBar,
-            hasToolBox: !!h.toolBox,
-            subchartsCount: h._seriesList.length,
-            interval: h._interval,
-            seriesListLength: h._seriesList.length,
-        })));
-    }
-
-    public static auditFull(): string {
         const lines: string[] = [];
 
         const q = (s: string) => `"${s.replace(/"/g, '\\"')}"`;  // TOML-safe quote
@@ -65,20 +50,21 @@ export class Handler {
             return `"${s.replace(/"/g, '\\"')}"`;
         };
 
-        const dumpObj = (obj: any, prefix: string, depth: number): string[] => {
+        const dumpObj = (obj: any, prefix: string, depth: number, skipKeys?: Set<string>): string[] => {
             const res: string[] = [];
             if (depth > 2 || obj === null || obj === undefined) return res;
             if (typeof obj !== 'object' || Array.isArray(obj)) return res;
             for (const k of Object.keys(obj)) {
                 if (k === 'id') continue;
+                if (skipKeys?.has(k)) continue;
                 const val = obj[k];
                 const vt = typeof val;
-                const fullKey = `${prefix}.${safeKey(k)}`;
+                const fullKey = prefix ? `${prefix}.${safeKey(k)}` : safeKey(k);
                 if (vt === 'string' || vt === 'number' || vt === 'boolean') {
                     res.push(`${fullKey} = ${vt === 'string' ? q(String(val)) : String(val)}`);
                 } else if (vt === 'object' && val !== null && !Array.isArray(val)) {
                     // try one level deeper
-                    const inner = dumpObj(val, fullKey, depth + 1);
+                    const inner = dumpObj(val, fullKey, depth + 1, skipKeys);
                     if (inner.length > 0) {
                         res.push(...inner);
                     } else {
@@ -90,12 +76,33 @@ export class Handler {
             return res;
         };
 
-        for (const h of Handler._all) {
-            const section = safeSection(h.id);
-            lines.push(`[${section}]`);
+        // Keys to skip in generic recursive dump (noisy API objects / DOM / internal)
+        const SKIP_KEYS = new Set([
+            'series', 'volumeSeries', 'openInterestSeries', 'chart',
+            'wrapper', 'div', 'legend', 'toolBox', '_topBar',
+            '_seriesList', 'seriesMarkers', 'commandFunctions',
+            'reSize', '_createChart', 'createCandlestickSeries',
+            'createVolumeSeries', 'createOpenInterestSeries',
+            'createLineSeries', 'createHistogramSeries', '_styleMap',
+        ]);
 
-            // — basic flags —
-            lines.push(`type = ${q('Handler')}`);
+        // Regex matching our custom window global variable names
+        const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
+
+        // Build a lookup: handler ID → Handler instance
+        const handlerMap: Record<string, Handler> = {};
+        for (const h of Handler._all) {
+            handlerMap[h.id] = h;
+        }
+
+        // Helper: output handler-specific detail lines (API calls)
+        const dumpHandlerDetail = (h: Handler, lines: string[]) => {
+            // — generic recursive dump (2 levels deep, skipping noisy keys) —
+            const dumped = dumpObj(h, '', 0, SKIP_KEYS);
+            if (dumped.length > 0) lines.push(...dumped);
+
+            // — presence flags for complex objects that were skipped —
+            lines.push(`hasChart = ${!!h.chart}`);
             lines.push(`hasSeries = ${!!h.series}`);
             lines.push(`hasVolumeSeries = ${!!h.volumeSeries}`);
             lines.push(`hasOpenInterest = ${!!h.openInterestSeries}`);
@@ -172,31 +179,29 @@ export class Handler {
 
             // — extra series count —
             lines.push(`extraSeriesCount = ${h._seriesList.length}`);
-        }
+        };
 
-        // — scan window globals for our custom IDs and dump their key attrs (2 levels deep) —
-        const vars: Array<{key: string; lines: string[]}> = [];
+        // — Single pass: iterate window globals, merge handler + non-handler —
         for (const key of Object.keys(window)) {
-            if (/^(window\.|Line_\d|Histogram_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/.test(key)) {
-                const v = (window as any)[key];
-                if (v === null || v === undefined) continue;
-                const lines2: string[] = [];
+            if (!GLOBALS_RE.test(key)) continue;
+            const v = (window as any)[key];
+            if (v === null || v === undefined) continue;
+
+            const section = safeSection(key);
+            lines.push(`[${section}]`);
+            lines.push(`id = ${q(key)}`);
+
+            // Check if this window global is a Handler instance
+            const handler = handlerMap[key] || handlerMap[`window.${key}`];
+            if (handler) {
+                lines.push(`type = ${q('Handler')}`);
+                dumpHandlerDetail(handler, lines);
+            } else {
                 const typ = Array.isArray(v) ? 'array' : typeof v;
-                const safeKey = key.replace(/\./g, '_');
-                lines2.push(`${safeKey}.type = ${q(typ)}`);
-                if (typ === 'object') {
-                    const inner = dumpObj(v, safeKey, 0);
-                    lines2.push(...inner);
-                }
-                vars.push({key, lines: lines2});
-            }
-        }
-        if (vars.length > 0) {
-            lines.push(``);
-            lines.push(`[windowGlobals]`);
-            for (const vv of vars) {
-                for (const l of vv.lines) {
-                    lines.push(l);
+                lines.push(`type = ${q(typ)}`);
+                if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+                    const inner = dumpObj(v, '', 0);
+                    if (inner.length > 0) lines.push(...inner);
                 }
             }
         }
