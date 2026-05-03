@@ -136,3 +136,15 @@ class Table(Pane, dict):
         {self.id}._div.style.display = '{'flex' if visible else 'none'}'
         {self.id}._div.{'add' if visible else 'remove'}EventListener('mousedown', {self.id}.onMouseDown)
         """)
+
+    def delete(self):
+        """
+        Irreversibly destroys the table and removes it from the DOM.
+        """
+        if self.id in self.win.handlers:
+            del self.win.handlers[self.id]
+        self.clear()
+        self.run_script(f'''
+        {self.id}._div.remove()
+        delete {self.id}
+        ''')

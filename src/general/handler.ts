@@ -35,6 +35,64 @@ globalParamInit();
 declare const window: GlobalParams;
 
 export class Handler {
+    public static _all: Handler[] = [];
+
+    public static audit(): string {
+        return JSON.stringify(Handler._all.map(h => ({
+            id: h.id,
+            hasSeries: !!h.series,
+            hasVolumeSeries: !!h.volumeSeries,
+            hasOpenInterestSeries: !!h.openInterestSeries,
+            hasLegend: !!h.legend,
+            hasTopBar: !!h._topBar,
+            hasToolBox: !!h.toolBox,
+            subchartsCount: h._seriesList.length,
+            interval: h._interval,
+            seriesListLength: h._seriesList.length,
+        })));
+    }
+
+    public static auditFull(): string {
+        return JSON.stringify(Handler._all.map(h => {
+            const legendLines = h.legend?._lines?.map((l: any) => ({
+                name: l.name,
+                paneIndex: l.paneIndex,
+                color: l.color,
+            })) || [];
+            return {
+                id: h.id,
+                series: {
+                    hasCandlestick: !!h.series,
+                    hasVolume: !!h.volumeSeries,
+                    hasOpenInterest: !!h.openInterestSeries,
+                    extraSeriesCount: h._seriesList.length,
+                    legendLines: legendLines,
+                },
+                legend: {
+                    visible: h.legend?.div?.style?.display !== 'none',
+                    ohlcEnabled: !!(h.legend as any)?.ohlcEnabled,
+                    persistent: !!(h.legend as any)?.persistent,
+                },
+                hasToolBox: !!h.toolBox,
+                hasTopBar: !!h._topBar,
+            };
+        }));
+    }
+
+    public static removeFromSeriesList(handlerId: string, seriesWrapper: any): void {
+        const h = Handler._all.find(h => h.id === handlerId);
+        if (h) {
+            // seriesWrapper is { name, series } — look up by .series reference
+            const idx = h._seriesList.indexOf(seriesWrapper.series);
+            if (idx >= 0) h._seriesList.splice(idx, 1);
+        }
+    }
+
+    public static removeHandlerFromAll(handlerId: string): void {
+        const idx = Handler._all.findIndex(h => h.id === handlerId);
+        if (idx >= 0) Handler._all.splice(idx, 1);
+    }
+
     public id: string;
     public commandFunctions: Function[] = [];
 
@@ -47,6 +105,8 @@ export class Handler {
 
     public series: ISeriesApi<SeriesType>;
     public volumeSeries: ISeriesApi<SeriesType>;
+    public openInterestSeries: ISeriesApi<SeriesType> | null = null;
+    public _interval: number = 86400;
 
     public legend: Legend;
     private _topBar: TopBar | undefined;
@@ -118,6 +178,8 @@ export class Handler {
 
         this.legend = new Legend(this)
 
+        Handler._all.push(this);
+
         document.addEventListener('keydown', (event) => {
             for (let i = 0; i < this.commandFunctions.length; i++) {
                 if (this.commandFunctions[i](event)) break
@@ -182,6 +244,15 @@ export class Handler {
         scaleMargins: { top: 0.3, bottom: 0.25 },
       },
       timeScale: { timeVisible: true, secondsVisible: false },
+      localization: {
+        timeFormatter: (time: number) => {
+          const d = new Date(time * 1000);
+          const pad = (n: number) => n.toString().padStart(2, '0');
+          const dateStr = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+          if (this._interval >= 86400) return dateStr;
+          return `${dateStr} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+        },
+      },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
@@ -229,6 +300,28 @@ export class Handler {
             scaleMargins: {top: 0.8, bottom: 0},
         });
         return volumeSeries;
+    }
+
+    createOpenInterestSeries(paneIndex?: number) {
+        const oiSeries = this.chart.addSeries(
+            LineSeries,
+            {
+                color: '#F5A623',
+                lineWidth: 1,
+                priceScaleId: 'oi_scale',
+                lastValueVisible: false,
+                priceLineVisible: false,
+                crosshairMarkerVisible: true,
+                autoscale: true,
+            },
+            paneIndex
+        );
+        oiSeries.priceScale().applyOptions({
+            scaleMargins: {top: 0.8, bottom: 0},
+            autoScale: true,
+        });
+        this.openInterestSeries = oiSeries;
+        return oiSeries;
     }
 
     createLineSeries(name: string, options: DeepPartial<LineStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0)

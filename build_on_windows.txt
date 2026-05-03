@@ -1,4 +1,8 @@
 
+# 下载依赖
 npm install @rollup/plugin-typescript --save-dev
 npm audit fix --force
+
+# 构建和复制成品到目标目录
 npx rollup -c rollup.config.js
+cp  dist/bundle.js lightweight_charts/js/bundle.js

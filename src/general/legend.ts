@@ -25,6 +25,8 @@ export class Legend {
     private percentEnabled: boolean = false;
     private linesEnabled: boolean = false;
     private colorBasedOnCandle: boolean = false;
+    public persistent: boolean = false;
+    public shorthand: boolean = true;
 
     private text: HTMLSpanElement;
     private candle: HTMLDivElement;
@@ -38,6 +40,8 @@ export class Legend {
         this.ohlcEnabled = false;
         this.percentEnabled = false
         this.linesEnabled = false
+        this.persistent = false
+        this.shorthand = true
         this.colorBasedOnCandle = false
 
         this.div = document.createElement('div');
@@ -191,7 +195,7 @@ export class Legend {
         if (!this.ohlcEnabled && !this.linesEnabled && !this.percentEnabled) return;
         const options: any = this.handler.series.options()
 
-        if (!param.time) {
+        if (!param.time && !this.persistent) {
             this.candle.style.color = 'transparent'
             this.candle.innerHTML = this.candle.innerHTML.replace(options['upColor'], '').replace(options['downColor'], '')
             return
@@ -213,6 +217,7 @@ export class Legend {
         }
 
         this.candle.style.color = ''
+        if (!param.time) return
         let str = '<span style="line-height: 1.8;">'
         if (data) {
             if (this.ohlcEnabled) {
@@ -231,7 +236,19 @@ export class Legend {
                     volumeData = param.seriesData.get(this.handler.volumeSeries)
                 }
                 if (volumeData) {
-                    str += this.ohlcEnabled ? `| V ${this.shorthandFormat(volumeData.value)}` : ''
+                    str += this.ohlcEnabled ? `| V ${this.shorthand ? this.shorthandFormat(volumeData.value) : volumeData.value}` : ''
+                }
+            }
+
+            if (this.handler.openInterestSeries) {
+                let oiData: any
+                if (logical) {
+                    oiData = this.handler.openInterestSeries.dataByIndex(logical)
+                } else {
+                    oiData = param.seriesData.get(this.handler.openInterestSeries)
+                }
+                if (oiData) {
+                    str += `| OI ${this.shorthand ? this.shorthandFormat(oiData.value) : oiData.value}`
                 }
             }
 

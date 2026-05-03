@@ -55,6 +55,8 @@ var Lib = (function (exports, lightweightCharts) {
         percentEnabled = false;
         linesEnabled = false;
         colorBasedOnCandle = false;
+        persistent = false;
+        shorthand = true;
         text;
         candle;
         _lines = [];
@@ -65,6 +67,8 @@ var Lib = (function (exports, lightweightCharts) {
             this.ohlcEnabled = false;
             this.percentEnabled = false;
             this.linesEnabled = false;
+            this.persistent = false;
+            this.shorthand = true;
             this.colorBasedOnCandle = false;
             this.div = document.createElement('div');
             this.div.classList.add("legend");
@@ -203,7 +207,7 @@ var Lib = (function (exports, lightweightCharts) {
             if (!this.ohlcEnabled && !this.linesEnabled && !this.percentEnabled)
                 return;
             const options = this.handler.series.options();
-            if (!param.time) {
+            if (!param.time && !this.persistent) {
                 this.candle.style.color = 'transparent';
                 this.candle.innerHTML = this.candle.innerHTML.replace(options['upColor'], '').replace(options['downColor'], '');
                 return;
@@ -222,6 +226,8 @@ var Lib = (function (exports, lightweightCharts) {
                 data = param.seriesData.get(this.handler.series);
             }
             this.candle.style.color = '';
+            if (!param.time)
+                return;
             let str = '<span style="line-height: 1.8;">';
             if (data) {
                 if (this.ohlcEnabled) {
@@ -239,7 +245,19 @@ var Lib = (function (exports, lightweightCharts) {
                         volumeData = param.seriesData.get(this.handler.volumeSeries);
                     }
                     if (volumeData) {
-                        str += this.ohlcEnabled ? `| V ${this.shorthandFormat(volumeData.value)}` : '';
+                        str += this.ohlcEnabled ? `| V ${this.shorthand ? this.shorthandFormat(volumeData.value) : volumeData.value}` : '';
+                    }
+                }
+                if (this.handler.openInterestSeries) {
+                    let oiData;
+                    if (logical) {
+                        oiData = this.handler.openInterestSeries.dataByIndex(logical);
+                    }
+                    else {
+                        oiData = param.seriesData.get(this.handler.openInterestSeries);
+                    }
+                    if (oiData) {
+                        str += `| OI ${this.shorthand ? this.shorthandFormat(oiData.value) : oiData.value}`;
                     }
                 }
                 if (this.percentEnabled) {
@@ -1954,6 +1972,61 @@ var Lib = (function (exports, lightweightCharts) {
 
     globalParamInit();
     class Handler {
+        static _all = [];
+        static audit() {
+            return JSON.stringify(Handler._all.map(h => ({
+                id: h.id,
+                hasSeries: !!h.series,
+                hasVolumeSeries: !!h.volumeSeries,
+                hasOpenInterestSeries: !!h.openInterestSeries,
+                hasLegend: !!h.legend,
+                hasTopBar: !!h._topBar,
+                hasToolBox: !!h.toolBox,
+                subchartsCount: h._seriesList.length,
+                interval: h._interval,
+                seriesListLength: h._seriesList.length,
+            })));
+        }
+        static auditFull() {
+            return JSON.stringify(Handler._all.map(h => {
+                const legendLines = h.legend?._lines?.map((l) => ({
+                    name: l.name,
+                    paneIndex: l.paneIndex,
+                    color: l.color,
+                })) || [];
+                return {
+                    id: h.id,
+                    series: {
+                        hasCandlestick: !!h.series,
+                        hasVolume: !!h.volumeSeries,
+                        hasOpenInterest: !!h.openInterestSeries,
+                        extraSeriesCount: h._seriesList.length,
+                        legendLines: legendLines,
+                    },
+                    legend: {
+                        visible: h.legend?.div?.style?.display !== 'none',
+                        ohlcEnabled: !!h.legend?.ohlcEnabled,
+                        persistent: !!h.legend?.persistent,
+                    },
+                    hasToolBox: !!h.toolBox,
+                    hasTopBar: !!h._topBar,
+                };
+            }));
+        }
+        static removeFromSeriesList(handlerId, seriesWrapper) {
+            const h = Handler._all.find(h => h.id === handlerId);
+            if (h) {
+                // seriesWrapper is { name, series } — look up by .series reference
+                const idx = h._seriesList.indexOf(seriesWrapper.series);
+                if (idx >= 0)
+                    h._seriesList.splice(idx, 1);
+            }
+        }
+        static removeHandlerFromAll(handlerId) {
+            const idx = Handler._all.findIndex(h => h.id === handlerId);
+            if (idx >= 0)
+                Handler._all.splice(idx, 1);
+        }
         id;
         commandFunctions = [];
         wrapper;
@@ -1963,6 +2036,8 @@ var Lib = (function (exports, lightweightCharts) {
         precision = 2;
         series;
         volumeSeries;
+        openInterestSeries = null;
+        _interval = 86400;
         legend;
         _topBar;
         toolBox;
@@ -2015,6 +2090,7 @@ var Lib = (function (exports, lightweightCharts) {
             this.volumeSeries = this.createVolumeSeries(paneIndex);
             this.seriesMarkers = lightweightCharts.createSeriesMarkers(this.series, []);
             this.legend = new Legend(this);
+            Handler._all.push(this);
             document.addEventListener('keydown', (event) => {
                 for (let i = 0; i < this.commandFunctions.length; i++) {
                     if (this.commandFunctions[i](event))
@@ -2076,6 +2152,16 @@ var Lib = (function (exports, lightweightCharts) {
                     scaleMargins: { top: 0.3, bottom: 0.25 },
                 },
                 timeScale: { timeVisible: true, secondsVisible: false },
+                localization: {
+                    timeFormatter: (time) => {
+                        const d = new Date(time * 1000);
+                        const pad = (n) => n.toString().padStart(2, '0');
+                        const dateStr = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+                        if (this._interval >= 86400)
+                            return dateStr;
+                        return `${dateStr} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+                    },
+                },
                 crosshair: {
                     mode: lightweightCharts.CrosshairMode.Normal,
                     vertLine: {
@@ -2114,6 +2200,23 @@ var Lib = (function (exports, lightweightCharts) {
                 scaleMargins: { top: 0.8, bottom: 0 },
             });
             return volumeSeries;
+        }
+        createOpenInterestSeries(paneIndex) {
+            const oiSeries = this.chart.addSeries(lightweightCharts.LineSeries, {
+                color: '#F5A623',
+                lineWidth: 1,
+                priceScaleId: 'oi_scale',
+                lastValueVisible: false,
+                priceLineVisible: false,
+                crosshairMarkerVisible: true,
+                autoscale: true,
+            }, paneIndex);
+            oiSeries.priceScale().applyOptions({
+                scaleMargins: { top: 0.8, bottom: 0 },
+                autoScale: true,
+            });
+            this.openInterestSeries = oiSeries;
+            return oiSeries;
         }
         createLineSeries(name, options, paneIndex = 0) {
             const line = this.chart.addSeries(lightweightCharts.LineSeries, { ...options }, paneIndex);

@@ -30,6 +30,14 @@ ___
 4. [Events](https://lightweight-charts-python.readthedocs.io/en/latest/tutorials/events.html) allowing for timeframe selectors (1min, 5min, 30min etc.), searching, hotkeys, and more.
 5. [Tables](https://lightweight-charts-python.readthedocs.io/en/latest/reference/tables.html) for watchlists, order entry, and trade management.
 6. Direct integration of market data through [Polygon.io's](https://polygon.io/?utm_source=affiliate&utm_campaign=pythonlwcharts) market data API.
+7. **Volume + Open Interest overlay** with independent Y-axis scaling.
+8. **Multi-chart instances** — completely independent Chart objects.
+9. **Persistent legend** — OHLC stays visible even when mouse leaves the chart.
+10. **Vertical span highlighting** — highlight date ranges with semi-transparent fills.
+11. **Resource cleanup API** — `reset()`, `clear_handlers()`, `audit()`, per-object `delete()`.
+12. **New: `PriceLine` object** — create and remove price lines with `create_price_line().delete()`. 
+13. **New: `Table.delete()`** — destroy tables and clean up JS state.
+14. **All IDs are human-readable** — `window.Chart_1`, `window.Line_3`, `window.VerticalSpan_11` etc.
 
 __Supports:__ Jupyter Notebooks, PyQt6, PyQt5, PySide6, wxPython, Streamlit, and asyncio.
 

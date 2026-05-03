@@ -12,25 +12,23 @@ import pandas as pd
 
 
 class Pane:
-    def __init__(self, window):
+    def __init__(self, window, prefix=''):
         from .abstract import Window
         self.win: Window = window
         self.run_script = window.run_script
         self.bulk_run = window.bulk_run
         if hasattr(self, 'id'):
             return
-        self.id = Window._id_gen.generate()
+        self.id = Window._id_gen.generate(f'{type(self).__name__}_')
 
 
-class IDGen(list):
-    ascii = 'abcdefghijklmnopqrstuvwxyz'
+class IDGen:
+    def __init__(self):
+        self._counter = 0
 
-    def generate(self) -> str:
-        var = ''.join(choices(self.ascii, k=8))
-        if var not in self:
-            self.append(var)
-            return f'window.{var}'
-        self.generate()
+    def generate(self, prefix: str = '') -> str:
+        self._counter += 1
+        return f'window.{prefix}{self._counter}'
 
 def format_datetime(dt: datetime, tz: Union[str, ZoneInfo] = None) -> str:
     if tz is None:
@@ -172,6 +170,11 @@ class Emitter:
             else:
                 self._callable(*args)
 
+    def __isub__(self, other):
+        if self._callable is other:
+            self._callable = None
+        return self
+
 
 class JSEmitter:
     def __init__(self, chart, name, on_iadd, wrapper=None):
@@ -188,6 +191,11 @@ class JSEmitter:
 
         self._chart.win.handlers[self._name] = final_async_wrapper if asyncio.iscoroutinefunction(other) else final_wrapper
         self._on_iadd(other)
+        return self
+
+    def __isub__(self, other):
+        if self._name in self._chart.win.handlers:
+            del self._chart.win.handlers[self._name]
         return self
 
 

@@ -5,6 +5,8 @@ from base64 import b64decode
 from datetime import datetime
 from typing import Callable, Union, Literal, List, Optional
 import pandas as pd
+import time as _time
+import json
 
 from .table import Table
 from .toolbox import ToolBox
@@ -23,7 +25,6 @@ INDEX_BN = os.path.join(current_dir, 'js', 'index_bn.html')
 
 class Window:
     _id_gen = IDGen()
-    handlers = {}
 
     def __init__(
         self,
@@ -31,7 +32,9 @@ class Window:
         js_api_code: Optional[str] = None,
         run_script: Optional[Callable] = None
     ):
+        self.handlers = {}
         self.loaded = False
+        self.destroyed = False
         self.script_func = script_func
         self.scripts = []
         self.final_scripts = []
@@ -62,6 +65,8 @@ class Window:
         """
         For advanced users; evaluates JavaScript within the Webview.
         """
+        if self.destroyed:
+            raise RuntimeError("Chart window has been destroyed. Cannot execute script.")
         if self.script_func is None:
             raise AttributeError("script_func has not been set")
         if self.loaded:
@@ -74,9 +79,29 @@ class Window:
         else:
             self.scripts.append(script)
 
-    def run_script_and_get(self, script: str):
+    def run_script_and_get(self, script: str, timeout: float = 10.0):
         self.run_script(f'_~_~RETURN~_~_{script}')
-        return self._return_q.get()
+        deadline = _time.time() + timeout
+        while _time.time() < deadline:
+            try:
+                result = self._return_q.get_nowait()
+            except Exception:
+                _time.sleep(0.02)
+                continue
+            if result is None:
+                raise RuntimeError(
+                    f"JS evaluation error for: {script[:120]}"
+                )
+            return result
+        raise TimeoutError(
+            f"run_script_and_get timed out after {timeout}s for: {script[:120]}"
+        )
+
+    def remove_handler(self, handler_id: str):
+        """
+        Removes a single event/message handler by its ID.
+        """
+        self.handlers.pop(handler_id, None)
 
     def create_table(
         self,
@@ -281,7 +306,7 @@ class SeriesCommon(Pane):
         markers = markers.copy()
         marker_ids = []
         for marker in markers:
-            marker_id = self.win._id_gen.generate()
+            marker_id = self.win._id_gen.generate('Marker_')
             self.markers[marker_id] = {
                 "time": self._single_datetime_format(marker['time']),
                 "position": marker_position(marker['position']),
@@ -314,7 +339,7 @@ class SeriesCommon(Pane):
             formatted_time = self._last_bar['time'] if not time else self._single_datetime_format(time)
         except TypeError:
             raise TypeError('Chart marker created before data was set.')
-        marker_id = self.win._id_gen.generate()
+        marker_id = self.win._id_gen.generate('Marker_')
 
         self.markers[marker_id] = {
             "time": int(formatted_time),
@@ -401,19 +426,13 @@ class SeriesCommon(Pane):
 
     def create_price_line(self, price: float = 0.0, color: str = 'rgba(214, 237, 255, 0.6)',
             style: LINE_STYLE = 'large_dashed', width: int = 1, price_label: bool = False,
-            title: str = ''):
-        self.run_script(f'''
-            {self.id}.series.createPriceLine(
-                {{
-                    price: {price},
-                    color: '{color}',
-                    lineStyle: {as_enum(style, LINE_STYLE)},
-                    lineWidth: {width},
-                    axisLabelVisible: {jbool(price_label)},
-                    title: '{title}',
-                }},
-            )
-        ''')
+            title: str = '') -> 'PriceLine':
+        """
+        Creates a horizontal price line on the series.
+
+        Returns a PriceLine object with a delete() method.
+        """
+        return PriceLine(self, price, color, style, width, price_label, title)
 
     def precision(self, precision: int):
         """
@@ -458,6 +477,63 @@ class SeriesCommon(Pane):
         return VerticalSpan(self, start_time, end_time, color)
 
 
+class PriceLine(Pane):
+    """
+    A price line drawn on the series (created via create_price_line).
+
+    Use .delete() to remove it.
+    """
+
+    def __init__(self, chart: 'AbstractChart', price: float, color: str,
+                 style: str, width: int, price_label: bool, title: str):
+        super().__init__(chart.win)
+        self._chart = chart
+        chart._price_lines.append(self)
+        self.run_script(f'''
+        {self.id} = {self._chart.id}.series.createPriceLine(
+            {{
+                price: {price},
+                color: '{color}',
+                lineStyle: {as_enum(style, LINE_STYLE)},
+                lineWidth: {width},
+                axisLabelVisible: {jbool(price_label)},
+                title: '{title}',
+            }},
+        );0
+        ''')
+
+    def delete(self):
+        """
+        Removes the price line from the series.
+        """
+        self._chart._price_lines.remove(self) if self in self._chart._price_lines else None
+        self.run_script(f'''
+        {self._chart.id}.series.removePriceLine({self.id})
+        delete {self.id}
+        ''')
+
+    def update(self, price: Optional[float] = None, color: Optional[str] = None,
+               style: Optional[str] = None, width: Optional[int] = None,
+               title: Optional[str] = None):
+        """
+        Updates the price line options.
+        """
+        opts = {}
+        if price is not None:
+            opts['price'] = price
+        if color is not None:
+            opts['color'] = color
+        if style is not None:
+            opts['lineStyle'] = as_enum(style, LINE_STYLE)
+        if width is not None:
+            opts['lineWidth'] = width
+        if title is not None:
+            opts['title'] = title
+        if not opts:
+            return
+        self.run_script(f'{self.id}.applyOptions({js_json(opts)})')
+
+
 class Line(SeriesCommon):
     def __init__(self, chart, name, color, style, width, price_line, price_label, price_scale_id=None,
                  crosshair_marker=True, pane_index: int = 0,
@@ -495,14 +571,13 @@ class Line(SeriesCommon):
         """
         self._chart._lines.remove(self) if self in self._chart._lines else None
         self.run_script(f'''
+            {self._chart.id}.chart.removeSeries({self.id}.series)
+            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series); if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1)
+
             {self.id}legendItem = {self._chart.id}.legend._lines.find((line) => line.series == {self.id}.series)
             {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
+            try {{ if ({self.id}legendItem) {self._chart.id}.legend.div.removeChild({self.id}legendItem.row) }} catch(e) {{}}
 
-            if ({self.id}legendItem) {{
-                {self._chart.id}.legend.div.removeChild({self.id}legendItem.row)
-            }}
-
-            {self._chart.id}.chart.removeSeries({self.id}.series)
             delete {self.id}legendItem
             delete {self.id}
         ''')
@@ -528,21 +603,21 @@ class Histogram(SeriesCommon):
         )
         {self.id}.series.priceScale().applyOptions({{
             scaleMargins: {{top:{scale_margin_top}, bottom: {scale_margin_bottom}}}
-        }})''')
+        }});0''')
 
     def delete(self):
         """
         Irreversibly deletes the histogram.
         """
+        self._chart._lines.remove(self) if self in self._chart._lines else None
         self.run_script(f'''
+            {self._chart.id}.chart.removeSeries({self.id}.series)
+            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series); if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1)
+
             {self.id}legendItem = {self._chart.id}.legend._lines.find((line) => line.series == {self.id}.series)
             {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
+            try {{ if ({self.id}legendItem) {self._chart.id}.legend.div.removeChild({self.id}legendItem.row) }} catch(e) {{}}
 
-            if ({self.id}legendItem) {{
-                {self._chart.id}.legend.div.removeChild({self.id}legendItem.row)
-            }}
-
-            {self._chart.id}.chart.removeSeries({self.id}.series)
             delete {self.id}legendItem
             delete {self.id}
         ''')
@@ -561,6 +636,7 @@ class Candlestick(SeriesCommon):
         self._volume_down_color = 'rgba(200,127,130,0.8)'
 
         self.candle_data = pd.DataFrame()
+        self._open_interest_data = pd.DataFrame()
         # self.run_script(f'{self.id}.makeCandlestickSeries()')
 
     def _prepare_data(self, df: pd.DataFrame):
@@ -575,6 +651,49 @@ class Candlestick(SeriesCommon):
         volume['color'] = self._volume_down_color
         volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
         return candle_df, volume
+
+    def clear_data(self):
+        """
+        Clears all OHLCV data from the chart without removing the series itself.
+        The chart will be empty and ready for new data via set().
+        """
+        self.run_script(f'{self.id}.series.setData([])')
+        self.run_script(f'{self.id}.volumeSeries.setData([])')
+        self.run_script(f'if ({self.id}.openInterestSeries) {self.id}.openInterestSeries.setData([])')
+        self.candle_data = pd.DataFrame()
+        self._last_bar = None
+        self._open_interest_data = pd.DataFrame()
+
+    def _set_open_interest(self, df: pd.DataFrame, pane_index: int = 0):
+        """
+        Internal: creates or updates the open interest line series.
+        decoupled from volume scaling — uses its own 'oi_scale' price scale.
+        """
+        oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'}).copy()
+        # time may already be Unix seconds (from set()) or raw datetime (from set_open_interest())
+        if not pd.api.types.is_numeric_dtype(oi_df['time']):
+            oi_df['time'] = (pd.to_datetime(oi_df['time']) - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
+        self._open_interest_data = oi_df.copy()
+        oi_js = js_data(oi_df)
+
+        # create OI series on first call; update data afterwards
+        self.run_script(f'''
+            if (!{self._chart.id}.openInterestSeries) {{
+                {self._chart.id}.createOpenInterestSeries({pane_index});
+            }}
+            {self._chart.id}.openInterestSeries.setData({oi_js});
+        ''')
+
+    def _update_open_interest(self, series: pd.Series):
+        """Internal: update the last OI point."""
+        ts = series['time'] if pd.api.types.is_numeric_dtype(type(series['time'])) else self._single_datetime_format(series['time'])
+        oi_val = series['open_interest']
+        self.run_script(f'''
+            if (!{self._chart.id}.openInterestSeries) {{
+                {self._chart.id}.createOpenInterestSeries(0);
+            }}
+            {self._chart.id}.openInterestSeries.update({{time: {ts}, value: {oi_val}}});
+        ''')
 
     def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
         """
@@ -594,13 +713,15 @@ class Candlestick(SeriesCommon):
         candle_js_data = js_data(df[['time', 'open', 'high', 'low', 'close']])
         self.run_script(f'{self.id}.series.setData({candle_js_data})')
 
-        if 'volume' not in df:
-            return
-        volume = df[['time', 'volume']].rename(columns={'volume': 'value'})
-        volume['color'] = self._volume_down_color
-        volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-        volume_js_data = js_data(volume)
-        self.run_script(f'{self.id}.volumeSeries.setData({volume_js_data})')
+        if 'volume' in df:
+            volume = df[['time', 'volume']].rename(columns={'volume': 'value'})
+            volume['color'] = self._volume_down_color
+            volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+            volume_js_data = js_data(volume)
+            self.run_script(f'{self.id}.volumeSeries.setData({volume_js_data})')
+
+        if 'open_interest' in df:
+            self._set_open_interest(df)
 
         for line in self._lines:
             if line.name not in df.columns:
@@ -611,6 +732,8 @@ class Candlestick(SeriesCommon):
             if (!{self.id}.chart.priceScale("right").options.autoScale)
                 {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
         ''')
+        # sync interval to JS for crosshair time formatting
+        self.run_script(f'{self._chart.id}._interval = {int(self._interval)}')
         # TODO keep drawings doesn't work consistenly w
         if keep_drawings:
             self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
@@ -678,11 +801,14 @@ class Candlestick(SeriesCommon):
 
         self._last_bar = series
         self.run_script(f'{self.id}.series.update({js_data(series)})')
-        if 'volume' not in series:
-            return
-        volume = series.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
-        volume['color'] = self._volume_up_color if series['close'] > series['open'] else self._volume_down_color
-        self.run_script(f'{self.id}.volumeSeries.update({js_data(volume)})')
+
+        if 'volume' in series:
+            volume = series.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
+            volume['color'] = self._volume_up_color if series['close'] > series['open'] else self._volume_down_color
+            self.run_script(f'{self.id}.volumeSeries.update({js_data(volume)})')
+
+        if 'open_interest' in series:
+            self._update_open_interest(series)
 
     def update_from_tick(self, series: pd.Series, cumulative_volume: bool = False):
         """
@@ -788,6 +914,7 @@ class AbstractChart(Candlestick, Pane):
 
         self._lines = []
         self.subcharts = []
+        self._price_lines: List['PriceLine'] = []
         self._scale_candles_only = scale_candles_only
         self._width = width
         self._height = height
@@ -798,7 +925,7 @@ class AbstractChart(Candlestick, Pane):
         self.polygon: PolygonAPI = PolygonAPI(self)
 
         self._html_chart_init = f'{self.id} = new Lib.Handler("{self.id}", {width}, {height}, "{position}", {jbool(autosize)})'
-        self.run_script(self._html_chart_init)
+        self.run_script(self._html_chart_init + ';0')
 
         Candlestick.__init__(self, self)
         self.subcharts.append(self.id)
@@ -812,6 +939,183 @@ class AbstractChart(Candlestick, Pane):
         Fits the maximum amount of the chart data within the viewport.
         """
         self.run_script(f'{self.id}.chart.timeScale().fitContent()')
+
+    def clear_handlers(self):
+        """
+        Clears all registered event/message handlers in the Window.
+        Use this when resetting a chart to prevent handler accumulation
+        in long-running embedded applications.
+        """
+        self.win.handlers.clear()
+
+    def reset(self):
+        """
+        Resets the chart to a clean initial state without destroying the WebView.
+
+        Performs:
+        1. Clears all OHLCV data (candle + volume series)
+        2. Deletes all extra Line and Histogram series
+        3. Clears all price markers
+        4. Clears all toolbox drawings (JS + Python)
+        5. Resets the subcharts list
+        6. Clears event handlers to prevent accumulation
+
+        After reset(), the chart is ready for new data via set().
+        TopBar widgets and styling options are preserved.
+        """
+        self.clear_data()
+        for line in list(self._lines):
+            line.delete()
+        self.delete_open_interest()
+        self.clear_markers()
+        self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.clearDrawings()')
+        if hasattr(self, 'toolbox'):
+            self.toolbox.drawings.clear()
+        # clean up subcharts (skip the main chart itself)
+        for sub_id in list(self.subcharts):
+            if sub_id != self.id:
+                self.remove_subchart(sub_id)
+        self.subcharts = [self.id]
+        self.clear_handlers()
+
+    def set_open_interest(self, df: pd.DataFrame, pane_index: int = 0):
+        """
+        Sets or replaces the open interest line series data.
+
+        The open interest is drawn as a line series in the volume sub-pane,
+        with its own independent y-axis scale (decoupled from volume scaling).
+
+        :param df: columns: 'time' (datetime) and one additional column for OI values.
+                   Column name can be anything — the second column is used as the value.
+        :param pane_index: which pane to draw in (default 0, same as volume).
+        """
+        df = df.copy()
+        if 'open_interest' not in df.columns:
+            oi_col = [c for c in df.columns if c != 'time'][0]
+            df = df.rename(columns={oi_col: 'open_interest'})
+        self._set_open_interest(df, pane_index)
+
+    def update_open_interest(self, series: pd.Series):
+        """
+        Updates the last open interest value in real-time.
+
+        :param series: must contain 'time' and 'open_interest' (or use the index name).
+        """
+        if 'open_interest' not in series:
+            if series.name:
+                series['open_interest'] = series[series.name]
+        self._update_open_interest(series)
+
+    def delete_open_interest(self):
+        """
+        Deletes the open interest line series from the chart.
+        """
+        self.run_script(f'''
+            if ({self._chart.id}.openInterestSeries) {{
+                {self._chart.id}.chart.removeSeries({self._chart.id}.openInterestSeries);
+                delete {self._chart.id}.openInterestSeries;
+            }}
+        ''')
+
+    def remove_subchart(self, subchart_id: str):
+        """
+        Removes and destroys a subchart created via create_subchart().
+
+        :param subchart_id: the .id attribute of the subchart AbstractChart.
+        """
+        if subchart_id not in self.subcharts:
+            raise ValueError(f"Subchart {subchart_id} not found in this chart.")
+        self.subcharts.remove(subchart_id)
+        self.run_script(f'''
+            {subchart_id}.chart.remove();
+            {subchart_id}.wrapper.remove();
+            var _hid = Lib.Handler._all.findIndex(function(h) {{ return h.id === "{subchart_id}" }});
+            if (_hid >= 0) Lib.Handler._all.splice(_hid, 1);
+            delete {subchart_id};
+        ''')
+
+    def audit(self, full: bool = False, use_js: bool = False) -> dict:
+        """
+        审计当前 chart 的资源状态。
+
+        :param full: True 时返回所有资源的详细信息（类型、ID、参数等）；
+                     False 时只从 JS 端获取简略摘要。
+        :param use_js: True 时尝试从 JS 端获取超详细审计信息；
+                       False 时纯 Python 侧收集。
+        """
+        if use_js:
+            try:
+                result = self.win.run_script_and_get('Lib.Handler.auditFull()', timeout=5)
+                return json.loads(result)
+            except (RuntimeError, TimeoutError, json.JSONDecodeError) as e:
+                return {'error': str(e), 'fallback': 'use full=True (Python-side)'}
+        if full:
+            return self._audit_full()
+        result = self.win.run_script_and_get('Lib.Handler.audit()', timeout=5)
+        return json.loads(result)
+
+    def _audit_full(self) -> dict:
+        """
+        从 Python 侧收集所有资源的 ID、类型、参数，不依赖 JS 桥接。
+        """
+        info = {
+            'chart': {
+                'id': self.id,
+                'type': 'AbstractChart',
+                'has_data': not self.candle_data.empty,
+                'has_open_interest': not self._open_interest_data.empty,
+                'subchart_ids': [s for s in self.subcharts if s != self.id],
+            },
+            'lines': [],
+            'price_lines': [],
+            'markers': [],
+            'subcharts': [],
+            'tables': [],
+            'drawings': [],
+        }
+
+        # --- lines ---
+        for line in self._lines:
+            entry = {
+                'id': line.id,
+                'type': type(line).__name__,
+                'name': getattr(line, 'name', ''),
+                'color': getattr(line, 'color', ''),
+            }
+            if hasattr(line, 'data') and not line.data.empty:
+                entry['data_points'] = len(line.data)
+            info['lines'].append(entry)
+
+        # --- price lines ---
+        for pl in self._price_lines:
+            info['price_lines'].append({
+                'id': pl.id,
+                'type': 'PriceLine',
+            })
+
+        # --- markers ---
+        for mid, m in self.markers.items():
+            info['markers'].append({
+                'id': mid,
+                'type': 'Marker',
+                'time': m.get('time'),
+                'text': m.get('text', ''),
+                'shape': m.get('shape'),
+                'position': m.get('position'),
+            })
+
+        # --- subcharts ---
+        for sub_id in self.subcharts:
+            if sub_id != self.id:
+                info['subcharts'].append({
+                    'id': sub_id,
+                    'type': 'AbstractChart',
+                })
+
+        # --- window handlers ---
+        info['handlers_count'] = len(self.win.handlers)
+
+        return info
 
     def create_line(
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
@@ -836,6 +1140,7 @@ class AbstractChart(Candlestick, Pane):
         Creates and returns a Histogram object.
         """
         hist = Histogram(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index)
+        self._lines.append(hist)
         return hist
 
     def lines(self) -> List[Line]:
@@ -955,9 +1260,15 @@ class AbstractChart(Candlestick, Pane):
 
     def legend(self, visible: bool = False, ohlc: bool = True, percent: bool = False, lines: bool = True,
                color: str = 'rgb(191, 195, 203)', font_size: int = 11, font_family: str = 'Monaco',
-               text: str = '', color_based_on_candle: bool = False):
+               text: str = '', color_based_on_candle: bool = False, persistent: bool = False,
+               shorthand: bool = True):
         """
         Configures the legend of the chart.
+
+        :param persistent: when True, OHLC info stays visible even when the
+                           mouse leaves the chart area.
+        :param shorthand: when True, volume and open interest are abbreviated
+                          (e.g. 24.5K, 1.2M). Set to False for full numbers.
         """
         l_id = f'{self.id}.legend'
         if not visible:
@@ -974,6 +1285,8 @@ class AbstractChart(Candlestick, Pane):
         {l_id}.percentEnabled = {jbool(percent)}
         {l_id}.linesEnabled = {jbool(lines)}
         {l_id}.colorBasedOnCandle = {jbool(color_based_on_candle)}
+        {l_id}.persistent = {jbool(persistent)}
+        {l_id}.shorthand = {jbool(shorthand)}
         {l_id}.div.style.color = '{color}'
         {l_id}.color = '{color}'
         {l_id}.div.style.fontSize = '{font_size}px'

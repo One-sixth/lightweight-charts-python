@@ -5,6 +5,7 @@ from lightweight_charts import Chart
 if __name__ == '__main__':
 
     chart = Chart()
+    chart.legend(visible=True, ohlc=True, persistent=True)
 
     df1 = pd.read_csv('ohlcv.csv')
     df2 = pd.read_csv('next_ohlcv.csv')

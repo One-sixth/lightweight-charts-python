@@ -34,7 +34,10 @@ class Drawing(Pane):
         """
         Irreversibly deletes the drawing.
         """
-        self.run_script(f'{self.id}.detach()')
+        self.run_script(f'''
+            {self.id}.detach()
+            delete {self.id}
+        ''')
 
     def options(self, color='#1E80F0', style='solid', width=4):
         self.run_script(f'''{self.id}.applyOptions({{
@@ -244,33 +247,58 @@ class VerticalSpan(Pane):
                  color: str = 'rgba(252, 219, 3, 0.2)'):
         self._chart = series._chart
         super().__init__(self._chart.win)
-        start_time, end_time = pd.to_datetime(start_time).tz_localize(None), pd.to_datetime(end_time).tz_localize(None)
-        self.run_script(f'''
-        {self.id} = {self._chart.id}.chart.addHistogramSeries({{
-                color: '{color}',
-                priceFormat: {{type: 'volume'}},
-                priceScaleId: 'vertical_line',
-                lastValueVisible: false,
-                priceLineVisible: false,
-        }})
-        {self.id}.priceScale('').applyOptions({{
-            scaleMargins: {{top: 0, bottom: 0}}
-        }})
-        ''')
+        start_time = pd.to_datetime(start_time).tz_localize(None)
+        end_time = pd.to_datetime(end_time).tz_localize(None) if end_time else None
+
         if end_time is None:
-            if isinstance(start_time, pd.DatetimeIndex):
-                data = [{'time': time.timestamp(), 'value': 1} for time in start_time]
+            # Single time marker(s) — use thin bars
+            if hasattr(start_time, '__iter__') and not isinstance(start_time, pd.Timestamp):
+                data = [{'time': t.timestamp(), 'value': 1} for t in start_time]
             else:
                 data = [{'time': start_time.timestamp(), 'value': 1}]
-            self.run_script(f'{self.id}.setData({data})')
-        else:
             self.run_script(f'''
-            {self.id}.setData(calculateTrendLine(
-            {start_time.timestamp()}, 1, {end_time.timestamp()}, 1, {series.id}))
-            ''')
+var _vs = {self._chart.id}.chart.addSeries(LightweightCharts.HistogramSeries, {{
+    color: '{color}',
+    priceFormat: {{type: 'volume'}},
+    priceScaleId: 'vs_{self.id}',
+    lastValueVisible: false,
+    priceLineVisible: false,
+}});
+_vs.priceScale().applyOptions({{scaleMargins: {{top: 0.0, bottom: 0.0}}}});
+_vs.setData({json.dumps(data)});
+{self.id} = _vs;
+0
+        ''')
+        else:
+            # Range between two dates — use continuous fill
+            data = [
+                {'time': start_time.timestamp(), 'value': 1},
+                {'time': end_time.timestamp(), 'value': 1},
+            ]
+            self.run_script(f'''
+var _vs = {self._chart.id}.chart.addSeries(LightweightCharts.AreaSeries, {{
+    topColor: '{color}',
+    bottomColor: '{color}',
+    lineColor: '{color}',
+    lineWidth: 0,
+    lastValueVisible: false,
+    priceLineVisible: false,
+    crosshairMarkerVisible: false,
+    priceScaleId: 'vs_{self.id}',
+    autoscaleInfoProvider: () => ({{priceRange: {{minValue: 0, maxValue: 1}}}}),
+}});
+_vs.priceScale().applyOptions({{scaleMargins: {{top: 0.0, bottom: 0.0}}}});
+_vs.setData({json.dumps(data)});
+{self.id} = _vs;
+0
+        ''')
+        self._data = data
 
     def delete(self):
         """
         Irreversibly deletes the vertical span.
         """
-        self.run_script(f'{self._chart.id}.chart.removeSeries({self.id})')
+        self.run_script(f'''
+            {self._chart.id}.chart.removeSeries({self.id})
+            delete {self.id}
+        ''')
