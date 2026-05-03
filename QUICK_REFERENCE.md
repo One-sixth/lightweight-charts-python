@@ -1,6 +1,6 @@
 # lightweight-charts-python 快查文档
 
-> Python 封装 TradingView Lightweight Charts 的框架 v2.1  
+> Python 封装 TradingView Lightweight Charts 的框架 v2.2  
 > 作者: louisnw | GitHub: [louisnw01/lightweight-charts-python](https://github.com/louisnw01/lightweight-charts-python)  
 > PyPI: `pip install lightweight-charts` | 需 Python ≥3.8 + pandas + pywebview
 
@@ -459,20 +459,16 @@ get_last_trade(ticker)
 
 ```
 test/
-├── run_tests.py        # 测试入口 (unittest 套件)
-├── test_chart.py       # 测试数据列名重命名 + create_line 返回
-├── test_returns.py     # 测试截图 + save/load 绘图
-├── test_table.py       # (空) 表格测试占位
-├── test_toolbox.py     # 测试创建水平线/趋势线/矩形/垂直线
-├── test_topbar.py      # 测试 switcher + button 事件触发
-├── test_cleanup.py     # 资源清理集成测试 (非 unittest, 独立运行)
-├── util.py             # Tester 基类 + BARS (CSV 测试数据)
+├── run_tests.py           # 简约运行器
+├── test_cleanup.py        # 资源全链路创建/删除 + JS TOML 审计 + 多图表独立清理
+└── test_features.py       # 独特功能测试: 数据重命名/line追踪/截图/topbar事件
 ```
 
-运行: 
+运行:
 ```
-python test/run_tests.py     # unittest 套件
-python test/test_cleanup.py  # 资源清理测试 (需 GUI 环境)
+python test/run_tests.py
+python test/test_cleanup.py       # 资源清理测试 (需 GUI 环境)
+python test/test_features.py      # 功能测试
 ```
 
 ---
@@ -511,7 +507,7 @@ python test/test_cleanup.py  # 资源清理测试 (需 GUI 环境)
 
 ---
 
-## 九、新增: 清理与重置 API (v2.1 定制版)
+## 九、新增: 清理与重置 API (v2.2 定制版)
 
 ### 9.1 清空 K 线数据
 
@@ -565,12 +561,46 @@ line.set(sma_data)
 # 每次切换时调用 reset() 避免 handler 和 series 堆积
 ```
 
-### 9.4 资源审计 (v2.1 定制版)
+### 9.7 资源审计 (v2.2 TOML 格式)
 
 ```python
-# JS 侧审计 (返回所有 Handler 的状态)
-audit = chart.audit()  # 含 hasOpenInterestSeries, seriesListLength, subchartsCount 等
+# Python 侧审计 (零卡死风险, 返回 dict)
+audit = chart.audit(use_js=False)
+# 返回: {chart: {id, has_data, has_open_interest, ...},
+#         lines: [{id, type, name, data_points}],
+#         price_lines: [{id, type}],
+#         drawings: [{id, type, price?}],
+#         tables: [{id, type, headings}],
+#         markers: [{id, time, text, shape, position}],
+#         handlers_count: int}
+
+# JS 侧审计 (TOML 格式, 返回解析后的 dict)
+audit = chart.audit(use_js=True)
+# 返回 TOML-parsed dict, 每个 window 全局变量独立成段:
+# {
+#   'Chart_1': {'id': 'Chart_1', 'type': 'Handler',
+#               '_interval': 86400, 'scale': {'width': 1, 'height': 1},
+#               'hasChart': True, 'hasSeries': True, 'hasOpenInterest': True,
+#               'extraSeries': [{...}], 'candleDataPoints': 50,
+#               'markersCount': 4, 'extraSeriesCount': 2},
+#   'Line_3':  {'id': 'Line_3', 'type': 'object', 'color': '#ff0000'},
+#   ...
+# }
 ```
+
+### 9.8 资源追踪列表
+
+Python 侧自动追踪所有可创建资源：
+
+| 追踪列表 | 注册时机 | 注销时机 |
+|----------|---------|---------|
+| `chart._lines` | `create_line()` / `create_histogram()` | `line.delete()` / `histogram.delete()` |
+| `chart._price_lines` | `PriceLine.__init__()` | `price_line.delete()` |
+| `chart._drawings` | `Drawing.__init__()` / `VerticalSpan.__init__()` | `drawing.delete()` / `span.delete()` |
+| `chart._tables` | `chart.create_table()` | `table.delete()` |
+| `chart.markers` (dict) | `chart.marker()` / `chart.marker_list()` | `chart.remove_marker()` / `chart.clear_markers()` |
+| `chart.subcharts` (list) | `create_subchart()` | `remove_subchart()` |
+| `chart.win.handlers` (dict) | 自动注册 | `clear_handlers()` / `remove_handler()` |
 
 ### 9.5 Event Handler 逐个清理
 
@@ -605,7 +635,7 @@ RuntimeError: Chart window has been destroyed. Cannot execute script.
 
 ---
 
-## 十、多 Chart 实例 (v2.1 定制版)
+## 十、多 Chart 实例 (v2.2 定制版)
 
 每个 `Chart()` 实例现在完全独立：
 
@@ -627,7 +657,7 @@ t1.join()
 
 ---
 
-## 十一、OHLC Legend 增强 (v2.1 定制版)
+## 十一、OHLC Legend 增强 (v2.2 定制版)
 
 ### 11.1 OI 显示在 Legend
 

@@ -15,4 +15,6 @@ pyrightconfig.json
 
 working/
 .zed/
-_dev/
+_dev/.solomd/  
+tmp.txt 
+_debug_audit.py 

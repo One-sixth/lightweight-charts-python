@@ -1,22 +1,34 @@
-import unittest
+"""
+Test runner.
 
-from test_returns import TestReturns
-from test_table import TestTable
-from test_toolbox import TestToolBox
-from test_topbar import TestTopBar
-from test_chart import TestChart
+Usage:
+    python -m test.run_tests
 
-
-TEST_CASES = [
-    TestReturns,
-    TestTable,
-    TestToolBox,
-    TestTopBar,
-    TestChart,
-]
+Or run individual test files directly:
+    python test/test_cleanup.py
+    python test/test_features.py
+"""
 
 if __name__ == '__main__':
-    loader = unittest.TestLoader()
-    cases = [loader.loadTestsFromTestCase(module) for module in TEST_CASES]
-    suite = unittest.TestSuite(cases)
-    unittest.TextTestRunner(verbosity=2).run(suite)
+    import subprocess, sys
+
+    tests = [
+        'test_cleanup.py',
+        'test_features.py',
+    ]
+
+    results = []
+    for t in tests:
+        print(f"\n--- Running {t} ---")
+        ret = subprocess.run([sys.executable, t], cwd=__file__)
+        ok = ret.returncode == 0
+        results.append((t, ok))
+
+    print("\n" + "=" * 60)
+    passed = sum(1 for _, ok in results if ok)
+    print(f"  {passed}/{len(results)} test suites passed")
+    for name, ok in results:
+        print(f"    {'✅' if ok else '❌'} {name}")
+    print("=" * 60)
+
+    sys.exit(0 if all(ok for _, ok in results) else 1)

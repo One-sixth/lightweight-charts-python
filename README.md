@@ -38,6 +38,8 @@ ___
 12. **New: `PriceLine` object** — create and remove price lines with `create_price_line().delete()`. 
 13. **New: `Table.delete()`** — destroy tables and clean up JS state.
 14. **All IDs are human-readable** — `window.Chart_1`, `window.Line_3`, `window.VerticalSpan_11` etc.
+15. **Resource audit** — `chart.audit(use_js=True)` returns full TOML state of all JS variables; `chart.audit(use_js=False)` returns Python-side resource inventory.
+16. **Comprehensive cleanup tests** — test_cleanup.py verifies Python + JS no-leak across all resource types + multi-chart isolation.
 
 __Supports:__ Jupyter Notebooks, PyQt6, PyQt5, PySide6, wxPython, Streamlit, and asyncio.
 
