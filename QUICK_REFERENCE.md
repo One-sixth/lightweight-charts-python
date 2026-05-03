@@ -133,6 +133,43 @@ chart.remove_marker(marker_id)  # 按 ID 删除单个标记
 chart.clear_markers()           # 删除所有标记
 ```
 
+### 3.4.1 `set()` vs `reset()` 对比 [2026-05-04]
+
+| 资源 | `chart.set(df)` | `chart.reset()` |
+|------|----------------|-----------------|
+| K 线数据 | ✅ 替换 | ✅ 清空 |
+| 成交量 | ✅ 替换 | ✅ 清空 |
+| 持仓量 | ✅ 替换 | ✅ 删除 |
+| **指标线 (Line/Histogram)** | ✅ **保留**，更新匹配列名的 | ❌ **全部删除** |
+| **标记 (markers)** | ✅ **保留** | ❌ **全部清除** |
+| **绘图 (drawings)** | ⚠️ 看 `keep_drawings` 参数 | ❌ **全部清除** |
+| **PriceLine** | ✅ **保留** | ❌ **清除** |
+| **Table** | ✅ **保留** | ❌ **清除** |
+| **事件 handlers** | ✅ **保留** | ❌ **清除** |
+| **TopBar** | ✅ 保留 | ✅ 保留 |
+| **样式配置** | ✅ 保留 | ✅ 保留 |
+
+**`set()` 行为：** 温和替换，只动 K 线/成交量/持仓量，其他一切不动。指标线只更新有匹配列名的，不匹配的保留旧数据。
+
+**`reset()` 行为：** 彻底清空所有资源（K 线 + 指标线 + 标记 + 绘图 + PriceLine + Table + handlers），TopBar 和样式保留。
+
+```python
+# 场景 1: 切换股票，保留指标线
+chart.set(new_df)              # 指标线保留，K 线替换
+# 注意: 如果新数据不含指标列，指标线仍显示旧数据
+
+# 场景 2: 切换股票，全部重来
+chart.reset()                  # 一键清空所有
+chart.set(new_df)              # 重新设置
+
+# 场景 3: 切换时间周期，保留绘图
+chart.set(new_df, keep_drawings=True)  # 绘图重定位到时间轴
+
+# 场景 4: 切换时间周期，全部重来
+chart.reset()
+chart.set(new_df)
+```
+
 ### 3.5 折线与柱状图
 
 ```python
@@ -695,3 +732,195 @@ chart.legend(visible=True, shorthand=False)
 |----------|----------|
 | 日线/周线 | `2025-03-01` |
 | 分钟线   | `2025-03-01 09:30` |
+
+---
+
+## 十三、update / update_from_tick 内部流程深度分析 [2026-05-04]
+
+### 13.1 Candlestick.update(series) 完整调用链
+
+```
+用户调用: chart.update(series)   # series 是 pd.Series
+
+┌─────────────────────────────────────────────────────────┐
+│ 1. Candlestick.update(series, _from_tick=False)         │
+│    ── abstract.py:790                                    │
+│                                                          │
+│  series = self._series_datetime_format(series)          │
+│  (if _from_tick=True, 跳过此步)                          │
+│                                                          │
+│  if series['time'] != self._last_bar['time']:            │
+│      → 把旧的最后一条写入 self.candle_data DataFrame       │
+│      → pd.concat 追加新数据                               │
+│      → 触发 self._chart.events.new_bar._emit(self)       │
+│                                                          │
+│  self._last_bar = series                                 │
+│  self.run_script(f'{self.id}.series.update({js_data})') │
+│  → 发送 JS 命令: candlestickSeries.update({time,open,...})│
+│                                                          │
+│  if 'volume' in series:                                  │
+│      → 构造 volume series (time + value + color)         │
+│      → volumeSeries.update(...)                          │
+│                                                          │
+│  if 'open_interest' in series:                           │
+│      → _update_open_interest(series)                     │
+│      → openInterestSeries.update(...)                    │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────┐
+│ 2. _series_datetime_format(series)                      │
+│    ── abstract.py:232                                    │
+│                                                          │
+│  series = series.copy()                                  │
+│  series.index = self._format_labels(series, ...)        │
+│    → 列名转小写 (如果不含 date/time)                      │
+│    → 'date' → 'time'                                    │
+│  series['time'] = self._single_datetime_format(...)     │
+│    → 转 datetime → Unix 秒时间戳                         │
+│    → 对齐到时间间隔: interval * (ts // interval) + offset│
+│  return series                                          │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────┐
+│ 3. js_data(series)                                      │
+│    ── util.py:91                                         │
+│                                                          │
+│  d = series.to_dict()                                    │
+│  filtered = {k:v for k,v in d.items()}                  │
+│  → 去掉 None/NaN 值                                      │
+│  return json.dumps(filtered)                             │
+│  → 输出: '{"time":1700000000,"open":100,...}'            │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────┐
+│ 4. run_script(...)                                      │
+│    ── Window.run_script (abstract.py)                   │
+│                                                          │
+│  → 通过 pywebview 的 js_api 调用                         │
+│  → 执行 JS: candlestickSeries.update({time,open,...})   │
+│  → TradingView Lightweight Charts 内部更新最后一根K线     │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 13.2 update_from_tick(series) 完整调用链
+
+```
+用户调用: chart.update_from_tick(tick)  # tick 是 pd.Series {time, price, volume?}
+
+┌─────────────────────────────────────────────────────────┐
+│ 1. update_from_tick(series, cumulative_volume=False)    │
+│    ── abstract.py:813                                    │
+│                                                          │
+│  series = self._series_datetime_format(series)          │
+│  → time 转为 Unix 秒时间戳                                │
+│                                                          │
+│  if series['time'] < self._last_bar['time']:             │
+│      → raise ValueError (tick 时间不能早于最后一根K线)     │
+│                                                          │
+│  bar = pd.Series(dtype='float64')                        │
+│                                                          │
+│  if series['time'] == self._last_bar['time']:            │
+│      → 同一根K线内更新:                                    │
+│         bar['high'] = max(last_bar.high, tick.price)     │
+│         bar['low']  = min(last_bar.low,  tick.price)     │
+│         bar['close']= tick.price                         │
+│         bar['volume'] = cumulative ? last+new : new      │
+│  else:                                                   │
+│      → 新K线:                                            │
+│         bar['open'] = bar['high'] = bar['low']          │
+│         bar['close']= tick.price                         │
+│         bar['volume'] = tick.volume                      │
+│                                                          │
+│  self.update(bar, _from_tick=True)                      │
+│  → 进入 update() 流程（跳过 _series_datetime_format）     │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 13.3 核心差异对比
+
+| 维度 | `update(series)` | `update_from_tick(series)` |
+|------|-----------------|---------------------------|
+| **输入** | OHLCV 完整 K 线 `{time, open, high, low, close, volume}` | 单条 Tick `{time, price, volume?}` |
+| **时间格式化** | ✅ 执行 `_series_datetime_format` | ✅ 执行 `_series_datetime_format` |
+| **Tick 聚合逻辑** | ❌ 无 — 直接作为 K 线 | ✅ 有 — 聚合为 OHLC |
+| **同时间处理** | 覆盖最后一根 K 线 | 更新 high/low/close，可能追加 volume |
+| **新时间处理** | 追加为新 K 线 | 创建新 K 线（open=price） |
+| **触发 new_bar** | ✅ 时间变化时 | ✅ 时间变化时（通过 update 内部） |
+| **典型场景** | 批量更新 / 实时 K 线推送 | 逐 Tick 实时聚合 K 线 |
+
+### 13.4 `_interval` 时间对齐机制（重要！）
+
+**`_interval` 的作用：** 所有时间戳都会对齐到 `_interval` 秒的整数倍。
+
+```python
+# _single_datetime_format 核心公式 (abstract.py:250)
+arg = self._interval * (arg.timestamp() // self._interval) + self.offset
+# 例如: _interval=900 (15min), ts=10:05 → 对齐到 10:00
+```
+
+**`_interval` 的确定时机：**
+
+| 操作 | `_interval` 是否重算 | 来源 |
+|------|---------------------|------|
+| `set(df)` | ✅ 是 | 从 `df['time'].diff().value_counts()` 推断最常见间隔 |
+| `update(series)` | ❌ 否 | 使用已有的 `_interval` |
+| `update_from_tick(tick)` | ❌ 否 | 使用已有的 `_interval` |
+| `set(None)` 清空 | ❌ 不变 | 下次 `set()` 会重算 |
+
+**`_set_interval` 逻辑 (abstract.py:180-204)：**
+```python
+# 1. 从数据 diff 推断间隔秒数
+self._interval = common_interval.index[0].total_seconds()
+
+# 2. 计算 offset (微秒/秒/分/时的偏移量)
+# 用于处理非整点起始的数据 (如 9:15 开盘)
+```
+
+### 13.5 ⚠️ 精度不匹配陷阱
+
+**场景：15 分钟图表 + 传入 5 分钟 K 线**
+
+```
+初始: chart.set(df_15min) → _interval = 900 (15min)
+
+update(10:05 5min K线):
+  → time 对齐: 900 * (10:05_ts // 900) = 10:00
+  → 10:00 == _last_bar.time → 覆盖最后一根 K 线
+
+update(10:10 5min K线):
+  → time 对齐: 10:00
+  → 又覆盖！
+
+update(10:15 5min K线):
+  → time 对齐: 10:15
+  → 新 K 线 → 触发 new_bar 事件
+```
+
+**结果：3 根 5 分钟 K 线 → 只有最后 1 根生效（显示为 10:00 的 K 线）**
+
+**正确做法：**
+| 场景 | 正确方式 |
+|------|---------|
+| 15min 图表 | 先聚合为 15min K 线再 `update()` |
+| 实时 Tick → K 线 | 用 `update_from_tick()`，它逐 Tick 聚合 |
+| 切换时间周期 | 用 `chart.set(new_df)` 重新设置，`_interval` 会重新计算 |
+
+### 13.6 类继承中的 `_interval` 传递
+
+```
+Chart
+  └─ Candlestick (self._interval 在 set() 时确定)
+  └─ Line 1 (self._interval = chart._interval，从 chart 复制)
+  └─ Line 2 (同上)
+  └─ Histogram (同上)
+```
+
+`SeriesCommon.__init__` (abstract.py:155-166)：
+```python
+if hasattr(chart, '_interval'):
+    self._interval = chart._interval   # ← 从 chart 复制
+else:
+    self._interval = 1                  # ← 默认 1 秒
+```
+
+**注意：** 每个 Series 有自己的 `_interval` 副本，`set()` 时 Candlestick 的 `_interval` 被更新，但已创建的 Line/Histogram 不会自动同步（不过它们用 `format_cols=False`，不走 `_df_datetime_format`，所以不受影响）。
