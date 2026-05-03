@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Callable, Union, Literal, List, Optional
 import pandas as pd
 import time as _time
-import json
+import tomllib
 
 from .table import Table
 from .toolbox import ToolBox
@@ -1034,25 +1034,23 @@ class AbstractChart(Candlestick, Pane):
             delete {subchart_id};
         ''')
 
-    def audit(self, full: bool = False, use_js: bool = False) -> dict:
+    def audit(self, full: bool = False, use_js: bool = False):
         """
         审计当前 chart 的资源状态。
 
         :param full: True 时返回所有资源的详细信息（类型、ID、参数等）；
                      False 时只从 JS 端获取简略摘要。
-        :param use_js: True 时尝试从 JS 端获取超详细审计信息；
-                       False 时纯 Python 侧收集。
+        :param use_js: True 时从 JS 端获取超详细审计信息，返回 TOML 格式字符串；
+                       False 时纯 Python 侧收集，返回 dict。
         """
         if use_js:
-            try:
-                result = self.win.run_script_and_get('Lib.Handler.auditFull()', timeout=5)
-                return json.loads(result)
-            except (RuntimeError, TimeoutError, json.JSONDecodeError) as e:
-                return {'error': str(e), 'fallback': 'use full=True (Python-side)'}
-        if full:
+            data = self.win.run_script_and_get('Lib.Handler.auditFull()', timeout=5)
+            return tomllib.loads(data)
+        elif full:
             return self._audit_full()
-        result = self.win.run_script_and_get('Lib.Handler.audit()', timeout=5)
-        return json.loads(result)
+        else:
+            result = self.win.run_script_and_get('Lib.Handler.audit()', timeout=5)
+            return json.loads(result)
 
     def _audit_full(self) -> dict:
         """

@@ -1988,30 +1988,159 @@ var Lib = (function (exports, lightweightCharts) {
             })));
         }
         static auditFull() {
-            return JSON.stringify(Handler._all.map(h => {
-                const legendLines = h.legend?._lines?.map((l) => ({
-                    name: l.name,
-                    paneIndex: l.paneIndex,
-                    color: l.color,
-                })) || [];
-                return {
-                    id: h.id,
-                    series: {
-                        hasCandlestick: !!h.series,
-                        hasVolume: !!h.volumeSeries,
-                        hasOpenInterest: !!h.openInterestSeries,
-                        extraSeriesCount: h._seriesList.length,
-                        legendLines: legendLines,
-                    },
-                    legend: {
-                        visible: h.legend?.div?.style?.display !== 'none',
-                        ohlcEnabled: !!h.legend?.ohlcEnabled,
-                        persistent: !!h.legend?.persistent,
-                    },
-                    hasToolBox: !!h.toolBox,
-                    hasTopBar: !!h._topBar,
-                };
-            }));
+            const lines = [];
+            const q = (s) => `"${s.replace(/"/g, '\\"')}"`; // TOML-safe quote
+            const safeSection = (s) => s.replace(/^window\./, 'handler_').replace(/[^a-zA-Z0-9_.]/g, '_');
+            const safeKey = (s) => {
+                if (/^[a-zA-Z_][a-zA-Z0-9_.]*$/.test(s))
+                    return s;
+                return `"${s.replace(/"/g, '\\"')}"`;
+            };
+            const dumpObj = (obj, prefix, depth) => {
+                const res = [];
+                if (depth > 2 || obj === null || obj === undefined)
+                    return res;
+                if (typeof obj !== 'object' || Array.isArray(obj))
+                    return res;
+                for (const k of Object.keys(obj)) {
+                    if (k === 'id')
+                        continue;
+                    const val = obj[k];
+                    const vt = typeof val;
+                    const fullKey = `${prefix}.${safeKey(k)}`;
+                    if (vt === 'string' || vt === 'number' || vt === 'boolean') {
+                        res.push(`${fullKey} = ${vt === 'string' ? q(String(val)) : String(val)}`);
+                    }
+                    else if (vt === 'object' && val !== null && !Array.isArray(val)) {
+                        // try one level deeper
+                        const inner = dumpObj(val, fullKey, depth + 1);
+                        if (inner.length > 0) {
+                            res.push(...inner);
+                        }
+                        else {
+                            res.push(`${fullKey} = "(object)"`);
+                        }
+                    }
+                    // skip arrays and functions
+                }
+                return res;
+            };
+            for (const h of Handler._all) {
+                const section = safeSection(h.id);
+                lines.push(`[${section}]`);
+                // — basic flags —
+                lines.push(`type = ${q('Handler')}`);
+                lines.push(`hasSeries = ${!!h.series}`);
+                lines.push(`hasVolumeSeries = ${!!h.volumeSeries}`);
+                lines.push(`hasOpenInterest = ${!!h.openInterestSeries}`);
+                lines.push(`hasLegend = ${!!h.legend}`);
+                lines.push(`hasToolBox = ${!!h.toolBox}`);
+                lines.push(`hasTopBar = ${!!h._topBar}`);
+                // — extra series (Line / Histogram) —
+                for (let i = 0; i < h._seriesList.length; i++) {
+                    const s = h._seriesList[i];
+                    const prefix = `extraSeries.${i}`;
+                    try {
+                        const opts = s.options();
+                        lines.push(`${prefix}.type = ${q(s.seriesType())}`);
+                        if (opts.color)
+                            lines.push(`${prefix}.color = ${q(opts.color)}`);
+                        if (opts.lineWidth)
+                            lines.push(`${prefix}.lineWidth = ${opts.lineWidth}`);
+                        const dataLen = s.data().length;
+                        if (dataLen >= 0)
+                            lines.push(`${prefix}.dataPoints = ${dataLen}`);
+                    }
+                    catch (_) {
+                        lines.push(`${prefix}.type = ${q(s.seriesType())}`);
+                    }
+                }
+                // — open interest series —
+                if (h.openInterestSeries) {
+                    try {
+                        const opts = h.openInterestSeries.options();
+                        if (opts.color)
+                            lines.push(`openInterest.color = ${q(opts.color)}`);
+                        const oiLen = h.openInterestSeries.data().length;
+                        if (oiLen >= 0)
+                            lines.push(`openInterest.dataPoints = ${oiLen}`);
+                    }
+                    catch (_) { }
+                }
+                // — volume series —
+                if (h.volumeSeries) {
+                    try {
+                        const volLen = h.volumeSeries.data().length;
+                        if (volLen >= 0)
+                            lines.push(`volumeDataPoints = ${volLen}`);
+                    }
+                    catch (_) { }
+                }
+                // — legend —
+                if (h.legend) {
+                    lines.push(`legendVisible = ${h.legend.div?.style?.display !== 'none'}`);
+                    lines.push(`legendPersistent = ${!!h.legend.persistent}`);
+                    lines.push(`legendShorthand = ${!!h.legend.shorthand}`);
+                    if (h.legend?._lines) {
+                        for (let i = 0; i < h.legend._lines.length; i++) {
+                            const r = h.legend._lines[i];
+                            const lp = `legendRow.${i}`;
+                            lines.push(`${lp}.name = ${q(r.name ?? '')}`);
+                            lines.push(`${lp}.color = ${q(r.color ?? '')}`);
+                            if (r.paneIndex !== undefined) {
+                                lines.push(`${lp}.paneIndex = ${r.paneIndex}`);
+                            }
+                        }
+                    }
+                }
+                // — candles & data —
+                if (h.series) {
+                    try {
+                        const candleLen = h.series.data().length;
+                        if (candleLen >= 0)
+                            lines.push(`candleDataPoints = ${candleLen}`);
+                    }
+                    catch (_) { }
+                    try {
+                        const markers = h.seriesMarkers?.length ?? 0;
+                        lines.push(`markersCount = ${markers}`);
+                    }
+                    catch (_) { }
+                }
+                // — watermark —
+                if (h.watermark)
+                    lines.push(`hasWatermark = true`);
+                // — extra series count —
+                lines.push(`extraSeriesCount = ${h._seriesList.length}`);
+            }
+            // — scan window globals for our custom IDs and dump their key attrs (2 levels deep) —
+            const vars = [];
+            for (const key of Object.keys(window)) {
+                if (/^(window\.|Line_\d|Histogram_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/.test(key)) {
+                    const v = window[key];
+                    if (v === null || v === undefined)
+                        continue;
+                    const lines2 = [];
+                    const typ = Array.isArray(v) ? 'array' : typeof v;
+                    const safeKey = key.replace(/\./g, '_');
+                    lines2.push(`${safeKey}.type = ${q(typ)}`);
+                    if (typ === 'object') {
+                        const inner = dumpObj(v, safeKey, 0);
+                        lines2.push(...inner);
+                    }
+                    vars.push({ key, lines: lines2 });
+                }
+            }
+            if (vars.length > 0) {
+                lines.push(``);
+                lines.push(`[windowGlobals]`);
+                for (const vv of vars) {
+                    for (const l of vv.lines) {
+                        lines.push(l);
+                    }
+                }
+            }
+            return lines.join('\n');
         }
         static removeFromSeriesList(handlerId, seriesWrapper) {
             const h = Handler._all.find(h => h.id === handlerId);
