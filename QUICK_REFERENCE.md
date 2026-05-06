@@ -170,6 +170,54 @@ chart.reset()
 chart.set(new_df)
 ```
 
+### 3.4.2 批量增量更新 — update_bars() / update_from_ticks() [2026-05-06 新增]
+
+批量增量更新，将多条 K 线或 tick 的 JS 命令合并为一条批量发送，大幅减少 JS 通信开销。
+
+```python
+# 批量 OHLCV 增量更新
+chart.update_bars(df)
+# df: DataFrame, 列: time/open/high/low/close + 可选 volume/open_interest
+# 遍历每一行，复用 update() 的逻辑（覆盖/追加 + new_bar 事件）
+# 所有 JS 命令合并为一条 run_script 发送
+
+# 批量 Tick 增量更新
+chart.update_from_ticks(df, cumulative_volume=False)
+# df: DataFrame, 列: time/price + 可选 volume
+# 遍历每一行，复用 update_from_tick() 的 tick 聚合逻辑
+# 所有 JS 命令合并为一条 run_script 发送
+```
+
+### 3.4.3 锁定时间级别 — set_period() [2026-05-06 新增]
+
+锁定 `_interval`，`set()` 时跳过自动推断，并将 DataFrame 中所有时间戳对齐到锁定间隔。
+
+```python
+chart.set_period(60)       # 锁定到 1 分钟 (60s)
+chart.set_period(300)      # 锁定到 5 分钟 (300s)
+chart.set_period(3600)     # 锁定到 1 小时 (3600s)
+chart.set_period(None)     # 解锁，恢复自动推断
+
+# 锁定后 set() 的行为:
+chart.set_period(3600)     # 锁定为 1 小时
+chart.set(df_30min)        # 传入 30 分钟数据 → 时间戳对齐到整点
+print(chart._interval)     # 仍然是 3600
+print(chart._period_locked)  # True
+
+chart.set_period(None)     # 解锁
+chart.set(df_15min)        # 自动推断为 15 分钟
+print(chart._period_locked)  # False
+```
+
+**实现原理：**
+- 锁定后，`_df_datetime_format()` 跳过 `_set_interval()`，`_interval` 保持不变
+- 时间戳转换后执行：`time = interval * (time // interval)`，对齐到间隔边界
+- **去重保护：** 对齐后按时间戳去重（保留每组最后一行），防止 JS `Value is null` 错误
+  - 例如：10 根 30min K 线锁定到 1h → 对齐后得到 5 个唯一时间戳
+  - 同级别数据（5min→5min）不受影响，不会去重
+- `update()` / `update_from_tick()` 中的 `_single_datetime_format()` 使用锁定后的 `_interval` 对齐
+- `marker()` 中的时间对齐也同样受锁定影响
+
 ### 3.5 折线与柱状图
 
 ```python
@@ -489,6 +537,11 @@ get_last_trade(ticker)
 | 9 | `multi_chart` | 多 Chart 实例同时运行 | `multi_chart.py` |
 | 10 | `persistent_legend` | OHLC 常驻 + 简写开关示例 | `persistent_legend.py` |
 | 11 | `vertical_span` | 区域高亮: 两日期区间 + 多点标记 | `vertical_span.py` |
+| 12 | `audit` | 资源审计: 展示 Python/JS 侧审计用法 | `audit.py` |
+| 13 | `batch_update` | 批量增量更新: `update_bars()` + `update_from_ticks()` | `batch_update.py` |
+| 14 | `set_period` | 锁定时间级别: `set_period()` 演示 | `set_period.py` |
+| 15 | `pyside6_simple` | PySide6 + QtChart 嵌入测试 | `pyside6_simple.py` |
+| 16 | `pyside6_race` | PySide6 速度赛跑: update vs update_bars vs set 对比 | `pyside6_race.py` |
 
 ---
 
@@ -669,6 +722,26 @@ RuntimeError: Chart window has been destroyed. Cannot execute script.
 清理逻辑：
 - 主进程检测到子进程死亡 → 排空队列 → `close()` + `join_thread()` → 抛异常
 - 不会产生 `ObjectDisposedException` 或进程卡死
+
+### 9.9 Marker 漂移修复 [2026-05-06]
+
+**问题：** 调用 `chart.set(new_df)` 后，marker 位置可能偏移周围几根 K 线。
+
+**根因：** `set()` 会通过 `_df_datetime_format` → `_set_interval` 重新计算 `_interval`。Markers 的时间戳需要按新 `_interval` 对齐后重新发送到 JS 端，但 `set()` 中没有调用 `_update_markers()`。
+
+**修复：** 在 `AbstractChart.set()` 末尾和 `SeriesCommon.set()` 末尾，当 `self.markers` 非空时调用 `self._update_markers()`。
+
+```python
+# AbstractChart.set() 末尾（abstract.py）
+if self.markers:
+    self._update_markers()
+
+# SeriesCommon.set() 末尾
+if self.markers:
+    self._update_markers()
+```
+
+这样 `set()` 后 markers 会以新的 `_interval` 重新对齐发送，不再漂移。
 
 ---
 
@@ -862,7 +935,10 @@ arg = self._interval * (arg.timestamp() // self._interval) + self.offset
 
 | 操作 | `_interval` 是否重算 | 来源 |
 |------|---------------------|------|
-| `set(df)` | ✅ 是 | 从 `df['time'].diff().value_counts()` 推断最常见间隔 |
+| `set(df)` (未锁定) | ✅ 是 | 从 `df['time'].diff().value_counts()` 推断最常见间隔 |
+| `set(df)` (已锁定) | ❌ 否 | 使用 `set_period()` 设定的值 |
+| `set_period(seconds)` | ✅ 设为指定值 | 手动锁定 |
+| `set_period(None)` | ❌ 保持 | 解锁，下次 `set()` 会重算 |
 | `update(series)` | ❌ 否 | 使用已有的 `_interval` |
 | `update_from_tick(tick)` | ❌ 否 | 使用已有的 `_interval` |
 | `set(None)` 清空 | ❌ 不变 | 下次 `set()` 会重算 |

@@ -10,7 +10,7 @@ Or run individual test files directly:
 """
 
 if __name__ == '__main__':
-    import subprocess, sys
+    import subprocess, sys, os
 
     tests = [
         'test_cleanup.py',
@@ -20,7 +20,7 @@ if __name__ == '__main__':
     results = []
     for t in tests:
         print(f"\n--- Running {t} ---")
-        ret = subprocess.run([sys.executable, t], cwd=__file__)
+        ret = subprocess.run([sys.executable, t], cwd=os.path.dirname(__file__))
         ok = ret.returncode == 0
         results.append((t, ok))
 

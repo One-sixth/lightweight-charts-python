@@ -176,6 +176,27 @@ class SeriesCommon(Pane):
         self.data = pd.DataFrame()
         self.markers = {}
         self.pane_index = pane_index
+        self._period_locked = False
+
+    def set_period(self, seconds: Optional[int] = None):
+        """
+        Locks the chart's time interval to the given value in seconds.
+        When locked, set() will skip automatic interval detection,
+        using the locked interval for time alignment instead.
+        
+        :param seconds: The interval in seconds to lock to, or None to unlock.
+        
+        Example::
+        
+            chart.set_period(60)       # lock to 1-minute bars
+            chart.set_period(300)      # lock to 5-minute bars
+            chart.set_period(None)     # unlock, re-enable auto-detection
+        """
+        if seconds is not None:
+            self._interval = seconds
+            self._period_locked = True
+        else:
+            self._period_locked = False
 
     def _set_interval(self, df: pd.DataFrame):
         if not pd.api.types.is_datetime64_any_dtype(df['time']):
@@ -221,12 +242,19 @@ class SeriesCommon(Pane):
     def _df_datetime_format(self, df: pd.DataFrame, exclude_lowercase=None):
         df = df.copy()
         df.columns = self._format_labels(df, df.columns, df.index, exclude_lowercase)
-        self._set_interval(df)
+        if not self._period_locked:
+            self._set_interval(df)
         assert pd.api.types.is_datetime64_any_dtype(df['time']), "df['time'] must be datetime type."
         # 清除时区信息
         df['time'] = df['time'].dt.tz_localize(None)
         # Solution for pandas 1.x and 2.x:
         df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
+        # When period is locked, align all time values to the locked interval
+        if self._period_locked:
+            df['time'] = (self._interval * (df['time'] // self._interval)).astype(int)
+            # Deduplicate timestamps: keep last row per time to prevent JS
+            # "Value is null" errors from duplicate timestamps in setData()
+            df = df.groupby('time', as_index=False).last()
         return df
 
     def _series_datetime_format(self, series: pd.Series, exclude_lowercase=None):
@@ -275,6 +303,8 @@ class SeriesCommon(Pane):
         self.data = df.copy()
         self._last_bar = df.iloc[-1]
         self.run_script(f'{self.id}.series.setData({js_data(df)}); ')
+        if self.markers:
+            self._update_markers()
 
     def update(self, series: pd.Series):
         series = self._series_datetime_format(series, exclude_lowercase=self.name)
@@ -734,6 +764,9 @@ class Candlestick(SeriesCommon):
         ''')
         # sync interval to JS for crosshair time formatting
         self.run_script(f'{self._chart.id}._interval = {int(self._interval)}')
+        # re-send markers with updated interval alignment to prevent drift
+        if self.markers:
+            self._update_markers()
         # TODO keep drawings doesn't work consistenly w
         if keep_drawings:
             self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
@@ -837,6 +870,123 @@ class Candlestick(SeriesCommon):
             if 'volume' in series:
                 bar['volume'] = series['volume']
         self.update(bar, _from_tick=True)
+
+    def update_bars(self, df: pd.DataFrame):
+        """
+        Batch-updates the chart with multiple OHLCV bars at once.
+        
+        Processes each row from the DataFrame using the same logic as update(),
+        but collects all JavaScript commands into a single batch for efficiency.
+        
+        :param df: DataFrame with columns: date/time, open, high, low, close,
+                   and optionally volume, open_interest.
+        """
+        if df.empty:
+            return
+        
+        df = df.copy()
+        df.columns = self._format_labels(df, df.columns, df.index, None)
+        js_commands = []
+        
+        for _, row in df.iterrows():
+            series = self._series_datetime_format(row)
+            is_new_bar = False
+            
+            if series['time'] != self._last_bar['time']:
+                self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
+                self.candle_data = pd.concat([self.candle_data, series.to_frame().T], ignore_index=True)
+                is_new_bar = True
+            
+            self._last_bar = series
+            js_commands.append(f'{self.id}.series.update({js_data(series)})')
+            
+            if 'volume' in series:
+                volume = series.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
+                volume['color'] = self._volume_up_color if series['close'] > series['open'] else self._volume_down_color
+                js_commands.append(f'{self.id}.volumeSeries.update({js_data(volume)})')
+            
+            if 'open_interest' in series:
+                ts = series['time']
+                oi_val = series['open_interest']
+                js_commands.append(f'''
+                    if (!{self._chart.id}.openInterestSeries) {{
+                        {self._chart.id}.createOpenInterestSeries(0);
+                    }}
+                    {self._chart.id}.openInterestSeries.update({{time: {ts}, value: {oi_val}}});
+                ''')
+            
+            if is_new_bar:
+                self._chart.events.new_bar._emit(self)
+        
+        # Send all JS commands in one batch
+        self.run_script('; '.join(js_commands))
+
+    def update_from_ticks(self, df: pd.DataFrame, cumulative_volume: bool = False):
+        """
+        Batch-updates the chart from multiple ticks at once.
+        
+        Processes each tick row using the same logic as update_from_tick(),
+        but collects all JavaScript commands into a single batch for efficiency.
+        
+        :param df: DataFrame with columns: date/time, price, and optionally volume.
+        :param cumulative_volume: If True, adds tick volume onto the latest bar's volume.
+        """
+        if df.empty:
+            return
+        
+        df = df.copy()
+        df.columns = self._format_labels(df, df.columns, df.index, None)
+        js_commands = []
+        
+        for _, row in df.iterrows():
+            series = self._series_datetime_format(row)
+            
+            if series['time'] < self._last_bar['time']:
+                raise ValueError(
+                    f'Trying to update tick of time "{pd.to_datetime(series["time"])}", '
+                    f'which occurs before the last bar time of '
+                    f'"{pd.to_datetime(self._last_bar["time"])}".'
+                )
+            
+            bar = pd.Series(dtype='float64')
+            is_new_bar = False
+            
+            if series['time'] == self._last_bar['time']:
+                bar = self._last_bar
+                bar['high'] = max(self._last_bar['high'], series['price'])
+                bar['low'] = min(self._last_bar['low'], series['price'])
+                bar['close'] = series['price']
+                if 'volume' in series:
+                    if cumulative_volume:
+                        bar['volume'] += series['volume']
+                    else:
+                        bar['volume'] = series['volume']
+            else:
+                for key in ('open', 'high', 'low', 'close'):
+                    bar[key] = series['price']
+                bar['time'] = series['time']
+                if 'volume' in series:
+                    bar['volume'] = series['volume']
+                is_new_bar = True
+            
+            # Update Python state
+            if bar['time'] != self._last_bar['time']:
+                self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
+                self.candle_data = pd.concat([self.candle_data, bar.to_frame().T], ignore_index=True)
+            
+            self._last_bar = bar
+            js_commands.append(f'{self.id}.series.update({js_data(bar)})')
+            
+            if 'volume' in bar:
+                volume = bar.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
+                volume['color'] = self._volume_up_color if bar['close'] > bar['open'] else self._volume_down_color
+                js_commands.append(f'{self.id}.volumeSeries.update({js_data(volume)})')
+            
+            if is_new_bar:
+                self._chart.events.new_bar._emit(self)
+        
+        # Send all JS commands in one batch
+        self.run_script('; '.join(js_commands))
 
     def price_scale(
         self,
