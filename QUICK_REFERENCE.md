@@ -475,6 +475,7 @@ chart.update_open_interest(series)
 - 持仓量使用 `priceScaleId: 'oi_scale'`（LineSeries）
 - 两者 `scaleMargins: {top: 0.8, bottom: 0}` 共享同一视觉区域
 - 各自 `autoScale: true`，缩放互不影响
+- OI series 在图表初始化时自动创建，**默认隐藏**；有数据时自动显示，无数据时自动隐藏
 
 ```python
 from lightweight_charts import PolygonChart

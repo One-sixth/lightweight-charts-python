@@ -667,7 +667,11 @@ class Candlestick(SeriesCommon):
 
         self.candle_data = pd.DataFrame()
         self._open_interest_data = pd.DataFrame()
-        # self.run_script(f'{self.id}.makeCandlestickSeries()')
+        # Create OI series upfront (hidden by default) — no more lazy init needed
+        self.run_script(
+            f'{chart.id}.createOpenInterestSeries(0);'
+            f'{chart.id}.openInterestSeries.applyOptions({{visible: false}});'
+        )
 
     def _prepare_data(self, df: pd.DataFrame):
         if df is None or df.empty:
@@ -689,7 +693,8 @@ class Candlestick(SeriesCommon):
         """
         self.run_script(f'{self.id}.series.setData([])')
         self.run_script(f'{self.id}.volumeSeries.setData([])')
-        self.run_script(f'if ({self.id}.openInterestSeries) {self.id}.openInterestSeries.setData([])')
+        self.run_script(f'{self.id}.openInterestSeries.setData([])')
+        self.run_script(f'{self.id}.openInterestSeries.applyOptions({{visible: false}})')
         self.candle_data = pd.DataFrame()
         self._last_bar = None
         self._open_interest_data = pd.DataFrame()
@@ -705,13 +710,9 @@ class Candlestick(SeriesCommon):
             oi_df['time'] = (pd.to_datetime(oi_df['time']) - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
         self._open_interest_data = oi_df.copy()
         oi_js = js_data(oi_df)
-
-        # create OI series on first call; update data afterwards
         self.run_script(f'''
-            if (!{self._chart.id}.openInterestSeries) {{
-                {self._chart.id}.createOpenInterestSeries({pane_index});
-            }}
             {self._chart.id}.openInterestSeries.setData({oi_js});
+            {self._chart.id}.openInterestSeries.applyOptions({{visible: true}});
         ''')
 
     def _update_open_interest(self, series: pd.Series):
@@ -719,10 +720,8 @@ class Candlestick(SeriesCommon):
         ts = series['time'] if pd.api.types.is_numeric_dtype(type(series['time'])) else self._single_datetime_format(series['time'])
         oi_val = series['open_interest']
         self.run_script(f'''
-            if (!{self._chart.id}.openInterestSeries) {{
-                {self._chart.id}.createOpenInterestSeries(0);
-            }}
             {self._chart.id}.openInterestSeries.update({{time: {ts}, value: {oi_val}}});
+            {self._chart.id}.openInterestSeries.applyOptions({{visible: true}});
         ''')
 
     def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
@@ -908,12 +907,10 @@ class Candlestick(SeriesCommon):
             if 'open_interest' in series:
                 ts = series['time']
                 oi_val = series['open_interest']
-                js_commands.append(f'''
-                    if (!{self._chart.id}.openInterestSeries) {{
-                        {self._chart.id}.createOpenInterestSeries(0);
-                    }}
-                    {self._chart.id}.openInterestSeries.update({{time: {ts}, value: {oi_val}}});
-                ''')
+                js_commands.append(
+                    f'{self._chart.id}.openInterestSeries.update({{time: {ts}, value: {oi_val}}});'
+                    f'{self._chart.id}.openInterestSeries.applyOptions({{visible: true}});'
+                )
             
             if is_new_bar:
                 self._chart.events.new_bar._emit(self)
@@ -1160,19 +1157,19 @@ class AbstractChart(Candlestick, Pane):
 
     def delete_open_interest(self):
         """
-        Deletes the open interest line series from the chart.
+        Clears and hides the open interest line series from the chart.
+        The series object remains available for future data.
         """
         self.run_script(f'''
-            if ({self._chart.id}.openInterestSeries) {{
-                {self._chart.id}.chart.removeSeries({self._chart.id}.openInterestSeries);
-                delete {self._chart.id}.openInterestSeries;
-            }}
+            {self._chart.id}.openInterestSeries.setData([]);
+            {self._chart.id}.openInterestSeries.applyOptions({{visible: false}});
         ''')
+        self._open_interest_data = pd.DataFrame()
 
     def remove_subchart(self, subchart_id: str):
         """
         Removes and destroys a subchart created via create_subchart().
-
+        
         :param subchart_id: the .id attribute of the subchart AbstractChart.
         """
         if subchart_id not in self.subcharts:

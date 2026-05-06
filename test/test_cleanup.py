@@ -52,6 +52,8 @@ def js_audit(chart, timeout=5):
     """
     try:
         result = chart.win.run_script_and_get('Lib.Handler.audit()', timeout=timeout)
+        if not isinstance(result, str):
+            return None
         return tomllib.loads(result)
     except Exception as e:
         print(f"      [WARN] JS audit failed: {e}")
@@ -281,8 +283,8 @@ def test_resource_full_cleanup():
                 "extraSeriesCount back to baseline", errors, "extraSeries_leak"
             )
             all_clean &= log_check(
-                not main_final.get('hasOpenInterest'),
-                "OI cleaned in JS", errors, "oi_js_leak"
+                main_final.get('hasOpenInterest'),
+                "OI series always present (hidden when empty)", errors, "oi_js_missing"
             )
 
             # Non-handler leak check
