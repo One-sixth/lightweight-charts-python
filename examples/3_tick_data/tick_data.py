@@ -10,6 +10,7 @@ if __name__ == '__main__':
     df2 = pd.read_csv('ticks.csv')
 
     chart = Chart()
+    chart.legend(visible=True, ohlc=True, persistent=True)
 
     chart.set(df1)
 

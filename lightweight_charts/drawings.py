@@ -1,12 +1,11 @@
 import asyncio
 import json
 import pandas as pd
+import inspect
 
 from typing import Union, Optional
 
-from lightweight_charts.util import js_json
-
-from .util import NUM, Pane, as_enum, LINE_STYLE, TIME, snake_to_camel
+from .util import NUM, Pane, as_enum, LINE_STYLE, TIME, snake_to_camel, js_json
 
 def make_js_point(chart, time, price):
     formatted_time = chart._single_datetime_format(time)
@@ -24,6 +23,7 @@ class Drawing(Pane):
     def __init__(self, chart, func=None):
         super().__init__(chart.win)
         self.chart = chart
+        chart._drawings.append(self)
 
     def update(self, *points):
         formatted_points = []
@@ -36,7 +36,12 @@ class Drawing(Pane):
         """
         Irreversibly deletes the drawing.
         """
-        self.run_script(f'{self.id}.detach()')
+        if self in self.chart._drawings:
+            self.chart._drawings.remove(self)
+        self.run_script(f'''
+            {self.id}.detach()
+            delete {self.id}
+        ''')
 
     def options(self, color='#1E80F0', style='solid', width=4):
         self.run_script(f'''{self.id}.applyOptions({{
@@ -59,8 +64,6 @@ class TwoPointDrawing(Drawing):
         func=None
     ):
         super().__init__(chart, func)
-
-
 
         options_string = '\n'.join(f'{key}: {val},' for key, val in options.items())
 
@@ -105,7 +108,7 @@ class HorizontalLine(Drawing):
             self.price = float(p)
             await func(chart, self)
 
-        self.win.handlers[self.id] = wrapper_async if asyncio.iscoroutinefunction(func) else wrapper
+        self.win.handlers[self.id] = wrapper_async if inspect.iscoroutinefunction(func) else wrapper
         self.run_script(f'{chart.id}.toolBox?.addNewDrawing({self.id})')
 
     def update(self, price: float):
@@ -248,33 +251,61 @@ class VerticalSpan(Pane):
                  color: str = 'rgba(252, 219, 3, 0.2)'):
         self._chart = series._chart
         super().__init__(self._chart.win)
-        start_time, end_time = pd.to_datetime(start_time), pd.to_datetime(end_time)
-        self.run_script(f'''
-        {self.id} = {self._chart.id}.chart.addHistogramSeries({{
-                color: '{color}',
-                priceFormat: {{type: 'volume'}},
-                priceScaleId: 'vertical_line',
-                lastValueVisible: false,
-                priceLineVisible: false,
-        }})
-        {self.id}.priceScale('').applyOptions({{
-            scaleMargins: {{top: 0, bottom: 0}}
-        }})
-        ''')
+        start_time = pd.to_datetime(start_time).tz_localize(None)
+        end_time = pd.to_datetime(end_time).tz_localize(None) if end_time else None
+
         if end_time is None:
-            if isinstance(start_time, pd.DatetimeIndex):
-                data = [{'time': time.timestamp(), 'value': 1} for time in start_time]
+            # Single time marker(s) — use thin bars
+            if hasattr(start_time, '__iter__') and not isinstance(start_time, pd.Timestamp):
+                data = [{'time': t.timestamp(), 'value': 1} for t in start_time]
             else:
                 data = [{'time': start_time.timestamp(), 'value': 1}]
-            self.run_script(f'{self.id}.setData({data})')
-        else:
             self.run_script(f'''
-            {self.id}.setData(calculateTrendLine(
-            {start_time.timestamp()}, 1, {end_time.timestamp()}, 1, {series.id}))
-            ''')
+var _vs = {self._chart.id}.chart.addSeries(LightweightCharts.HistogramSeries, {{
+    color: '{color}',
+    priceFormat: {{type: 'volume'}},
+    priceScaleId: 'vs_{self.id}',
+    lastValueVisible: false,
+    priceLineVisible: false,
+}});
+_vs.priceScale().applyOptions({{scaleMargins: {{top: 0.0, bottom: 0.0}}}});
+_vs.setData({json.dumps(data)});
+{self.id} = _vs;
+0
+        ''')
+        else:
+            # Range between two dates — use continuous fill
+            data = [
+                {'time': start_time.timestamp(), 'value': 1},
+                {'time': end_time.timestamp(), 'value': 1},
+            ]
+            self.run_script(f'''
+var _vs = {self._chart.id}.chart.addSeries(LightweightCharts.AreaSeries, {{
+    topColor: '{color}',
+    bottomColor: '{color}',
+    lineColor: '{color}',
+    lineWidth: 0,
+    lastValueVisible: false,
+    priceLineVisible: false,
+    crosshairMarkerVisible: false,
+    priceScaleId: 'vs_{self.id}',
+    autoscaleInfoProvider: () => ({{priceRange: {{minValue: 0, maxValue: 1}}}}),
+}});
+_vs.priceScale().applyOptions({{scaleMargins: {{top: 0.0, bottom: 0.0}}}});
+_vs.setData({json.dumps(data)});
+{self.id} = _vs;
+0
+        ''')
+        self._data = data
+        self._chart._drawings.append(self)
 
     def delete(self):
         """
         Irreversibly deletes the vertical span.
         """
-        self.run_script(f'{self._chart.id}.chart.removeSeries({self.id})')
+        if self in self._chart._drawings:
+            self._chart._drawings.remove(self)
+        self.run_script(f'''
+            {self._chart.id}.chart.removeSeries({self.id})
+            delete {self.id}
+        ''')

@@ -1,14 +1,19 @@
 import { ISeriesApi, LineData, Logical, MouseEventParams, PriceFormatBuiltIn, SeriesType } from "lightweight-charts";
 import { Handler } from "./handler";
-
+import { htmlToElement } from "./global-params";
 
 interface LineElement {
     name: string;
+    paneIndex: number;
     div: HTMLDivElement;
     row: HTMLDivElement;
-    toggle: HTMLDivElement,
-    series: ISeriesApi<SeriesType>,
+    toggle: HTMLDivElement;
+    series: ISeriesApi<SeriesType>;
     solid: string;
+}
+
+type LineDictionary = {
+    [key: number]: LineElement[];
 }
 
 export class Legend {
@@ -20,11 +25,13 @@ export class Legend {
     private percentEnabled: boolean = false;
     private linesEnabled: boolean = false;
     private colorBasedOnCandle: boolean = false;
+    public persistent: boolean = false;
+    public shorthand: boolean = true;
 
     private text: HTMLSpanElement;
     private candle: HTMLDivElement;
     public _lines: LineElement[] = [];
-
+    private _lines_grp: LineDictionary = {};
 
     constructor(handler: Handler) {
         this.legendHandler = this.legendHandler.bind(this)
@@ -33,13 +40,15 @@ export class Legend {
         this.ohlcEnabled = false;
         this.percentEnabled = false
         this.linesEnabled = false
+        this.persistent = false
+        this.shorthand = true
         this.colorBasedOnCandle = false
 
         this.div = document.createElement('div');
         this.div.classList.add("legend")
         this.div.style.maxWidth = `${(handler.scale.width * 100) - 8}vw`
         this.div.style.display = 'none';
-        
+
         const seriesWrapper = document.createElement('div');
         seriesWrapper.style.display = 'flex';
         seriesWrapper.style.flexDirection = 'row';
@@ -49,7 +58,7 @@ export class Legend {
         this.text = document.createElement('span')
         this.text.style.lineHeight = '1.8'
         this.candle = document.createElement('div')
-        
+
         seriesWrapper.appendChild(this.seriesContainer);
         this.div.appendChild(this.text)
         this.div.appendChild(this.candle)
@@ -71,7 +80,7 @@ export class Legend {
     //     if (this.linesEnabled) handler._seriesList.forEach(s => this.makeSeriesRow(s))
     // }
 
-    makeSeriesRow(name: string, series: ISeriesApi<SeriesType>) {
+    makeSeriesRow(name: string, series: ISeriesApi<SeriesType>, paneIndex: number) {
         const strokeColor = '#FFF';
         let openEye = `
     <path style="fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke:${strokeColor};stroke-opacity:1;stroke-miterlimit:4;" d="M 21.998437 12 C 21.998437 12 18.998437 18 12 18 C 5.001562 18 2.001562 12 2.001562 12 C 2.001562 12 5.001562 6 12 6 C 18.998437 6 21.998437 12 21.998437 12 Z M 21.998437 12 " transform="matrix(0.833333,0,0,0.833333,0,0)"/>
@@ -87,7 +96,6 @@ export class Legend {
         let div = document.createElement('div')
         let toggle = document.createElement('div')
         toggle.classList.add('legend-toggle-switch');
-
 
         let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         svg.setAttribute("width", "22");
@@ -119,18 +127,59 @@ export class Legend {
         row.appendChild(toggle)
         this.seriesContainer.appendChild(row)
 
-        const color = series.options().color;
+        const options = series.options() as any;
+        // 根据系列类型选择不同的颜色属性
+        let color: string;
+        const seriesType = series.seriesType();
+        if (seriesType === 'Line' || seriesType === 'Histogram') {
+            color = options.color;
+        } else if (seriesType === 'Area') {
+            color = options.topColor;
+        } else {
+            // 其他时候，检查是否有 color 属性或 topColor 属性，否则回退到 baseLineColor
+            // 检查是否有 color 属性
+            if ('color' in options) {
+                color = options.color;
+            }
+            // 检查是否有 topColor 属性
+            else if ('topColor' in options) {
+                color = options.topColor;
+            }
+            // 回退到 baseLineColor
+            else {
+                color = options.baseLineColor;
+            }
+        }
         this._lines.push({
             name: name,
+            paneIndex: paneIndex,
             div: div,
             row: row,
             toggle: toggle,
             series: series,
             solid: color.startsWith('rgba') ? color.replace(/[^,]+(?=\))/, '1') : color
         });
+
+        this._lines.sort((a,b) => a.paneIndex - b.paneIndex)
+        this._lines_grp = this._lines.reduce((acc:LineDictionary, item:LineElement) => {
+            if (!acc[item.paneIndex]) {
+                acc[item.paneIndex] = [];
+            }
+            acc[item.paneIndex].push(item);
+            return acc;
+        }, {});
+        this.seriesContainer.innerHTML = '';
+        for(const k in this._lines_grp) {
+            for(const l of this._lines_grp[k]) {
+                this.seriesContainer.appendChild(l.row);
+            }
+            this.seriesContainer.appendChild(htmlToElement("<br>")!);
+        }
     }
 
-    legendItemFormat(num: number, decimal: number) { return num.toFixed(decimal).toString().padStart(8, ' ') }
+    legendItemFormat(num: number, decimal: number) {
+      return num.toFixed(decimal).toString().padStart(8, ' ')
+    }
 
     shorthandFormat(num: number) {
         const absNum = Math.abs(num)
@@ -146,7 +195,7 @@ export class Legend {
         if (!this.ohlcEnabled && !this.linesEnabled && !this.percentEnabled) return;
         const options: any = this.handler.series.options()
 
-        if (!param.time) {
+        if (!param.time && !this.persistent) {
             this.candle.style.color = 'transparent'
             this.candle.innerHTML = this.candle.innerHTML.replace(options['upColor'], '').replace(options['downColor'], '')
             return
@@ -157,17 +206,18 @@ export class Legend {
 
         if (usingPoint) {
             const timeScale = this.handler.chart.timeScale();
-            let coordinate = timeScale.timeToCoordinate(param.time)
+            let coordinate = param.time ? timeScale.timeToCoordinate(param.time) : null;
             if (coordinate)
-            logical = timeScale.coordinateToLogical(coordinate.valueOf())
+                logical = timeScale.coordinateToLogical(coordinate.valueOf())
             if (logical)
-            data = this.handler.series.dataByIndex(logical.valueOf())
+                data = this.handler.series.dataByIndex(logical.valueOf())
         }
         else {
             data = param.seriesData.get(this.handler.series);
         }
 
         this.candle.style.color = ''
+        if (!param.time) return
         let str = '<span style="line-height: 1.8;">'
         if (data) {
             if (this.ohlcEnabled) {
@@ -175,18 +225,6 @@ export class Legend {
                 str += `| H ${this.legendItemFormat(data.high, this.handler.precision)} `
                 str += `| L ${this.legendItemFormat(data.low, this.handler.precision)} `
                 str += `| C ${this.legendItemFormat(data.close, this.handler.precision)} `
-            }
-
-            if (this.percentEnabled) {
-                let percentMove = ((data.close - data.open) / data.open) * 100
-                let color = percentMove > 0 ? options['upColor'] : options['downColor']
-                let percentStr = `${percentMove >= 0 ? '+' : ''}${percentMove.toFixed(2)} %`
-
-                if (this.colorBasedOnCandle) {
-                    str += `| <span style="color: ${color};">${percentStr}</span>`
-                } else {
-                    str += '| ' + percentStr
-                }
             }
 
             if (this.handler.volumeSeries) {
@@ -198,8 +236,33 @@ export class Legend {
                     volumeData = param.seriesData.get(this.handler.volumeSeries)
                 }
                 if (volumeData) {
-                    str += this.ohlcEnabled ? `<br>V ${this.shorthandFormat(volumeData.value)}` : ''
+                    str += this.ohlcEnabled ? `| V ${this.shorthand ? this.shorthandFormat(volumeData.value) : volumeData.value}` : ''
                 }
+            }
+
+            if (this.handler.openInterestSeries) {
+                let oiData: any
+                if (logical) {
+                    oiData = this.handler.openInterestSeries.dataByIndex(logical)
+                } else {
+                    oiData = param.seriesData.get(this.handler.openInterestSeries)
+                }
+                if (oiData) {
+                    str += `| OI ${this.shorthand ? this.shorthandFormat(oiData.value) : oiData.value}`
+                }
+            }
+
+            if (this.percentEnabled) {
+              let percentMove = ((data.close - data.open) / data.open) * 100;
+              let color = percentMove > 0 ? options["upColor"] : options["downColor"];
+              let percentStr = `${percentMove >= 0 ? "+" : ""}${percentMove.toFixed(2)} %`;
+
+              if (this.colorBasedOnCandle) {
+                str += `| <span style="color: ${color};">${percentStr}</span>`;
+              }
+              else {
+                str += "| " + percentStr;
+              }
             }
         }
         this.candle.innerHTML = str + '</span>'
@@ -226,7 +289,7 @@ export class Legend {
                 const format = e.series.options().priceFormat as PriceFormatBuiltIn
                 price = this.legendItemFormat(data.value, format.precision)   // couldn't this just be line.options().precision?
             }
-            e.div.innerHTML = `<span style="color: ${e.solid};">▨</span>    ${e.name} : ${price}`
+            e.div.innerHTML = `<span style="color: ${e.solid};">️■</span>    ${e.name} : ${price}`
         })
     }
 }

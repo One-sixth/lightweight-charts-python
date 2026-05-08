@@ -1,10 +1,11 @@
-import asyncio
 import json
 import os
 from base64 import b64decode
 from datetime import datetime
 from typing import Callable, Union, Literal, List, Optional
 import pandas as pd
+import time as _time
+import tomllib
 
 from .table import Table
 from .toolbox import ToolBox
@@ -13,16 +14,16 @@ from .topbar import TopBar
 from .util import (
     BulkRunScript, Pane, Events, IDGen, as_enum, jbool, js_json, TIME, NUM, FLOAT,
     LINE_STYLE, MARKER_POSITION, MARKER_SHAPE, CROSSHAIR_MODE,
-    PRICE_SCALE_MODE, marker_position, marker_shape, js_data,
+    PRICE_SCALE_MODE, marker_position, marker_shape, js_data
 )
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(current_dir, 'js', 'index.html')
+INDEX_BN = os.path.join(current_dir, 'js', 'index_bn.html')
 
 
 class Window:
     _id_gen = IDGen()
-    handlers = {}
 
     def __init__(
         self,
@@ -30,7 +31,9 @@ class Window:
         js_api_code: Optional[str] = None,
         run_script: Optional[Callable] = None
     ):
+        self.handlers = {}
         self.loaded = False
+        self.destroyed = False
         self.script_func = script_func
         self.scripts = []
         self.final_scripts = []
@@ -55,12 +58,14 @@ class Window:
         self.scripts.extend(self.final_scripts)
         for script in self.scripts:
             initial_script += f'\n{script}'
-        self.script_func(initial_script)
+        self.script_func(f'(async ()=> {{ {initial_script} }})();')
 
     def run_script(self, script: str, run_last: bool = False):
         """
         For advanced users; evaluates JavaScript within the Webview.
         """
+        if self.destroyed:
+            raise RuntimeError("Chart window has been destroyed. Cannot execute script.")
         if self.script_func is None:
             raise AttributeError("script_func has not been set")
         if self.loaded:
@@ -73,9 +78,29 @@ class Window:
         else:
             self.scripts.append(script)
 
-    def run_script_and_get(self, script: str):
+    def run_script_and_get(self, script: str, timeout: float = 10.0):
         self.run_script(f'_~_~RETURN~_~_{script}')
-        return self._return_q.get()
+        deadline = _time.time() + timeout
+        while _time.time() < deadline:
+            try:
+                result = self._return_q.get_nowait()
+            except Exception:
+                _time.sleep(0.02)
+                continue
+            if result is None:
+                raise RuntimeError(
+                    f"JS evaluation error for: {script[:120]}"
+                )
+            return result
+        raise TimeoutError(
+            f"run_script_and_get timed out after {timeout}s for: {script[:120]}"
+        )
+
+    def remove_handler(self, handler_id: str):
+        """
+        Removes a single event/message handler by its ID.
+        """
+        self.handlers.pop(handler_id, None)
 
     def create_table(
         self,
@@ -107,22 +132,18 @@ class Window:
         toolbox: bool = False
     ) -> 'AbstractChart':
         subchart = AbstractChart(
-            self,
-            width,
-            height,
-            scale_candles_only,
-            toolbox,
-            position=position
+            self, width, height, scale_candles_only, toolbox, position=position
         )
         if not sync_id:
             return subchart
-        self.run_script(f'''
-            Lib.Handler.syncCharts(
-                {subchart.id},
-                {sync_id},
-                {jbool(sync_crosshairs_only)}
-            )
-        ''', run_last=True)
+        # self.run_script(f'''
+        #     Lib.Handler.syncCharts(
+        #         {subchart.id},
+        #         {sync_id},
+        #         {jbool(sync_crosshairs_only)}
+        #     )
+        # ''', run_last=True
+        # )
         return subchart
 
     def style(
@@ -140,7 +161,7 @@ class Window:
 
 
 class SeriesCommon(Pane):
-    def __init__(self, chart: 'AbstractChart', name: str = ''):
+    def __init__(self, chart: 'AbstractChart', name: str = '', pane_index: int = 0):
         super().__init__(chart.win)
         self._chart = chart
         if hasattr(chart, '_interval'):
@@ -153,10 +174,36 @@ class SeriesCommon(Pane):
         self.offset = 0
         self.data = pd.DataFrame()
         self.markers = {}
+        self.pane_index = pane_index
+        self._period_locked = False
+
+    def set_period(self, seconds: Optional[int] = None):
+        """
+        Locks the chart's time interval to the given value in seconds.
+        When locked, set() will skip automatic interval detection,
+        using the locked interval for time alignment instead.
+
+        :param seconds: The interval in seconds to lock to, or None to unlock.
+
+        Example::
+
+            chart.set_period(60)       # lock to 1-minute bars
+            chart.set_period(300)      # lock to 5-minute bars
+            chart.set_period(None)     # unlock, re-enable auto-detection
+        """
+        if seconds is not None:
+            self._interval = seconds
+            self._period_locked = True
+        else:
+            self._period_locked = False
+
+    def pop(self, count: int = 1):
+        """从系列末尾移除指定数量的数据点。"""
+        self.run_script(f'{self.id}.series.pop({count})')
 
     def _set_interval(self, df: pd.DataFrame):
         if not pd.api.types.is_datetime64_any_dtype(df['time']):
-            df['time'] = pd.to_datetime(df['time'])
+            df['time'] = pd.to_datetime(df['time']).dt.tz_localize(None)
         common_interval = df['time'].diff().value_counts()
         if common_interval.empty:
             return
@@ -183,6 +230,7 @@ class SeriesCommon(Pane):
     def _format_labels(data, labels, index, exclude_lowercase):
         def rename(la, mapper):
             return [mapper[key] if key in mapper else key for key in la]
+
         if 'date' not in labels and 'time' not in labels:
             labels = labels.str.lower()
             if exclude_lowercase:
@@ -197,10 +245,19 @@ class SeriesCommon(Pane):
     def _df_datetime_format(self, df: pd.DataFrame, exclude_lowercase=None):
         df = df.copy()
         df.columns = self._format_labels(df, df.columns, df.index, exclude_lowercase)
-        self._set_interval(df)
-        if not pd.api.types.is_datetime64_any_dtype(df['time']):
-            df['time'] = pd.to_datetime(df['time'])
-        df['time'] = df['time'].astype('int64') // 10 ** 9
+        if not self._period_locked:
+            self._set_interval(df)
+        assert pd.api.types.is_datetime64_any_dtype(df['time']), "df['time'] must be datetime type."
+        # 清除时区信息
+        df['time'] = df['time'].dt.tz_localize(None)
+        # Solution for pandas 1.x and 2.x:
+        df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
+        # When period is locked, align all time values to the locked interval
+        if self._period_locked:
+            df['time'] = (self._interval * (df['time'] // self._interval)).astype(int)
+            # Deduplicate timestamps: keep last row per time to prevent JS
+            # "Value is null" errors from duplicate timestamps in setData()
+            df = df.groupby('time', as_index=False).last()
         return df
 
     def _series_datetime_format(self, series: pd.Series, exclude_lowercase=None):
@@ -212,9 +269,9 @@ class SeriesCommon(Pane):
     def _single_datetime_format(self, arg) -> float:
         if isinstance(arg, (str, int, float)) or not pd.api.types.is_datetime64_any_dtype(arg):
             try:
-                arg = pd.to_datetime(arg, unit='ms')
+                arg = pd.to_datetime(arg, unit='ms').tz_localize(None)
             except ValueError:
-                arg = pd.to_datetime(arg)
+                arg = pd.to_datetime(arg).tz_localize(None)
         arg = self._interval * (arg.timestamp() // self._interval)+self.offset
         return arg
 
@@ -232,6 +289,8 @@ class SeriesCommon(Pane):
         self.data = df.copy()
         self._last_bar = df.iloc[-1]
         self.run_script(f'{self.id}.series.setData({js_data(df)}); ')
+        if self.markers:
+            self._update_markers()
 
     def update(self, series: pd.Series):
         series = self._series_datetime_format(series, exclude_lowercase=self.name)
@@ -241,10 +300,14 @@ class SeriesCommon(Pane):
             self.data.loc[self.data.index[-1]] = self._last_bar
             self.data = pd.concat([self.data, series.to_frame().T], ignore_index=True)
         self._last_bar = series
-        self.run_script(f'{self.id}.series.update({js_data(series)})')
+        self.run_script(f'{self.id}.series.update({js_data(series)});')
 
     def _update_markers(self):
-        self.run_script(f'{self.id}.series.setMarkers({json.dumps(list(self.markers.values()))})')
+        if not self.markers:
+            self.run_script(f'{self.id}.seriesMarkers.setMarkers([])')
+            return
+        str_markers = json.dumps(list(self.markers.values()))
+        self.run_script(f'{self.id}.seriesMarkers.setMarkers({str_markers})')
 
     def marker_list(self, markers: list):
         """
@@ -260,17 +323,22 @@ class SeriesCommon(Pane):
         markers = markers.copy()
         marker_ids = []
         for marker in markers:
-            marker_id = self.win._id_gen.generate()
+            marker_id = self.win._id_gen.generate('Marker_')
             self.markers[marker_id] = {
                 "time": self._single_datetime_format(marker['time']),
                 "position": marker_position(marker['position']),
                 "color": marker['color'],
                 "shape": marker_shape(marker['shape']),
                 "text": marker['text'],
+                "price": marker.get('price', None),
+                "size": marker.get('size', 1),
             }
             marker_ids.append(marker_id)
         self._update_markers()
         return marker_ids
+
+    def _clear_marker_list(self):
+        self.markers = {}
 
     def marker(self, time: Optional[datetime] = None, position: MARKER_POSITION = 'below',
                shape: MARKER_SHAPE = 'arrow_up', color: str = '#2196F3', text: str = ''
@@ -288,15 +356,16 @@ class SeriesCommon(Pane):
             formatted_time = self._last_bar['time'] if not time else self._single_datetime_format(time)
         except TypeError:
             raise TypeError('Chart marker created before data was set.')
-        marker_id = self.win._id_gen.generate()
+        marker_id = self.win._id_gen.generate('Marker_')
 
-        self.markers[marker_id] = {
-            "time": formatted_time,
+        marker_dict = {
+            "time": int(formatted_time),
             "position": marker_position(position),
             "color": color,
             "shape": marker_shape(shape),
             "text": text,
         }
+        self.markers[marker_id] = marker_dict
         self._update_markers()
         return marker_id
 
@@ -373,13 +442,15 @@ class SeriesCommon(Pane):
         self.markers.clear()
         self._update_markers()
 
-    def price_line(self, label_visible: bool = True, line_visible: bool = True, title: str = ''):
-        self.run_script(f'''
-        {self.id}.series.applyOptions({{
-            lastValueVisible: {jbool(label_visible)},
-            priceLineVisible: {jbool(line_visible)},
-            title: '{title}',
-        }})''')
+    def create_price_line(self, price: float = 0.0, color: str = 'rgba(214, 237, 255, 0.6)',
+            style: LINE_STYLE = 'large_dashed', width: int = 1, price_label: bool = False,
+            title: str = '') -> 'PriceLine':
+        """
+        Creates a horizontal price line on the series.
+
+        Returns a PriceLine object with a delete() method.
+        """
+        return PriceLine(self, price, color, style, width, price_label, title)
 
     def precision(self, precision: int):
         """
@@ -424,10 +495,69 @@ class SeriesCommon(Pane):
         return VerticalSpan(self, start_time, end_time, color)
 
 
-class Line(SeriesCommon):
-    def __init__(self, chart, name, color, style, width, price_line, price_label, price_scale_id=None, crosshair_marker=True):
+class PriceLine(Pane):
+    """
+    A price line drawn on the series (created via create_price_line).
 
-        super().__init__(chart, name)
+    Use .delete() to remove it.
+    """
+
+    def __init__(self, chart: 'AbstractChart', price: float, color: str,
+                 style: str, width: int, price_label: bool, title: str):
+        super().__init__(chart.win)
+        self._chart = chart
+        chart._price_lines.append(self)
+        self.run_script(f'''
+        {self.id} = {self._chart.id}.series.createPriceLine(
+            {{
+                price: {price},
+                color: '{color}',
+                lineStyle: {as_enum(style, LINE_STYLE)},
+                lineWidth: {width},
+                axisLabelVisible: {jbool(price_label)},
+                title: '{title}',
+            }},
+        );0
+        ''')
+
+    def delete(self):
+        """
+        Removes the price line from the series.
+        """
+        self._chart._price_lines.remove(self) if self in self._chart._price_lines else None
+        self.run_script(f'''
+        {self._chart.id}.series.removePriceLine({self.id})
+        delete {self.id}
+        ''')
+
+    def update(self, price: Optional[float] = None, color: Optional[str] = None,
+               style: Optional[str] = None, width: Optional[int] = None,
+               title: Optional[str] = None):
+        """
+        Updates the price line options.
+        """
+        opts = {}
+        if price is not None:
+            opts['price'] = price
+        if color is not None:
+            opts['color'] = color
+        if style is not None:
+            opts['lineStyle'] = as_enum(style, LINE_STYLE)
+        if width is not None:
+            opts['lineWidth'] = width
+        if title is not None:
+            opts['title'] = title
+        if not opts:
+            return
+        self.run_script(f'{self.id}.applyOptions({js_json(opts)})')
+
+
+class Line(SeriesCommon):
+    def __init__(self, chart, name, color, style, width, price_line, price_label, price_scale_id=None,
+                 crosshair_marker=True, pane_index: int = 0,
+    ):
+
+        super().__init__(chart, name, pane_index)
         self.color = color
 
         self.run_script(f'''
@@ -440,7 +570,7 @@ class Line(SeriesCommon):
                     lastValueVisible: {jbool(price_label)},
                     priceLineVisible: {jbool(price_line)},
                     crosshairMarkerVisible: {jbool(crosshair_marker)},
-                    priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'}
+                    priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
                     {"""autoscaleInfoProvider: () => ({
                             priceRange: {
                                 minValue: 1_000_000_000,
@@ -448,24 +578,10 @@ class Line(SeriesCommon):
                             },
                         }),
                     """ if chart._scale_candles_only else ''}
-                }}
+                }},
+                {pane_index}
             )
         null''')
-
-    # def _set_trend(self, start_time, start_value, end_time, end_value, ray=False, round=False):
-    #     if round:
-    #         start_time = self._single_datetime_format(start_time)
-    #         end_time = self._single_datetime_format(end_time)
-    #     else:
-    #         start_time, end_time = pd.to_datetime((start_time, end_time)).astype('int64') // 10 ** 9
-
-    #     self.run_script(f'''
-    #     {self._chart.id}.chart.timeScale().applyOptions({{shiftVisibleRangeOnNewBar: false}})
-    #     {self.id}.series.setData(
-    #         calculateTrendLine({start_time}, {start_value}, {end_time}, {end_value},
-    #                             {self._chart.id}, {jbool(ray)}))
-    #     {self._chart.id}.chart.timeScale().applyOptions({{shiftVisibleRangeOnNewBar: true}})
-    #     ''')
 
     def delete(self):
         """
@@ -473,22 +589,23 @@ class Line(SeriesCommon):
         """
         self._chart._lines.remove(self) if self in self._chart._lines else None
         self.run_script(f'''
+            {self._chart.id}.chart.removeSeries({self.id}.series)
+            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series); if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1)
+
             {self.id}legendItem = {self._chart.id}.legend._lines.find((line) => line.series == {self.id}.series)
             {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
+            try {{ if ({self.id}legendItem) {self._chart.id}.legend.div.removeChild({self.id}legendItem.row) }} catch(e) {{}}
 
-            if ({self.id}legendItem) {{
-                {self._chart.id}.legend.div.removeChild({self.id}legendItem.row)
-            }}
-
-            {self._chart.id}.chart.removeSeries({self.id}.series)
             delete {self.id}legendItem
             delete {self.id}
         ''')
 
 
 class Histogram(SeriesCommon):
-    def __init__(self, chart, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom):
-        super().__init__(chart, name)
+    def __init__(self, chart, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom,
+                 pane_index: int = 0
+    ):
+        super().__init__(chart, name, pane_index)
         self.color = color
         self.run_script(f'''
         {self.id} = {chart.id}.createHistogramSeries(
@@ -497,28 +614,28 @@ class Histogram(SeriesCommon):
                 color: '{color}',
                 lastValueVisible: {jbool(price_label)},
                 priceLineVisible: {jbool(price_line)},
-                priceScaleId: '{self.id}',
+                priceScaleId: {'undefined'},
                 priceFormat: {{type: "volume"}},
             }},
-            // precision: 2,
+            {pane_index}
         )
         {self.id}.series.priceScale().applyOptions({{
             scaleMargins: {{top:{scale_margin_top}, bottom: {scale_margin_bottom}}}
-        }})''')
+        }});0''')
 
     def delete(self):
         """
         Irreversibly deletes the histogram.
         """
+        self._chart._lines.remove(self) if self in self._chart._lines else None
         self.run_script(f'''
+            {self._chart.id}.chart.removeSeries({self.id}.series)
+            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series); if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1)
+
             {self.id}legendItem = {self._chart.id}.legend._lines.find((line) => line.series == {self.id}.series)
             {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
+            try {{ if ({self.id}legendItem) {self._chart.id}.legend.div.removeChild({self.id}legendItem.row) }} catch(e) {{}}
 
-            if ({self.id}legendItem) {{
-                {self._chart.id}.legend.div.removeChild({self.id}legendItem.row)
-            }}
-
-            {self._chart.id}.chart.removeSeries({self.id}.series)
             delete {self.id}legendItem
             delete {self.id}
         ''')
@@ -537,8 +654,63 @@ class Candlestick(SeriesCommon):
         self._volume_down_color = 'rgba(200,127,130,0.8)'
 
         self.candle_data = pd.DataFrame()
+        self._open_interest_data = pd.DataFrame()
+        # Create OI series upfront (hidden by default) — no more lazy init needed
+        self.run_script(
+            f'{chart.id}.createOpenInterestSeries(0);'
+            f'{chart.id}.openInterestSeries.applyOptions({{visible: false}});'
+        )
 
-        # self.run_script(f'{self.id}.makeCandlestickSeries()')
+    def _prepare_data(self, df: pd.DataFrame):
+        if df is None or df.empty:
+            return None, None
+        df = self._df_datetime_format(df)
+        candle_df = df[['time', 'open', 'high', 'low', 'close']]
+
+        if 'volume' not in df:
+            return candle_df, None
+        volume = df[['time','volume']].rename(columns={'volume': 'value'})
+        volume['color'] = self._volume_down_color
+        volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+        return candle_df, volume
+
+    def clear_data(self):
+        """
+        Clears all OHLCV data from the chart without removing the series itself.
+        The chart will be empty and ready for new data via set().
+        """
+        self.run_script(f'{self.id}.series.setData([])')
+        self.run_script(f'{self.id}.volumeSeries.setData([])')
+        self.run_script(f'{self.id}.openInterestSeries.setData([])')
+        self.run_script(f'{self.id}.openInterestSeries.applyOptions({{visible: false}})')
+        self.candle_data = pd.DataFrame()
+        self._last_bar = None
+        self._open_interest_data = pd.DataFrame()
+
+    def _set_open_interest(self, df: pd.DataFrame, pane_index: int = 0):
+        """
+        Internal: creates or updates the open interest line series.
+        decoupled from volume scaling — uses its own 'oi_scale' price scale.
+        """
+        oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'}).copy()
+        # time may already be Unix seconds (from set()) or raw datetime (from set_open_interest())
+        if not pd.api.types.is_numeric_dtype(oi_df['time']):
+            oi_df['time'] = (pd.to_datetime(oi_df['time']) - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
+        self._open_interest_data = oi_df.copy()
+        oi_js = js_data(oi_df)
+        self.run_script(f'''
+            {self._chart.id}.openInterestSeries.setData({oi_js});
+            {self._chart.id}.openInterestSeries.applyOptions({{visible: true}});
+        ''')
+
+    def _update_open_interest(self, series: pd.Series):
+        """Internal: update the last OI point."""
+        ts = series['time'] if pd.api.types.is_numeric_dtype(type(series['time'])) else self._single_datetime_format(series['time'])
+        oi_val = series['open_interest']
+        self.run_script(f'''
+            {self._chart.id}.openInterestSeries.update({{time: {ts}, value: {oi_val}}});
+            {self._chart.id}.openInterestSeries.applyOptions({{visible: true}});
+        ''')
 
     def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
         """
@@ -552,16 +724,21 @@ class Candlestick(SeriesCommon):
             self.candle_data = pd.DataFrame()
             return
         df = self._df_datetime_format(df)
-        self.candle_data = df.copy()
+        df_copy = df.copy()
+        self.candle_data = df_copy[['time', 'open', 'high', 'low', 'close']]
         self._last_bar = df.iloc[-1]
-        self.run_script(f'{self.id}.series.setData({js_data(df)})')
+        candle_js_data = js_data(df[['time', 'open', 'high', 'low', 'close']])
+        self.run_script(f'{self.id}.series.setData({candle_js_data})')
 
-        if 'volume' not in df:
-            return
-        volume = df.drop(columns=['open', 'high', 'low', 'close']).rename(columns={'volume': 'value'})
-        volume['color'] = self._volume_down_color
-        volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-        self.run_script(f'{self.id}.volumeSeries.setData({js_data(volume)})')
+        if 'volume' in df:
+            volume = df[['time', 'volume']].rename(columns={'volume': 'value'})
+            volume['color'] = self._volume_down_color
+            volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+            volume_js_data = js_data(volume)
+            self.run_script(f'{self.id}.volumeSeries.setData({volume_js_data})')
+
+        if 'open_interest' in df:
+            self._set_open_interest(df)
 
         for line in self._lines:
             if line.name not in df.columns:
@@ -572,6 +749,11 @@ class Candlestick(SeriesCommon):
             if (!{self.id}.chart.priceScale("right").options.autoScale)
                 {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
         ''')
+        # sync interval to JS for crosshair time formatting
+        self.run_script(f'{self._chart.id}._interval = {int(self._interval)}')
+        # re-send markers with updated interval alignment to prevent drift
+        if self.markers:
+            self._update_markers()
         # TODO keep drawings doesn't work consistenly w
         if keep_drawings:
             self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
@@ -592,11 +774,14 @@ class Candlestick(SeriesCommon):
 
         self._last_bar = series
         self.run_script(f'{self.id}.series.update({js_data(series)})')
-        if 'volume' not in series:
-            return
-        volume = series.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
-        volume['color'] = self._volume_up_color if series['close'] > series['open'] else self._volume_down_color
-        self.run_script(f'{self.id}.volumeSeries.update({js_data(volume)})')
+
+        if 'volume' in series:
+            volume = series.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
+            volume['color'] = self._volume_up_color if series['close'] > series['open'] else self._volume_down_color
+            self.run_script(f'{self.id}.volumeSeries.update({js_data(volume)})')
+
+        if 'open_interest' in series:
+            self._update_open_interest(series)
 
     def update_from_tick(self, series: pd.Series, cumulative_volume: bool = False):
         """
@@ -626,6 +811,121 @@ class Candlestick(SeriesCommon):
                 bar['volume'] = series['volume']
         self.update(bar, _from_tick=True)
 
+    def update_bars(self, df: pd.DataFrame):
+        """
+        Batch-updates the chart with multiple OHLCV bars at once.
+
+        Processes each row from the DataFrame using the same logic as update(),
+        but collects all JavaScript commands into a single batch for efficiency.
+
+        :param df: DataFrame with columns: date/time, open, high, low, close,
+                   and optionally volume, open_interest.
+        """
+        if df.empty:
+            return
+
+        df = df.copy()
+        df.columns = self._format_labels(df, df.columns, df.index, None)
+        js_commands = []
+
+        for _, row in df.iterrows():
+            series = self._series_datetime_format(row)
+            is_new_bar = False
+
+            if series['time'] != self._last_bar['time']:
+                self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
+                self.candle_data = pd.concat([self.candle_data, series.to_frame().T], ignore_index=True)
+                is_new_bar = True
+
+            self._last_bar = series
+            js_commands.append(f'{self.id}.series.update({js_data(series)})')
+
+            if 'volume' in series:
+                volume = series.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
+                volume['color'] = self._volume_up_color if series['close'] > series['open'] else self._volume_down_color
+                js_commands.append(f'{self.id}.volumeSeries.update({js_data(volume)})')
+
+            if 'open_interest' in series:
+                ts = series['time']
+                oi_val = series['open_interest']
+                js_commands.append(
+                    f'{self._chart.id}.openInterestSeries.update({{time: {ts}, value: {oi_val}}});'
+                    f'{self._chart.id}.openInterestSeries.applyOptions({{visible: true}});'
+                )
+
+            if is_new_bar:
+                self._chart.events.new_bar._emit(self)
+
+        # Send all JS commands in one batch
+        self.run_script('; '.join(js_commands))
+
+    def update_from_ticks(self, df: pd.DataFrame, cumulative_volume: bool = False):
+        """
+        Batch-updates the chart from multiple ticks at once.
+
+        Processes each tick row using the same logic as update_from_tick(),
+        but collects all JavaScript commands into a single batch for efficiency.
+
+        :param df: DataFrame with columns: date/time, price, and optionally volume.
+        :param cumulative_volume: If True, adds tick volume onto the latest bar's volume.
+        """
+        if df.empty:
+            return
+
+        df = df.copy()
+        df.columns = self._format_labels(df, df.columns, df.index, None)
+        js_commands = []
+
+        for _, row in df.iterrows():
+            series = self._series_datetime_format(row)
+
+            if series['time'] < self._last_bar['time']:
+                raise ValueError(
+                    f'Trying to update tick of time "{pd.to_datetime(series["time"])}", '
+                    f'which occurs before the last bar time of '
+                    f'"{pd.to_datetime(self._last_bar["time"])}".'
+                )
+
+            bar = pd.Series(dtype='float64')
+            is_new_bar = False
+
+            if series['time'] == self._last_bar['time']:
+                bar = self._last_bar
+                bar['high'] = max(self._last_bar['high'], series['price'])
+                bar['low'] = min(self._last_bar['low'], series['price'])
+                bar['close'] = series['price']
+                if 'volume' in series:
+                    if cumulative_volume:
+                        bar['volume'] += series['volume']
+                    else:
+                        bar['volume'] = series['volume']
+            else:
+                for key in ('open', 'high', 'low', 'close'):
+                    bar[key] = series['price']
+                bar['time'] = series['time']
+                if 'volume' in series:
+                    bar['volume'] = series['volume']
+                is_new_bar = True
+
+            # Update Python state
+            if bar['time'] != self._last_bar['time']:
+                self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
+                self.candle_data = pd.concat([self.candle_data, bar.to_frame().T], ignore_index=True)
+
+            self._last_bar = bar
+            js_commands.append(f'{self.id}.series.update({js_data(bar)})')
+
+            if 'volume' in bar:
+                volume = bar.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
+                volume['color'] = self._volume_up_color if bar['close'] > bar['open'] else self._volume_down_color
+                js_commands.append(f'{self.id}.volumeSeries.update({js_data(volume)})')
+
+            if is_new_bar:
+                self._chart.events.new_bar._emit(self)
+
+        # Send all JS commands in one batch
+        self.run_script('; '.join(js_commands))
+
     def price_scale(
         self,
         auto_scale: bool = True,
@@ -640,7 +940,9 @@ class Candlestick(SeriesCommon):
         entire_text_only: bool = False,
         visible: bool = True,
         ticks_visible: bool = False,
-        minimum_width: int = 0
+        tick_mark_density: float = None,
+        minimum_width: int = 0,
+        perm_width: int = 0
     ):
         self.run_script(f'''
             {self.id}.series.priceScale().applyOptions({{
@@ -655,8 +957,29 @@ class Candlestick(SeriesCommon):
                 entireTextOnly: {jbool(entire_text_only)},
                 visible: {jbool(visible)},
                 ticksVisible: {jbool(ticks_visible)},
-                minimumWidth: {minimum_width}
+                {f'tickMarkDensity: {tick_mark_density},' if tick_mark_density is not None else ''}
+                minimumWidth: {minimum_width},
+                permWidth: {perm_width}
             }})''')
+
+    def set_price_format(self, type: Literal['base', 'custom'] = 'base', base: int = None, precision: int = 2):
+        """
+        Set the price format for the price scale. The 'base' format avoids floating point precision issues.
+        :param type: 'base' or 'custom' (v5.2.0+). Default 'base'.
+        :param base: The base value for format 'base'. Required when type='base'.
+        :param precision: Number of decimal places. Default 2.
+        """
+        if type == 'base':
+            if base is None:
+                raise ValueError("base parameter is required when type='base'")
+            options = {'type': 'base', 'base': base, 'precision': precision}
+        else:
+            options = {'type': type, 'precision': precision}
+        self.run_script(f'''
+            {self.id}.series.priceScale().applyOptions({{
+                priceFormat: {js_json(options)}
+            }})
+        ''')
 
     def candle_style(
             self, up_color: str = 'rgba(39, 157, 130, 100)', down_color: str = 'rgba(200, 97, 100, 100)',
@@ -691,24 +1014,32 @@ class Candlestick(SeriesCommon):
 
 
 class AbstractChart(Candlestick, Pane):
+
     def __init__(self, window: Window, width: float = 1.0, height: float = 1.0,
                  scale_candles_only: bool = False, toolbox: bool = False,
-                 autosize: bool = True, position: FLOAT = 'left'):
+                 autosize: bool = True, position: FLOAT = 'left', pane_index:int = 0, marker_auto_scale: bool = True
+                 ):
         Pane.__init__(self, window)
 
         self._lines = []
+        self.subcharts = []
+        self._drawings = []
+        self._tables = []
+        self._price_lines: List['PriceLine'] = []
         self._scale_candles_only = scale_candles_only
         self._width = width
         self._height = height
         self.events: Events = Events(self)
 
-        from lightweight_charts.polygon import PolygonAPI
+        from .polygon import PolygonAPI
+
         self.polygon: PolygonAPI = PolygonAPI(self)
 
-        self.run_script(
-            f'{self.id} = new Lib.Handler("{self.id}", {width}, {height}, "{position}", {jbool(autosize)})')
+        self._html_chart_init = f'{self.id} = new Lib.Handler("{self.id}", {width}, {height}, "{position}", {jbool(autosize)}, {pane_index}, {jbool(marker_auto_scale)})'
+        self.run_script(self._html_chart_init + ';0')
 
         Candlestick.__init__(self, self)
+        self.subcharts.append(self.id)
 
         self.topbar: TopBar = TopBar(self)
         if toolbox:
@@ -720,28 +1051,219 @@ class AbstractChart(Candlestick, Pane):
         """
         self.run_script(f'{self.id}.chart.timeScale().fitContent()')
 
+    def clear_handlers(self):
+        """
+        Clears all registered event/message handlers in the Window.
+        Use this when resetting a chart to prevent handler accumulation
+        in long-running embedded applications.
+        """
+        self.win.handlers.clear()
+
+    def reset(self):
+        """
+        Resets the chart to a clean initial state without destroying the WebView.
+
+        Performs:
+        1. Clears all OHLCV data (candle + volume series)
+        2. Deletes all extra Line and Histogram series
+        3. Clears all price markers
+        4. Clears all toolbox drawings (JS + Python)
+        5. Resets the subcharts list
+        6. Clears event handlers to prevent accumulation
+
+        After reset(), the chart is ready for new data via set().
+        TopBar widgets and styling options are preserved.
+        """
+        self.clear_data()
+        for line in list(self._lines):
+            line.delete()
+        self.delete_open_interest()
+        self.clear_markers()
+        self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.clearDrawings()')
+        if hasattr(self, 'toolbox'):
+            self.toolbox.drawings.clear()
+        # clean up subcharts (skip the main chart itself)
+        for sub_id in list(self.subcharts):
+            if sub_id != self.id:
+                self.remove_subchart(sub_id)
+        self.subcharts = [self.id]
+        self.clear_handlers()
+
+    def set_open_interest(self, df: pd.DataFrame, pane_index: int = 0):
+        """
+        Sets or replaces the open interest line series data.
+
+        The open interest is drawn as a line series in the volume sub-pane,
+        with its own independent y-axis scale (decoupled from volume scaling).
+
+        :param df: columns: 'time' (datetime) and one additional column for OI values.
+                   Column name can be anything — the second column is used as the value.
+        :param pane_index: which pane to draw in (default 0, same as volume).
+        """
+        df = df.copy()
+        if 'open_interest' not in df.columns:
+            oi_col = [c for c in df.columns if c != 'time'][0]
+            df = df.rename(columns={oi_col: 'open_interest'})
+        self._set_open_interest(df, pane_index)
+
+    def update_open_interest(self, series: pd.Series):
+        """
+        Updates the last open interest value in real-time.
+
+        :param series: must contain 'time' and 'open_interest' (or use the index name).
+        """
+        if 'open_interest' not in series:
+            if series.name:
+                series['open_interest'] = series[series.name]
+        self._update_open_interest(series)
+
+    def delete_open_interest(self):
+        """
+        Clears and hides the open interest line series from the chart.
+        The series object remains available for future data.
+        """
+        self.run_script(f'''
+            {self._chart.id}.openInterestSeries.setData([]);
+            {self._chart.id}.openInterestSeries.applyOptions({{visible: false}});
+        ''')
+        self._open_interest_data = pd.DataFrame()
+
+    def remove_subchart(self, subchart_id: str):
+        """
+        Removes and destroys a subchart created via create_subchart().
+
+        :param subchart_id: the .id attribute of the subchart AbstractChart.
+        """
+        if subchart_id not in self.subcharts:
+            raise ValueError(f"Subchart {subchart_id} not found in this chart.")
+        self.subcharts.remove(subchart_id)
+        self.run_script(f'''
+            {subchart_id}.chart.remove();
+            {subchart_id}.wrapper.remove();
+            var _hid = Lib.Handler._all.findIndex(function(h) {{ return h.id === "{subchart_id}" }});
+            if (_hid >= 0) Lib.Handler._all.splice(_hid, 1);
+            delete {subchart_id};
+        ''')
+
+    def audit(self, use_js: bool = False):
+        """
+        审计当前 chart 的资源状态。
+
+        :param use_js: True 时从 JS 端获取完整审计信息（TOML 格式），
+                       False 时纯 Python 侧收集，返回 dict。
+        """
+        if use_js:
+            data = self.win.run_script_and_get('Lib.Handler.audit()', timeout=5)
+            return tomllib.loads(data)
+        else:
+            return self._audit_full()
+
+    def _audit_full(self) -> dict:
+        """
+        从 Python 侧收集所有资源的 ID、类型、参数，不依赖 JS 桥接。
+        """
+        info = {
+            'chart': {
+                'id': self.id,
+                'type': 'AbstractChart',
+                'has_data': not self.candle_data.empty,
+                'has_open_interest': not self._open_interest_data.empty,
+                'subchart_ids': [s for s in self.subcharts if s != self.id],
+            },
+            'lines': [],
+            'price_lines': [],
+            'markers': [],
+            'subcharts': [],
+            'tables': [],
+            'drawings': [],
+        }
+
+        # --- lines (including histograms) ---
+        for line in self._lines:
+            entry = {
+                'id': line.id,
+                'type': type(line).__name__,
+                'name': getattr(line, 'name', ''),
+                'color': getattr(line, 'color', ''),
+            }
+            if hasattr(line, 'data') and not line.data.empty:
+                entry['data_points'] = len(line.data)
+            info['lines'].append(entry)
+
+        # --- price lines ---
+        for pl in self._price_lines:
+            info['price_lines'].append({
+                'id': pl.id,
+                'type': 'PriceLine',
+            })
+
+        # --- markers ---
+        for mid, m in self.markers.items():
+            info['markers'].append({
+                'id': mid,
+                'type': 'Marker',
+                'time': m.get('time'),
+                'text': m.get('text', ''),
+                'shape': m.get('shape'),
+                'position': m.get('position'),
+            })
+
+        # --- subcharts ---
+        for sub_id in self.subcharts:
+            if sub_id != self.id:
+                info['subcharts'].append({
+                    'id': sub_id,
+                    'type': 'AbstractChart',
+                })
+
+        # --- drawings ---
+        for d in self._drawings:
+            entry = {
+                'id': d.id,
+                'type': type(d).__name__,
+            }
+            if hasattr(d, 'price'):
+                entry['price'] = d.price
+            info['drawings'].append(entry)
+
+        # --- tables ---
+        for t in self._tables:
+            info['tables'].append({
+                'id': t.id,
+                'type': 'Table',
+                'headings': list(t.headings) if hasattr(t, 'headings') else [],
+            })
+
+        # --- window handlers ---
+        info['handlers_count'] = len(self.win.handlers)
+
+        return info
+
     def create_line(
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
             style: LINE_STYLE = 'solid', width: int = 2,
-            price_line: bool = True, price_label: bool = True, price_scale_id: Optional[str] = None
+            price_line: bool = True, price_label: bool = True, price_scale_id: Optional[str] = None,
+            pane_index: int = 0
     ) -> Line:
         """
         Creates and returns a Line object.
         """
-        self._lines.append(Line(self, name, color, style, width, price_line, price_label, price_scale_id))
+        line = Line(self, name, color, style, width, price_line, price_label, price_scale_id, pane_index=pane_index)
+        self._lines.append(line)
         return self._lines[-1]
 
     def create_histogram(
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
             price_line: bool = True, price_label: bool = True,
-            scale_margin_top: float = 0.0, scale_margin_bottom: float = 0.0
+            scale_margin_top: float = 0.0, scale_margin_bottom: float = 0.0,
+            pane_index: int = 0,
     ) -> Histogram:
         """
         Creates and returns a Histogram object.
         """
-        return Histogram(
-            self, name, color, price_line, price_label,
-            scale_margin_top, scale_margin_bottom)
+        hist = Histogram(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index)
+        self._lines.append(hist)
+        return hist
 
     def lines(self) -> List[Line]:
         """
@@ -752,8 +1274,8 @@ class AbstractChart(Candlestick, Pane):
     def set_visible_range(self, start_time: TIME, end_time: TIME):
         self.run_script(f'''
         {self.id}.chart.timeScale().setVisibleRange({{
-            from: {pd.to_datetime(start_time).timestamp()},
-            to: {pd.to_datetime(end_time).timestamp()}
+            from: {pd.to_datetime(start_time).tz_localize(None).timestamp()},
+            to: {pd.to_datetime(end_time).tz_localize(None).timestamp()}
         }})
         ''')
 
@@ -772,9 +1294,20 @@ class AbstractChart(Candlestick, Pane):
 
     def time_scale(self, right_offset: int = 0, min_bar_spacing: float = 0.5,
                    visible: bool = True, time_visible: bool = True, seconds_visible: bool = False,
-                   border_visible: bool = True, border_color: Optional[str] = None):
+                   border_visible: bool = True, border_color: Optional[str] = None,
+                   right_offset_pixels: int = None,
+                   enable_conflation: bool = None,
+                   conflation_threshold_factor: float = None,
+                   precompute_conflation_on_init: bool = None,
+                   precompute_conflation_priority: str = None):
         """
         Options for the timescale of the chart.
+
+        :param right_offset_pixels: Margin from the right side of the chart in pixels (v5.0.9+).
+        :param enable_conflation: Enable data conflation for large datasets (v5.1.0+).
+        :param conflation_threshold_factor: Adjust the zoom level threshold for conflation (v5.1.0+).
+        :param precompute_conflation_on_init: Pre-calculate conflated data on initialization (v5.1.0+).
+        :param precompute_conflation_priority: Background computation priority (v5.1.0+).
         """
         self.run_script(f'''{self.id}.chart.applyOptions({{timeScale: {js_json(locals())}}})''')
 
@@ -852,25 +1385,51 @@ class AbstractChart(Candlestick, Pane):
             }}
         }})''')
 
+    def chart_options(self,
+                      hovered_series_on_top: bool = None,
+                      default_visible_price_scale_id: Literal['left', 'right'] = None,
+                      do_not_snap_to_hidden_series_indices: bool = None):
+        """
+        Set advanced chart-level options (v5.2.0+).
+
+        :param hovered_series_on_top: Render the currently hovered series
+                                      above other series in the same pane.
+        :param default_visible_price_scale_id: Which price scale to show
+                                               by default ('left'/'right').
+        :param do_not_snap_to_hidden_series_indices: When True, the crosshair
+                                                     ignores hidden series.
+        """
+        options = {}
+        if hovered_series_on_top is not None:
+            options['hoveredSeriesOnTop'] = hovered_series_on_top
+        if default_visible_price_scale_id is not None:
+            options['defaultVisiblePriceScaleId'] = default_visible_price_scale_id
+        if do_not_snap_to_hidden_series_indices is not None:
+            options['crosshair'] = {
+                'doNotSnapToHiddenSeriesIndices': do_not_snap_to_hidden_series_indices
+            }
+        if options:
+            self.run_script(f'''
+                {self.id}.chart.applyOptions({js_json(options)})
+            ''')
+
     def watermark(self, text: str, font_size: int = 44, color: str = 'rgba(180, 180, 200, 0.5)'):
         """
         Adds a watermark to the chart.
         """
-        self.run_script(f'''
-          {self.id}.chart.applyOptions({{
-              watermark: {{
-                  visible: true,
-                  horzAlign: 'center',
-                  vertAlign: 'center',
-                  ...{js_json(locals())}
-              }}
-          }})''')
+        self.run_script(f'''{self._chart.id}.createWatermark('{text}', {font_size}, '{color}')''')
 
-    def legend(self, visible: bool = False, ohlc: bool = True, percent: bool = True, lines: bool = True,
+    def legend(self, visible: bool = False, ohlc: bool = True, percent: bool = False, lines: bool = True,
                color: str = 'rgb(191, 195, 203)', font_size: int = 11, font_family: str = 'Monaco',
-               text: str = '', color_based_on_candle: bool = False):
+               text: str = '', color_based_on_candle: bool = False, persistent: bool = False,
+               shorthand: bool = True):
         """
         Configures the legend of the chart.
+
+        :param persistent: when True, OHLC info stays visible even when the
+                           mouse leaves the chart area.
+        :param shorthand: when True, volume and open interest are abbreviated
+                          (e.g. 24.5K, 1.2M). Set to False for full numbers.
         """
         l_id = f'{self.id}.legend'
         if not visible:
@@ -887,6 +1446,8 @@ class AbstractChart(Candlestick, Pane):
         {l_id}.percentEnabled = {jbool(percent)}
         {l_id}.linesEnabled = {jbool(lines)}
         {l_id}.colorBasedOnCandle = {jbool(color_based_on_candle)}
+        {l_id}.persistent = {jbool(persistent)}
+        {l_id}.shorthand = {jbool(shorthand)}
         {l_id}.div.style.color = '{color}'
         {l_id}.color = '{color}'
         {l_id}.div.style.fontSize = '{font_size}px'
@@ -941,14 +1502,25 @@ class AbstractChart(Candlestick, Pane):
     ) -> Table:
         args = locals()
         del args['self']
-        return self.win.create_table(*args.values())
+        tbl = self.win.create_table(*args.values())
+        tbl._chart = self
+        self._tables.append(tbl)
+        return tbl
 
-    def screenshot(self) -> bytes:
+    def screenshot(self, add_top_layer: bool = False, include_crosshair: bool = False) -> bytes:
         """
         Takes a screenshot. This method can only be used after the chart window is visible.
+        :param add_top_layer: 截图是否包含顶层元素（水印等），v5.2.0+ 新增
+        :param include_crosshair: 截图是否包含十字光标，v5.2.0+ 新增
         :return: a bytes object containing a screenshot of the chart.
         """
-        serial_data = self.win.run_script_and_get(f'{self.id}.chart.takeScreenshot().toDataURL()')
+        options = []
+        if add_top_layer:
+            options.append('addTopLayer: true')
+        if include_crosshair:
+            options.append('includeCrosshair: true')
+        opts = f'{{{", ".join(options)}}}' if options else ''
+        serial_data = self.win.run_script_and_get(f'{self.id}.chart.takeScreenshot({opts}).toDataURL()')
         return b64decode(serial_data.split(',')[1])
 
     def create_subchart(self, position: FLOAT = 'left', width: float = 0.5, height: float = 0.5,
@@ -957,6 +1529,28 @@ class AbstractChart(Candlestick, Pane):
                         toolbox: bool = False) -> 'AbstractChart':
         if sync is True:
             sync = self.id
-        args = locals()
-        del args['self']
-        return self.win.create_subchart(*args.values())
+        chart = self.win.create_subchart(position, width, height, sync, scale_candles_only,
+                                         sync_crosshairs_only, toolbox)
+        self.subcharts.append(chart.id)
+        return chart
+
+    def sync_charts(self, sync_crosshairs_only: bool = False):
+        if (len(self.subcharts) > 1):
+            self.run_script(f'''
+                Lib.Handler.syncChartsAll
+                    ([{', '.join(self.subcharts)}],
+                    {'true' if sync_crosshairs_only else 'false'}
+                )
+            ''', run_last=True)
+
+    def resize_pane(self, pane_index: int, height: int):
+        self.run_script(f'''
+            if ({self.id}.chart.panes().length > {pane_index}) {{
+                {self.id}.chart.panes()[{pane_index}].setHeight({height});
+            }}
+        ''')
+
+    def remove_pane(self, pane_index: int):
+        self.run_script(f'''
+                    {self.id}.chart.removePane({pane_index});
+            ''')

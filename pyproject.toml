@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lightweight_charts"
+version = "2.3"
+authors = [
+    { name = "louisnw" },
+    { name = "onesixth" }
+]
+license = { file = "LICENSE" }
+description = "Python framework for TradingView's Lightweight Charts JavaScript library."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pandas",
+    "pywebview>=5.0.5",
+    "pyside6",
+]
+
+[tool.setuptools.package-data]
+lightweight_charts = ["js/*"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests*", "examples*", "docs*"]
+
+[project.urls]
+homepage = "https://github.com/One-sixth/lightweight-charts-python"

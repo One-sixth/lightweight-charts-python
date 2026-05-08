@@ -93,7 +93,7 @@ def get_bar_data(ticker: str, timeframe: str, start_date: str, end_date: str, li
         return None
 
     df = pd.DataFrame(results)
-    df['t'] = pd.to_datetime(df['t'], unit='ms')
+    df['t'] = pd.to_datetime(df['t'], unit='ms').dt.tz_localize(None)
 
     rename = {'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 't': 'time'}
     if not ticker.startswith('I:'):
@@ -208,9 +208,9 @@ async def _handle_tick(ticker, data):
             lasts['volume'] = 0
 
         if 't' not in data:
-            lasts['time'] = pd.to_datetime(data.pop('s'), unit='ms')
+            lasts['time'] = pd.to_datetime(data.pop('s'), unit='ms').tz_localize(None)
         else:
-            lasts['time'] = pd.to_datetime(data['t'], unit='ms')
+            lasts['time'] = pd.to_datetime(data['t'], unit='ms').tz_localize(None)
 
     elif data['ev'] in ('A', 'CA', 'XA'):
         lasts['volume'] = data['v']

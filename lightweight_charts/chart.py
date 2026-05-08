@@ -1,15 +1,15 @@
 import asyncio
-import json
+import inspect
 import multiprocessing as mp
+from queue import Empty
 import typing
+from pprint import pp
+
 import webview
 from webview.errors import JavascriptException
 
-from lightweight_charts import abstract
+from . import abstract
 from .util import parse_event_message, FLOAT
-
-import os
-import threading
 
 
 class CallbackAPI:
@@ -21,6 +21,7 @@ class CallbackAPI:
 
 
 class PyWV:
+
     def __init__(self, q, emit_q, return_q, loaded_event):
         self.queue = q
         self.return_queue = return_q
@@ -60,12 +61,16 @@ class PyWV:
         )
 
         self.windows[-1].events.loaded += lambda: self.loaded_event.set()
+        self.windows[-1].events.closed += lambda: setattr(self, 'is_alive', False)
 
 
     def loop(self):
+
         # self.loaded_event.set()
         while self.is_alive:
             i, arg = self.queue.get()
+            if not self.is_alive:
+                return
 
             if i == 'start':
                 webview.start(debug=arg, func=self.loop)
@@ -84,14 +89,21 @@ class PyWV:
             else:
                 try:
                     if '_~_~RETURN~_~_' in arg:
-                        self.return_queue.put(window.evaluate_js(arg[14:]))
+                        result = window.evaluate_js(arg[14:])
+                        self.return_queue.put(result)
                     else:
                         window.evaluate_js(arg)
                 except KeyError as e:
                     return
                 except JavascriptException as e:
                     msg = eval(str(e))
-                    raise JavascriptException(f"\n\nscript -> '{arg}',\nerror -> {msg['name']}[{msg['line']}:{msg['column']}]\n{msg['message']}")
+                    pp(msg)
+                    if '_~_~RETURN~_~_' in arg:
+                        self.return_queue.put(None)
+                except Exception:
+                    if '_~_~RETURN~_~_' in arg:
+                        self.return_queue.put(None)
+                    return
 
 
 class WebviewHandler():
@@ -118,8 +130,7 @@ class WebviewHandler():
         maximize=False, title=''
     ):
         self.function_call_queue.put((
-            'create_window',
-            (width, height, x, y, screen, on_top, maximize, title)
+            'create_window', (width, height, x, y, screen, on_top, maximize, title)
         ))
         self.max_window_num += 1
         return self.max_window_num
@@ -137,18 +148,39 @@ class WebviewHandler():
         self.function_call_queue.put((window_num, 'hide'))
 
     def evaluate_js(self, window_num, script):
+        self._raise_exit_if_destroyed()
         self.function_call_queue.put((window_num, script))
+
+    def _clear_all_queue(self):
+        # 清理所有队列，只能在结束时调用
+        for q in (self.function_call_queue, self.emit_queue, self.return_queue):
+            # 要主动清空队列，否则会阻塞，导致进程在结束时会卡住
+            try:
+                while True:
+                    q.get_nowait()
+            except Empty:
+                pass
+            q.close()
+            q.join_thread()
+
+    def _raise_exit_if_destroyed(self):
+        # 仅在出错时调用
+        if self.wv_process.is_alive():
+            return
+
+        self.wv_process.join(timeout=2)
+        self._clear_all_queue()
+        raise RuntimeError("Chart window has been destroyed. Cannot execute script.")
 
     def exit(self):
         if self.wv_process.is_alive():
             self.wv_process.terminate()
             self.wv_process.join()
+        self._clear_all_queue()
         self._reset()
 
 
 class Chart(abstract.AbstractChart):
-    _main_window_handlers = None
-    WV: WebviewHandler = WebviewHandler()
 
     def __init__(
         self,
@@ -165,28 +197,25 @@ class Chart(abstract.AbstractChart):
         inner_width: float = 1.0,
         inner_height: float = 1.0,
         scale_candles_only: bool = False,
-        position: FLOAT = 'left'
+        position: FLOAT = 'left',
+        marker_auto_scale: bool = True
     ):
-        Chart.WV.debug = debug
-        self._i = Chart.WV.create_window(
+        self.wv = WebviewHandler()
+        self.wv.debug = debug
+        self._i = self.wv.create_window(
                     width, height, x, y, screen, on_top, maximize, title
                 )
 
         window = abstract.Window(
-                    script_func=lambda s: Chart.WV.evaluate_js(self._i, s),
+                    script_func=lambda s: self.wv.evaluate_js(self._i, s),
                     js_api_code='pywebview.api.callback'
                 )
 
-        abstract.Window._return_q = Chart.WV.return_queue
+        window._return_q = self.wv.return_queue
 
         self.is_alive = True
 
-        if Chart._main_window_handlers is None:
-            super().__init__(window, inner_width, inner_height, scale_candles_only, toolbox, position=position)
-            Chart._main_window_handlers = self.win.handlers
-        else:
-            window.handlers = Chart._main_window_handlers
-            super().__init__(window, inner_width, inner_height, scale_candles_only, toolbox, position=position)
+        super().__init__(window, inner_width, inner_height, scale_candles_only, toolbox, position=position, marker_auto_scale=marker_auto_scale)
 
     def show(self, block: bool = False):
         """
@@ -194,31 +223,32 @@ class Chart(abstract.AbstractChart):
         :param block: blocks execution until the chart is closed.
         """
         if not self.win.loaded:
-            Chart.WV.start()
+            self.wv.start()
             self.win.on_js_load()
         else:
-            Chart.WV.show(self._i)
+            self.wv.show(self._i)
         if block:
             asyncio.run(self.show_async())
 
     async def show_async(self):
         self.show(block=False)
         try:
-            from lightweight_charts import polygon
+            from . import polygon
             [asyncio.create_task(self.polygon.async_set(*args)) for args in polygon._set_on_load]
             while 1:
-                while Chart.WV.emit_queue.empty() and self.is_alive:
+                while self.wv.emit_queue.empty() and self.is_alive:
                     await asyncio.sleep(0.05)
                 if not self.is_alive:
                     return
-                response = Chart.WV.emit_queue.get()
+                response = self.wv.emit_queue.get()
                 if response == 'exit':
-                    Chart.WV.exit()
+                    self.wv.exit()
                     self.is_alive = False
+                    self.win.destroyed = True
                     return
                 else:
                     func, args = parse_event_message(self.win, response)
-                    await func(*args) if asyncio.iscoroutinefunction(func) else func(*args)
+                    await func(*args) if inspect.iscoroutinefunction(func) else func(*args)
         except KeyboardInterrupt:
             return
 
@@ -226,11 +256,12 @@ class Chart(abstract.AbstractChart):
         """
         Hides the chart window.\n
         """
-        Chart.WV.hide(self._i)
+        self.wv.function_call_queue.put((self._i, 'hide'))
 
     def exit(self):
         """
         Exits and destroys the chart window.\n
         """
-        Chart.WV.exit()
+        self.wv.exit()
         self.is_alive = False
+        self.win.destroyed = True

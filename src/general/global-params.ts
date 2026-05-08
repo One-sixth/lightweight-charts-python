@@ -20,7 +20,7 @@ interface paneStyle {
 }
 
 export const paneStyleDefault: paneStyle = {
-    backgroundColor: '#0c0d0f',
+    backgroundColor: 'rgb(18,24,38)',
     hoverBackgroundColor: '#3c434c',
     clickBackgroundColor: '#50565E',
     activeBackgroundColor: 'rgba(0, 122, 255, 0.7)',
@@ -49,6 +49,18 @@ export const setCursor = (type: string | undefined) => {
     if (type) window.cursor = type;
     document.body.style.cursor = window.cursor;
 }
+
+
+export function htmlToElement(html:string): HTMLElement {
+    let template = document.createElement('template');
+    html = html.trim(); // Never return a text node of whitespace as the result
+    template.innerHTML = html;
+    const el = template.content.firstChild;
+    if (!el) throw new Error("Invalid HTML passed to htmlToElement");
+    return el as HTMLElement;
+}
+
+
 
 
 // export interface SeriesHandler {
