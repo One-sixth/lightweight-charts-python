@@ -1,5 +1,5 @@
 import asyncio
-import json
+import inspect
 import multiprocessing as mp
 from queue import Empty
 import typing
@@ -151,12 +151,8 @@ class WebviewHandler():
         self._raise_exit_if_destroyed()
         self.function_call_queue.put((window_num, script))
 
-    def _raise_exit_if_destroyed(self):
-        # 仅在出错时调用
-        if self.wv_process.is_alive():
-            return
-
-        self.wv_process.join(timeout=2)
+    def _clear_all_queue(self):
+        # 清理所有队列，只能在结束时调用
         for q in (self.function_call_queue, self.emit_queue, self.return_queue):
             # 要主动清空队列，否则会阻塞，导致进程在结束时会卡住
             try:
@@ -166,12 +162,21 @@ class WebviewHandler():
                 pass
             q.close()
             q.join_thread()
+
+    def _raise_exit_if_destroyed(self):
+        # 仅在出错时调用
+        if self.wv_process.is_alive():
+            return
+
+        self.wv_process.join(timeout=2)
+        self._clear_all_queue()
         raise RuntimeError("Chart window has been destroyed. Cannot execute script.")
 
     def exit(self):
         if self.wv_process.is_alive():
             self.wv_process.terminate()
             self.wv_process.join()
+        self._clear_all_queue()
         self._reset()
 
 
@@ -243,7 +248,7 @@ class Chart(abstract.AbstractChart):
                     return
                 else:
                     func, args = parse_event_message(self.win, response)
-                    await func(*args) if asyncio.iscoroutinefunction(func) else func(*args)
+                    await func(*args) if inspect.iscoroutinefunction(func) else func(*args)
         except KeyboardInterrupt:
             return
 

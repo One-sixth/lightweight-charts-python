@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import html
 import json
 import os
@@ -60,7 +61,7 @@ except ImportError:
 
 def emit_callback(window, string):
     func, args = parse_event_message(window, string)
-    asyncio.create_task(func(*args)) if asyncio.iscoroutinefunction(func) else func(*args)
+    asyncio.create_task(func(*args)) if inspect.iscoroutinefunction(func) else func(*args)
 
 
 class WxChart(abstract.AbstractChart):

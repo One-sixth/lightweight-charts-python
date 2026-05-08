@@ -8,6 +8,8 @@ Watch the console while moving the mouse across the chart!
 
 Run: python crosshair_move.py
 """
+import time
+
 import pandas as pd
 import numpy as np
 from lightweight_charts import Chart
@@ -58,6 +60,13 @@ if __name__ == '__main__':
 
     # Register the crosshair_move callback
     chart.events.crosshair_move += on_crosshair_move
+    time.sleep(1)
+    # 可以删除
+    chart.events.crosshair_move -= on_crosshair_move
+    time.sleep(1)
+    # 删除后可以再次注册
+    chart.events.crosshair_move += on_crosshair_move
+    time.sleep(1)
     print("[OK] crosshair_move callback registered")
 
     print("\n>>> Move your mouse across the chart …")

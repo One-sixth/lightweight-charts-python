@@ -1,4 +1,4 @@
-import asyncio
+import inspect
 import random
 from typing import Union, Optional, Callable
 
@@ -53,7 +53,7 @@ class Row(dict):
     def delete(self):
         self.run_script(f"{self._table.id}.deleteRow('{self.id}')")
         self._table.pop(self.id)
-        
+
 
 class Table(Pane, dict):
     VALUE = 'CELL__~__VALUE__~__PLACEHOLDER'
@@ -93,7 +93,7 @@ class Table(Pane, dict):
             else:
                 await func(self[rId])
 
-        self.win.handlers[self.id] = async_wrapper if asyncio.iscoroutinefunction(func) else wrapper
+        self.win.handlers[self.id] = async_wrapper if inspect.iscoroutinefunction(func) else wrapper
         self.return_clicked_cells = return_clicked_cells
 
         self.run_script(f'''

@@ -1,13 +1,10 @@
 import asyncio
 import json
-import gzip
-import base64
+import inspect
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from tzlocal import get_localzone_name
-from random import choices
 from typing import Literal, Union
-from numpy import isin
 import pandas as pd
 
 
@@ -146,7 +143,7 @@ class Emitter:
 
     def _emit(self, *args):
         if self._callable:
-            if asyncio.iscoroutinefunction(self._callable):
+            if inspect.iscoroutinefunction(self._callable):
                 asyncio.create_task(self._callable(*args))
             else:
                 self._callable(*args)
@@ -158,84 +155,119 @@ class Emitter:
 
 
 class JSEmitter:
-    def __init__(self, chart, name, on_iadd, wrapper=None):
+    def __init__(self, chart, name, on_iadd, on_isub=None, wrapper=None):
         self._on_iadd = on_iadd
+        self._on_isub = on_isub
         self._chart = chart
         self._name = name
         self._wrapper = wrapper
+        # 目前只能增加一个函数回调，不支持多个函数回调，设定个变量，如果多次增加就报错
+        self._inited = False
 
     def __iadd__(self, other):
+        if self._inited:
+            raise ValueError(f'JSEmitter {self._name} already initialized')
+
         def final_wrapper(*arg):
             other(self._chart, *arg) if not self._wrapper else self._wrapper(other, self._chart, *arg)
         async def final_async_wrapper(*arg):
             await other(self._chart, *arg) if not self._wrapper else await self._wrapper(other, self._chart, *arg)
 
-        self._chart.win.handlers[self._name] = final_async_wrapper if asyncio.iscoroutinefunction(other) else final_wrapper
+        self._chart.win.handlers[self._name] = final_async_wrapper if inspect.iscoroutinefunction(other) else final_wrapper
         self._on_iadd(other)
+        self._inited = True
         return self
 
     def __isub__(self, other):
+        if not self._inited:
+            raise ValueError(f'JSEmitter {self._name} not initialized')
+
+        # 它应该在 handlers 里面。如果不是，则代表有意料之外的东西清空了 handlers，此时应该打印警告，而不做任何清理
         if self._name in self._chart.win.handlers:
+            if self._on_isub:
+                self._on_isub(other)
             del self._chart.win.handlers[self._name]
+        else:
+            print(f'Warn! JSEmitter {self._name} not found in handlers. Skip resource recycling')
+
+        self._inited = False
         return self
 
 
 class Events:
     def __init__(self, chart):
         self.new_bar = Emitter()
+        # 搜索事件，该事件注册后，不能删除
         self.search = JSEmitter(chart, f'search{chart.id}',
-            lambda o: chart.run_script(f'''
-            Lib.Handler.makeSpinner({chart.id})
-            {chart.id}.search = Lib.Handler.makeSearchBox({chart.id})
-            ''')
+            on_iadd=lambda o: chart.run_script(f'''
+                Lib.Handler.makeSpinner({chart.id})
+                {chart.id}.search = Lib.Handler.makeSearchBox({chart.id})
+                ''')
         )
-        salt = chart.id[chart.id.index('.')+1:]
+        
+        # -------------------------------------------------
+        salt = '_' + chart.id[chart.id.index('.')+1:]
+
+        # 可见范围范围改变事件
         self.range_change = JSEmitter(chart, f'range_change{salt}',
-            lambda o: chart.run_script(f'''
-            let checkLogicalRange{salt} = (logical) => {{
-                {chart.id}.chart.timeScale().unsubscribeVisibleLogicalRangeChange(checkLogicalRange{salt})
-                
-                let barsInfo = {chart.id}.series.barsInLogicalRange(logical)
-                if (barsInfo) window.callbackFunction(`range_change{salt}_~_${{barsInfo.barsBefore}};;;${{barsInfo.barsAfter}}`)
+            on_iadd=lambda o: chart.run_script(f'''
+                window.checkLogicalRange{salt} = (logical) => {{
+                    {chart.id}.chart.timeScale().unsubscribeVisibleLogicalRangeChange(window.checkLogicalRange{salt});
                     
-                setTimeout(() => {chart.id}.chart.timeScale().subscribeVisibleLogicalRangeChange(checkLogicalRange{salt}), 50)
-            }}
-            {chart.id}.chart.timeScale().subscribeVisibleLogicalRangeChange(checkLogicalRange{salt})
-            '''),
+                    let barsInfo = {chart.id}.series.barsInLogicalRange(logical);
+                    if (barsInfo) window.callbackFunction(`range_change{salt}_~_${{barsInfo.barsBefore}};;;${{barsInfo.barsAfter}}`);
+                        
+                    setTimeout(() => {chart.id}.chart.timeScale().subscribeVisibleLogicalRangeChange(window.checkLogicalRange{salt}), 50);
+                }};
+                {chart.id}.chart.timeScale().subscribeVisibleLogicalRangeChange(window.checkLogicalRange{salt});
+                '''),
+            on_isub=lambda o: chart.run_script(f'''
+                {chart.id}.chart.timeScale().unsubscribeVisibleLogicalRangeChange(window.checkLogicalRange{salt})
+                '''),
             wrapper=lambda o, c, *arg: o(c, *[float(a) for a in arg])
         )
 
+        # 鼠标点击事件
         self.click = JSEmitter(chart, f'subscribe_click{salt}',
-            lambda o: chart.run_script(f'''
-            let clickHandler{salt} = (param) => {{
-                if (!param.point) return;
-                const time = {chart.id}.chart.timeScale().coordinateToTime(param.point.x)
-                const price = {chart.id}.series.coordinateToPrice(param.point.y);
-                window.callbackFunction(`subscribe_click{salt}_~_${{time}};;;${{price}}`)
-            }}
-            {chart.id}.chart.subscribeClick(clickHandler{salt})
-            '''),
+            on_iadd=lambda o: chart.run_script(f'''
+                window.clickHandler{salt} = (param) => {{
+                    if (!param.point) return;
+                    const time = {chart.id}.chart.timeScale().coordinateToTime(param.point.x)
+                    const price = {chart.id}.series.coordinateToPrice(param.point.y);
+                    window.callbackFunction(`subscribe_click{salt}_~_${{time}};;;${{price}}`)
+                }};
+                {chart.id}.chart.subscribeClick(window.clickHandler{salt});
+                '''),
+            on_isub=lambda o: chart.run_script(f'''
+                {chart.id}.chart.unsubscribeClick(window.clickHandler{salt})
+                '''),
             wrapper=lambda func, c, *args: func(c, *[float(a) if a != 'null' else None for a in args])
         )
 
+        # 十字光标移动事件
         self.crosshair_move = JSEmitter(chart, f'crosshair_move{salt}',
-            lambda o: chart.run_script(f'''
-            let crosshairHandler{salt} = (param) => {{
-                if (!param.point) return;
-                let payload = {{time: null, price: null}};
-                if (param.time !== undefined) {{
-                    payload.time = param.time;
-                }}
-                if (param.point) {{
-                    let price = {chart.id}.series.coordinateToPrice(param.point.y);
-                    payload.price = price;
-                }}
-                window.callbackFunction(`crosshair_move{salt}_~_${{JSON.stringify(payload)}}`)
-            }}
-            {chart.id}.chart.subscribeCrosshairMove(crosshairHandler{salt})
-            '''),
+            on_iadd=lambda o: chart.run_script(f'''
+                window.crosshairHandler{salt} = (param) => {{
+                    if (!param.point) return;
+                    let payload = {{time: null, price: null}};
+                    if (param.time !== undefined) {{
+                        payload.time = param.time;
+                    }};
+                    if (param.point) {{
+                        let price = {chart.id}.series.coordinateToPrice(param.point.y);
+                        payload.price = price;
+                    }};
+                    window.callbackFunction(`crosshair_move{salt}_~_${{JSON.stringify(payload)}}`);
+                }};
+                {chart.id}.chart.subscribeCrosshairMove(window.crosshairHandler{salt});
+                '''),
+            on_isub=lambda o: chart.run_script(f'''
+                {chart.id}.chart.unsubscribeCrosshairMove(window.crosshairHandler{salt});
+                '''),
+            # delete window.crosshairHandler{salt};
             wrapper=lambda func, c, *args: func(c, json.loads(args[0]) if args else {})
         )
+        print(f'delete window.crosshairHandler{salt};')
 
 class BulkRunScript:
     def __init__(self, script_func):
