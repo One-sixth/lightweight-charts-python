@@ -116,18 +116,21 @@ chart.load()                        # 生成 HTML 文件
 ```python
 chart.set(df, keep_drawings=False)
 # 设置初始数据。df 列: time/open/high/low/close + 可选 volume
-# 支持大小写不敏感列名 (自动 rename)
 
 chart.update(series)
-# 更新最后一根 K 线 (time 相同时覆盖，不同时追加)
-# series: pd.Series, 列同 set()
+# 更新最后一根 K 线
 
 chart.update_from_tick(series, cumulative_volume=False)
-# 从 tick 更新 K 线。series 列: time/price + 可选 volume
-# 自动计算 high/low/close
+# 从 tick 更新 K 线
+
+chart.pop(count=1)
+# v5.0.9+ : 从系列末尾移除指定数量的数据点
 
 chart.marker(text='标记文本', position='above', shape='arrow_up', color='...')
 # 添加价格标记
+
+chart.marker_auto_scale(enable=True)
+# v5.0.9+ : 控制标记是否参与价格轴自动缩放
 
 chart.remove_marker(marker_id)  # 按 ID 删除单个标记
 chart.clear_markers()           # 删除所有标记
@@ -278,7 +281,12 @@ chart.grid(
 chart.time_scale(
     right_offset=0, min_bar_spacing=0.5,
     visible=True, time_visible=True, seconds_visible=False,
-    border_visible=True, border_color='rgba(..., 0.4)'
+    border_visible=True, border_color='rgba(..., 0.4)',
+    right_offset_pixels=None,          # v5.0.9+ : 右侧像素偏移
+    enable_conflation=None,            # v5.1.0+ : 大数据量自动合并
+    conflation_threshold_factor=None,  # v5.1.0+ : 合并激活阈值
+    precompute_conflation_on_init=None,# v5.1.0+ : 初始化时预计算
+    precompute_conflation_priority=None# v5.1.0+ : 预计算优先级
 )
 
 # 价格轴
@@ -287,6 +295,7 @@ chart.price_scale(
     align_labels=True, scale_margin_top=0.2, scale_margin_bottom=0.2,
     border_visible=True, border_color=None, text_color=None,
     entire_text_only=False, visible=True, ticks_visible=False,
+    tick_mark_density=None,            # v5.2.0+ : 刻度标签密度
     minimum_width=0, perm_width=0
 )
 
@@ -300,6 +309,17 @@ chart.crosshair(
 
 # 水印
 chart.watermark(text='1D', color='rgba(180,180,240,0.7)', font_size=48)
+
+# 截图（v5.2.0+ 增强）
+img = chart.screenshot()                          # 默认行为（不含顶层和十字光标）
+img = chart.screenshot(add_top_layer=True)       # 包含水印等顶层元素
+img = chart.screenshot(include_crosshair=True)   # 包含十字光标
+img = chart.screenshot(add_top_layer=True, include_crosshair=True)  # 两者都包含
+
+# 价格格式 — 避免浮点精度问题（v5.2.0+）
+chart.set_price_format(type='base', base=100, precision=2)
+# 以 base 为基准值，所有价格显示为 (实际值 / base)，保留 precision 位小数
+# 例如: 实际价格 100.00 → 显示 1.00
 
 # 图例
 chart.legend(visible=True, font_size=12, color='#FFFFFF',
@@ -337,6 +357,8 @@ sub.set(df)
 ```python
 chart.events.search += on_search          # 用户搜索时触发
 chart.events.range_change += on_range     # 时间范围变化
+chart.events.click += on_click            # 鼠标点击
+chart.events.crosshair_move += on_cross   # v5.2.0+ : 鼠标悬停移动
 chart.events.horizontal_line_move += func # 水平线移动
 # 另: new_bar (Candlestick.update 追加新 bar 时)
 ```
@@ -346,10 +368,34 @@ chart.events.horizontal_line_move += func # 水平线移动
 ```python
 def on_search(chart, searched_string): ...
 def on_range(chart, start_time, end_time): ...
+def on_click(chart, time, price): ...
+def on_cross(chart, payload): ...          # payload: {time, price}
 def on_horizontal_line_move(chart, line): ...
 ```
 
-### 3.9 TopBar
+### 3.9 图表级高级选项 — chart_options() (v5.2.0+)
+
+`chart_options()` 方法用于设置图表级别的行为，支持以下三个参数：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `hovered_series_on_top` | `bool` | `True` | 鼠标悬停时，被悬停的系列（K线或指标线）会立即移动到所有系列的最上层。`True` 时悬停的系列浮到顶端；`False` 时被悬停的系列保持在原有层级（不浮起）。 |
+| `default_visible_price_scale_id` | `'left' \| 'right'` | `'right'` | 当左右价格轴都存在时，默认显示哪一个。 |
+| `do_not_snap_to_hidden_series_indices` | `bool` | `False` | 十字光标是否忽略隐藏系列的索引（吸附行为）。 |
+
+```python
+chart.chart_options(
+    hovered_series_on_top=True,                 # 悬停时该系列浮到顶层
+    default_visible_price_scale_id='right',    # 默认显示右侧价格轴
+    do_not_snap_to_hidden_series_indices=False # 十字光标仍吸附隐藏系列
+)
+```
+
+**示例 18** (`examples/18_chart_options/chart_options.py`) 通过左右两个独立窗口对比展示了 `hovered_series_on_top` 的实际效果：
+- **左侧窗口** (`hovered_series_on_top=False`)：鼠标悬停在黄色 SMA 线上时，线条**不会**浮到蜡烛上方，始终被蜡烛遮挡；悬停在蜡烛上时也不会发生 z-order 变化。
+- **右侧窗口** (`hovered_series_on_top=True`)：鼠标悬停在黄色 SMA 线上时，线条**立即浮到最上层**，出现在蜡烛之上；悬停在蜡烛上时，蜡烛也会浮到线条之上。
+
+### 3.10 TopBar
 
 ```python
 # 文本框
@@ -543,6 +589,15 @@ get_last_trade(ticker)
 | 14 | `set_period` | 锁定时间级别: `set_period()` 演示 | `set_period.py` |
 | 15 | `pyside6_simple` | PySide6 + QtChart 嵌入测试 | `pyside6_simple.py` |
 | 16 | `pyside6_race` | PySide6 速度赛跑: update vs update_bars vs set 对比 | `pyside6_race.py` |
+| 17 | `v520_new_features` | v5.2.0 新功能: chart_options / tick_mark_density / conflation / marker_auto_scale / pop() / crosshair_move | `v520_demo.py` |
+| 18 | `18_hovered_series_on_top` | `hovered_series_on_top` — 鼠标悬停时系列是否浮到顶层（左右对比） | `hovered_series_on_top.py` |
+| 19 | `19_timescale_options` | `time_scale()` 新参数 — 像素偏移 / 数据合并 (conflation) | `timescale_options.py` |
+| 20 | `20_tick_mark_density` | `tick_mark_density` — 价格轴标签密度控制 (1.0 / 2.5 / 6.0) | `tick_mark_density.py` |
+| 21 | `21_marker_auto_scale` | `marker_auto_scale()` — 标记是否参与价格轴自动缩放 | `marker_auto_scale.py` |
+| 22 | `22_pop` | `pop(n)` — 从末尾移除 N 根 K 线 | `pop.py` |
+| 23 | `23_crosshair_move` | `events.crosshair_move` — 鼠标悬停实时回调 (Hit Testing) | `crosshair_move.py` |
+| 24 | `24_price_format` | `set_price_format(type='base')` — 基础价格格式，避免浮点精度问题 (v5.2.0+) | `price_format.py` |
+| 25 | `25_screenshot_enhanced` | `screenshot(add_top_layer=True, include_crosshair=True)` — 增强截图 (v5.2.0+) | `screenshot_enhanced.py` |
 
 ---
 

@@ -206,7 +206,7 @@ export class Legend {
 
         if (usingPoint) {
             const timeScale = this.handler.chart.timeScale();
-            let coordinate = timeScale.timeToCoordinate(param.time)
+            let coordinate = param.time ? timeScale.timeToCoordinate(param.time) : null;
             if (coordinate)
                 logical = timeScale.coordinateToLogical(coordinate.valueOf())
             if (logical)

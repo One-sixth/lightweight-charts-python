@@ -192,7 +192,8 @@ class Chart(abstract.AbstractChart):
         inner_width: float = 1.0,
         inner_height: float = 1.0,
         scale_candles_only: bool = False,
-        position: FLOAT = 'left'
+        position: FLOAT = 'left',
+        marker_auto_scale: bool = True
     ):
         self.wv = WebviewHandler()
         self.wv.debug = debug
@@ -209,7 +210,7 @@ class Chart(abstract.AbstractChart):
 
         self.is_alive = True
 
-        super().__init__(window, inner_width, inner_height, scale_candles_only, toolbox, position=position)
+        super().__init__(window, inner_width, inner_height, scale_candles_only, toolbox, position=position, marker_auto_scale=marker_auto_scale)
 
     def show(self, block: bool = False):
         """

@@ -10,7 +10,6 @@ import {
     MouseEventParams,
     SeriesOptionsCommon,
     SeriesType,
-    Time,
     createChart,
     CandlestickSeries,
     HistogramSeries,
@@ -255,7 +254,8 @@ export class Handler {
         innerHeight: number,
         position: string,
         autoSize: boolean,
-        paneIndex: number = 0
+        paneIndex: number = 0,
+        marker_auto_scale: boolean = true
     ) {
         this.reSize = this.reSize.bind(this)
 
@@ -280,8 +280,8 @@ export class Handler {
         handle.classList.add('resize-handle');
         this.wrapper.appendChild(handle);
 
-        let startY, startHeight;
-        const onMouseMove = (e) => {
+        let startY= 0, startHeight = 0;
+        const onMouseMove = (e: any) => {
           const delta = e.clientY - startY;
           const newH = Math.max(50, startHeight + delta); // min height 50px
           this.wrapper.style.height = `${newH}px`;
@@ -304,7 +304,7 @@ export class Handler {
         this.chart = this._createChart();
         this.series = this.createCandlestickSeries(paneIndex);
         this.volumeSeries = this.createVolumeSeries(paneIndex);
-        this.seriesMarkers = createSeriesMarkers(this.series, []);
+        this.seriesMarkers = createSeriesMarkers(this.series, [], {autoScale: marker_auto_scale});
 
         this.legend = new Legend(this)
 
@@ -442,7 +442,6 @@ export class Handler {
                 lastValueVisible: false,
                 priceLineVisible: false,
                 crosshairMarkerVisible: true,
-                autoscale: true,
             },
             paneIndex
         );

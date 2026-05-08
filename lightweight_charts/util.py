@@ -78,25 +78,6 @@ def js_data(data: Union[pd.DataFrame, pd.Series]):
         filtered_records = {k: v for k, v in d.items()}
     return json.dumps(filtered_records)
 
-
-# def js_zipdata(data: Union[pd.DataFrame, pd.Series]):
-#     if isinstance(data, pd.DataFrame):
-#         d = data.to_dict(orient='records')
-#         filtered_records = [{k: v for k, v in record.items() if v is not None and not pd.isna(v)} for record in d]
-#     else:
-#         d = data.to_dict()
-#         filtered_records = {k: v for k, v in d.items()}
-#     raw = json.dumps(filtered_records, ensure_ascii=False).encode("utf-8")
-#     compressed = gzip.compress(raw)
-#     return base64.b64encode(compressed).decode("ascii")
-
-# 屏蔽这部分
-# def js_zip(data: str):
-#     raw = data.encode("utf-8")
-#     compressed = gzip.compress(raw)
-#     return base64.b64encode(compressed).decode("ascii")
-
-
 def snake_to_camel(s: str):
     components = s.split('_')
     return components[0] + ''.join(x.title() for x in components[1:])
@@ -235,6 +216,25 @@ class Events:
             {chart.id}.chart.subscribeClick(clickHandler{salt})
             '''),
             wrapper=lambda func, c, *args: func(c, *[float(a) if a != 'null' else None for a in args])
+        )
+
+        self.crosshair_move = JSEmitter(chart, f'crosshair_move{salt}',
+            lambda o: chart.run_script(f'''
+            let crosshairHandler{salt} = (param) => {{
+                if (!param.point) return;
+                let payload = {{time: null, price: null}};
+                if (param.time !== undefined) {{
+                    payload.time = param.time;
+                }}
+                if (param.point) {{
+                    let price = {chart.id}.series.coordinateToPrice(param.point.y);
+                    payload.price = price;
+                }}
+                window.callbackFunction(`crosshair_move{salt}_~_${{JSON.stringify(payload)}}`)
+            }}
+            {chart.id}.chart.subscribeCrosshairMove(crosshairHandler{salt})
+            '''),
+            wrapper=lambda func, c, *args: func(c, json.loads(args[0]) if args else {})
         )
 
 class BulkRunScript:

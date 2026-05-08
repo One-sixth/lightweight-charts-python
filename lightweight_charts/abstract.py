@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 from base64 import b64decode
@@ -15,7 +14,7 @@ from .topbar import TopBar
 from .util import (
     BulkRunScript, Pane, Events, IDGen, as_enum, jbool, js_json, TIME, NUM, FLOAT,
     LINE_STYLE, MARKER_POSITION, MARKER_SHAPE, CROSSHAIR_MODE,
-    PRICE_SCALE_MODE, marker_position, marker_shape, js_data, # js_zipdata, js_zip
+    PRICE_SCALE_MODE, marker_position, marker_shape, js_data
 )
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -183,11 +182,11 @@ class SeriesCommon(Pane):
         Locks the chart's time interval to the given value in seconds.
         When locked, set() will skip automatic interval detection,
         using the locked interval for time alignment instead.
-        
+
         :param seconds: The interval in seconds to lock to, or None to unlock.
-        
+
         Example::
-        
+
             chart.set_period(60)       # lock to 1-minute bars
             chart.set_period(300)      # lock to 5-minute bars
             chart.set_period(None)     # unlock, re-enable auto-detection
@@ -197,6 +196,10 @@ class SeriesCommon(Pane):
             self._period_locked = True
         else:
             self._period_locked = False
+
+    def pop(self, count: int = 1):
+        """从系列末尾移除指定数量的数据点。"""
+        self.run_script(f'{self.id}.series.pop({count})')
 
     def _set_interval(self, df: pd.DataFrame):
         if not pd.api.types.is_datetime64_any_dtype(df['time']):
@@ -272,23 +275,6 @@ class SeriesCommon(Pane):
         arg = self._interval * (arg.timestamp() // self._interval)+self.offset
         return arg
 
-    # def set_zipped(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
-    #     if df is None or df.empty:
-    #         self.run_script(f'{self.id}.series.setData([])')
-    #         self.data = pd.DataFrame()
-    #         return
-    #     if format_cols:
-    #         df = self._df_datetime_format(df, exclude_lowercase=self.name)
-    #     if self.name:
-    #         if self.name not in df:
-    #             raise NameError(f'No column named "{self.name}".')
-    #         df = df.rename(columns={self.name: 'value'})
-    #     self.data = df.copy()
-    #     self._last_bar = df.iloc[-1]
-    #     # 不使用gz压缩
-    #     # self.run_script(f'{self.id}.series.setData(await decodeGzJSON("{js_zipdata(df)}")); ')
-    #     self.run_script(f'{self.id}.series.setData("{js_data(df)}"); ')
-
     def set(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
         if df is None or df.empty:
             self.run_script(f'{self.id}.series.setData([])')
@@ -317,10 +303,11 @@ class SeriesCommon(Pane):
         self.run_script(f'{self.id}.series.update({js_data(series)});')
 
     def _update_markers(self):
+        if not self.markers:
+            self.run_script(f'{self.id}.seriesMarkers.setMarkers([])')
+            return
         str_markers = json.dumps(list(self.markers.values()))
-        # 这个语句工作不正常，改成原来，不用压缩的
-        # self.run_script(f'{self.id}.seriesMarkers.setMarkers(await decodeGzJSON("{js_zip(str_markers)}"))')
-        self.run_script(f'{self.id}.seriesMarkers.setMarkers({str_markers}); ')
+        self.run_script(f'{self.id}.seriesMarkers.setMarkers({str_markers})')
 
     def marker_list(self, markers: list):
         """
@@ -371,13 +358,14 @@ class SeriesCommon(Pane):
             raise TypeError('Chart marker created before data was set.')
         marker_id = self.win._id_gen.generate('Marker_')
 
-        self.markers[marker_id] = {
+        marker_dict = {
             "time": int(formatted_time),
             "position": marker_position(position),
             "color": color,
             "shape": marker_shape(shape),
             "text": text,
         }
+        self.markers[marker_id] = marker_dict
         self._update_markers()
         return marker_id
 
@@ -772,53 +760,6 @@ class Candlestick(SeriesCommon):
         else:
             self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
 
-    # def set_zipped(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
-    #     """
-    #     Sets the initial data for the chart.\n
-    #     :param df: columns: date/time, open, high, low, close, volume (if volume enabled).
-    #     :param keep_drawings: keeps any drawings made through the toolbox. Otherwise, they will be deleted.
-    #     """
-    #     if df is None or df.empty:
-    #         self.run_script(f'{self.id}.series.setData([])')
-    #         self.run_script(f'{self.id}.volumeSeries.setData([])')
-    #         self.candle_data = pd.DataFrame()
-    #         return
-    #     df = self._df_datetime_format(df)
-    #     df_copy = df.copy()
-    #     self.candle_data = df_copy[['time', 'open', 'high', 'low', 'close']]
-    #     self._last_bar = df.iloc[-1]
-    #     # 不使用gzip压缩
-    #     # candle_js_data = js_zipdata(df[['time', 'open', 'high', 'low', 'close']])
-    #     # self.run_script(f'{self.id}.series.setData(await decodeGzJSON("{candle_js_data}"))')
-    #     candle_js_data = js_data(df[['time', 'open', 'high', 'low', 'close']])
-    #     self.run_script(f'{self.id}.series.setData("{candle_js_data}"); ')
-    #
-    #     if 'volume' not in df:
-    #         return
-    #     volume = df[['time', 'volume']].rename(columns={'volume': 'value'})
-    #     volume['color'] = self._volume_down_color
-    #     volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-    #     # 不使用压缩
-    #     # volume_js_data = js_zipdata(volume)
-    #     # self.run_script(f'{self.id}.volumeSeries.setData(await decodeGzJSON("{volume_js_data}"))')
-    #     volume_js_data = js_data(volume)
-    #     self.run_script(f'{self.id}.volumeSeries.setData("{volume_js_data}"); ')
-    #
-    #     for line in self._lines:
-    #         if line.name not in df.columns:
-    #             continue
-    #         line.set(df[['time', line.name]], format_cols=False)
-    #     # set autoScale to true in case the user has dragged the price scale
-    #     self.run_script(f'''
-    #         if (!{self.id}.chart.priceScale("right").options.autoScale)
-    #             {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
-    #     ''')
-    #     # TODO keep drawings doesn't work consistenly w
-    #     if keep_drawings:
-    #         self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
-    #     else:
-    #         self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
-
     def update(self, series: pd.Series, _from_tick=False):
         """
         Updates the data from a bar;
@@ -873,37 +814,37 @@ class Candlestick(SeriesCommon):
     def update_bars(self, df: pd.DataFrame):
         """
         Batch-updates the chart with multiple OHLCV bars at once.
-        
+
         Processes each row from the DataFrame using the same logic as update(),
         but collects all JavaScript commands into a single batch for efficiency.
-        
+
         :param df: DataFrame with columns: date/time, open, high, low, close,
                    and optionally volume, open_interest.
         """
         if df.empty:
             return
-        
+
         df = df.copy()
         df.columns = self._format_labels(df, df.columns, df.index, None)
         js_commands = []
-        
+
         for _, row in df.iterrows():
             series = self._series_datetime_format(row)
             is_new_bar = False
-            
+
             if series['time'] != self._last_bar['time']:
                 self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
                 self.candle_data = pd.concat([self.candle_data, series.to_frame().T], ignore_index=True)
                 is_new_bar = True
-            
+
             self._last_bar = series
             js_commands.append(f'{self.id}.series.update({js_data(series)})')
-            
+
             if 'volume' in series:
                 volume = series.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
                 volume['color'] = self._volume_up_color if series['close'] > series['open'] else self._volume_down_color
                 js_commands.append(f'{self.id}.volumeSeries.update({js_data(volume)})')
-            
+
             if 'open_interest' in series:
                 ts = series['time']
                 oi_val = series['open_interest']
@@ -911,43 +852,43 @@ class Candlestick(SeriesCommon):
                     f'{self._chart.id}.openInterestSeries.update({{time: {ts}, value: {oi_val}}});'
                     f'{self._chart.id}.openInterestSeries.applyOptions({{visible: true}});'
                 )
-            
+
             if is_new_bar:
                 self._chart.events.new_bar._emit(self)
-        
+
         # Send all JS commands in one batch
         self.run_script('; '.join(js_commands))
 
     def update_from_ticks(self, df: pd.DataFrame, cumulative_volume: bool = False):
         """
         Batch-updates the chart from multiple ticks at once.
-        
+
         Processes each tick row using the same logic as update_from_tick(),
         but collects all JavaScript commands into a single batch for efficiency.
-        
+
         :param df: DataFrame with columns: date/time, price, and optionally volume.
         :param cumulative_volume: If True, adds tick volume onto the latest bar's volume.
         """
         if df.empty:
             return
-        
+
         df = df.copy()
         df.columns = self._format_labels(df, df.columns, df.index, None)
         js_commands = []
-        
+
         for _, row in df.iterrows():
             series = self._series_datetime_format(row)
-            
+
             if series['time'] < self._last_bar['time']:
                 raise ValueError(
                     f'Trying to update tick of time "{pd.to_datetime(series["time"])}", '
                     f'which occurs before the last bar time of '
                     f'"{pd.to_datetime(self._last_bar["time"])}".'
                 )
-            
+
             bar = pd.Series(dtype='float64')
             is_new_bar = False
-            
+
             if series['time'] == self._last_bar['time']:
                 bar = self._last_bar
                 bar['high'] = max(self._last_bar['high'], series['price'])
@@ -965,23 +906,23 @@ class Candlestick(SeriesCommon):
                 if 'volume' in series:
                     bar['volume'] = series['volume']
                 is_new_bar = True
-            
+
             # Update Python state
             if bar['time'] != self._last_bar['time']:
                 self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
                 self.candle_data = pd.concat([self.candle_data, bar.to_frame().T], ignore_index=True)
-            
+
             self._last_bar = bar
             js_commands.append(f'{self.id}.series.update({js_data(bar)})')
-            
+
             if 'volume' in bar:
                 volume = bar.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
                 volume['color'] = self._volume_up_color if bar['close'] > bar['open'] else self._volume_down_color
                 js_commands.append(f'{self.id}.volumeSeries.update({js_data(volume)})')
-            
+
             if is_new_bar:
                 self._chart.events.new_bar._emit(self)
-        
+
         # Send all JS commands in one batch
         self.run_script('; '.join(js_commands))
 
@@ -999,6 +940,7 @@ class Candlestick(SeriesCommon):
         entire_text_only: bool = False,
         visible: bool = True,
         ticks_visible: bool = False,
+        tick_mark_density: float = None,
         minimum_width: int = 0,
         perm_width: int = 0
     ):
@@ -1015,9 +957,29 @@ class Candlestick(SeriesCommon):
                 entireTextOnly: {jbool(entire_text_only)},
                 visible: {jbool(visible)},
                 ticksVisible: {jbool(ticks_visible)},
+                {f'tickMarkDensity: {tick_mark_density},' if tick_mark_density is not None else ''}
                 minimumWidth: {minimum_width},
                 permWidth: {perm_width}
             }})''')
+
+    def set_price_format(self, type: Literal['base', 'custom'] = 'base', base: int = None, precision: int = 2):
+        """
+        Set the price format for the price scale. The 'base' format avoids floating point precision issues.
+        :param type: 'base' or 'custom' (v5.2.0+). Default 'base'.
+        :param base: The base value for format 'base'. Required when type='base'.
+        :param precision: Number of decimal places. Default 2.
+        """
+        if type == 'base':
+            if base is None:
+                raise ValueError("base parameter is required when type='base'")
+            options = {'type': 'base', 'base': base, 'precision': precision}
+        else:
+            options = {'type': type, 'precision': precision}
+        self.run_script(f'''
+            {self.id}.series.priceScale().applyOptions({{
+                priceFormat: {js_json(options)}
+            }})
+        ''')
 
     def candle_style(
             self, up_color: str = 'rgba(39, 157, 130, 100)', down_color: str = 'rgba(200, 97, 100, 100)',
@@ -1055,8 +1017,8 @@ class AbstractChart(Candlestick, Pane):
 
     def __init__(self, window: Window, width: float = 1.0, height: float = 1.0,
                  scale_candles_only: bool = False, toolbox: bool = False,
-                 autosize: bool = True, position: FLOAT = 'left', pane_index:int = 0
-    ):
+                 autosize: bool = True, position: FLOAT = 'left', pane_index:int = 0, marker_auto_scale: bool = True
+                 ):
         Pane.__init__(self, window)
 
         self._lines = []
@@ -1073,7 +1035,7 @@ class AbstractChart(Candlestick, Pane):
 
         self.polygon: PolygonAPI = PolygonAPI(self)
 
-        self._html_chart_init = f'{self.id} = new Lib.Handler("{self.id}", {width}, {height}, "{position}", {jbool(autosize)})'
+        self._html_chart_init = f'{self.id} = new Lib.Handler("{self.id}", {width}, {height}, "{position}", {jbool(autosize)}, {pane_index}, {jbool(marker_auto_scale)})'
         self.run_script(self._html_chart_init + ';0')
 
         Candlestick.__init__(self, self)
@@ -1169,7 +1131,7 @@ class AbstractChart(Candlestick, Pane):
     def remove_subchart(self, subchart_id: str):
         """
         Removes and destroys a subchart created via create_subchart().
-        
+
         :param subchart_id: the .id attribute of the subchart AbstractChart.
         """
         if subchart_id not in self.subcharts:
@@ -1332,9 +1294,20 @@ class AbstractChart(Candlestick, Pane):
 
     def time_scale(self, right_offset: int = 0, min_bar_spacing: float = 0.5,
                    visible: bool = True, time_visible: bool = True, seconds_visible: bool = False,
-                   border_visible: bool = True, border_color: Optional[str] = None):
+                   border_visible: bool = True, border_color: Optional[str] = None,
+                   right_offset_pixels: int = None,
+                   enable_conflation: bool = None,
+                   conflation_threshold_factor: float = None,
+                   precompute_conflation_on_init: bool = None,
+                   precompute_conflation_priority: str = None):
         """
         Options for the timescale of the chart.
+
+        :param right_offset_pixels: Margin from the right side of the chart in pixels (v5.0.9+).
+        :param enable_conflation: Enable data conflation for large datasets (v5.1.0+).
+        :param conflation_threshold_factor: Adjust the zoom level threshold for conflation (v5.1.0+).
+        :param precompute_conflation_on_init: Pre-calculate conflated data on initialization (v5.1.0+).
+        :param precompute_conflation_priority: Background computation priority (v5.1.0+).
         """
         self.run_script(f'''{self.id}.chart.applyOptions({{timeScale: {js_json(locals())}}})''')
 
@@ -1411,6 +1384,34 @@ class AbstractChart(Candlestick, Pane):
                 }}
             }}
         }})''')
+
+    def chart_options(self,
+                      hovered_series_on_top: bool = None,
+                      default_visible_price_scale_id: Literal['left', 'right'] = None,
+                      do_not_snap_to_hidden_series_indices: bool = None):
+        """
+        Set advanced chart-level options (v5.2.0+).
+
+        :param hovered_series_on_top: Render the currently hovered series
+                                      above other series in the same pane.
+        :param default_visible_price_scale_id: Which price scale to show
+                                               by default ('left'/'right').
+        :param do_not_snap_to_hidden_series_indices: When True, the crosshair
+                                                     ignores hidden series.
+        """
+        options = {}
+        if hovered_series_on_top is not None:
+            options['hoveredSeriesOnTop'] = hovered_series_on_top
+        if default_visible_price_scale_id is not None:
+            options['defaultVisiblePriceScaleId'] = default_visible_price_scale_id
+        if do_not_snap_to_hidden_series_indices is not None:
+            options['crosshair'] = {
+                'doNotSnapToHiddenSeriesIndices': do_not_snap_to_hidden_series_indices
+            }
+        if options:
+            self.run_script(f'''
+                {self.id}.chart.applyOptions({js_json(options)})
+            ''')
 
     def watermark(self, text: str, font_size: int = 44, color: str = 'rgba(180, 180, 200, 0.5)'):
         """
@@ -1506,12 +1507,20 @@ class AbstractChart(Candlestick, Pane):
         self._tables.append(tbl)
         return tbl
 
-    def screenshot(self) -> bytes:
+    def screenshot(self, add_top_layer: bool = False, include_crosshair: bool = False) -> bytes:
         """
         Takes a screenshot. This method can only be used after the chart window is visible.
+        :param add_top_layer: 截图是否包含顶层元素（水印等），v5.2.0+ 新增
+        :param include_crosshair: 截图是否包含十字光标，v5.2.0+ 新增
         :return: a bytes object containing a screenshot of the chart.
         """
-        serial_data = self.win.run_script_and_get(f'{self.id}.chart.takeScreenshot().toDataURL()')
+        options = []
+        if add_top_layer:
+            options.append('addTopLayer: true')
+        if include_crosshair:
+            options.append('includeCrosshair: true')
+        opts = f'{{{", ".join(options)}}}' if options else ''
+        serial_data = self.win.run_script_and_get(f'{self.id}.chart.takeScreenshot({opts}).toDataURL()')
         return b64decode(serial_data.split(',')[1])
 
     def create_subchart(self, position: FLOAT = 'left', width: float = 0.5, height: float = 0.5,

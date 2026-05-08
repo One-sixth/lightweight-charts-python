@@ -216,7 +216,7 @@ var Lib = (function (exports, lightweightCharts) {
             let logical = null;
             if (usingPoint) {
                 const timeScale = this.handler.chart.timeScale();
-                let coordinate = timeScale.timeToCoordinate(param.time);
+                let coordinate = param.time ? timeScale.timeToCoordinate(param.time) : null;
                 if (coordinate)
                     logical = timeScale.coordinateToLogical(coordinate.valueOf());
                 if (logical)
@@ -2182,7 +2182,7 @@ var Lib = (function (exports, lightweightCharts) {
         watermark;
         seriesMarkers;
         // TODO find a better solution rather than the 'position' parameter
-        constructor(chartId, innerWidth, innerHeight, position, autoSize, paneIndex = 0) {
+        constructor(chartId, innerWidth, innerHeight, position, autoSize, paneIndex = 0, marker_auto_scale = true) {
             this.reSize = this.reSize.bind(this);
             this.id = chartId;
             this.scale = {
@@ -2200,7 +2200,7 @@ var Lib = (function (exports, lightweightCharts) {
             const handle = document.createElement('div');
             handle.classList.add('resize-handle');
             this.wrapper.appendChild(handle);
-            let startY, startHeight;
+            let startY = 0, startHeight = 0;
             const onMouseMove = (e) => {
                 const delta = e.clientY - startY;
                 const newH = Math.max(50, startHeight + delta); // min height 50px
@@ -2223,7 +2223,7 @@ var Lib = (function (exports, lightweightCharts) {
             this.chart = this._createChart();
             this.series = this.createCandlestickSeries(paneIndex);
             this.volumeSeries = this.createVolumeSeries(paneIndex);
-            this.seriesMarkers = lightweightCharts.createSeriesMarkers(this.series, []);
+            this.seriesMarkers = lightweightCharts.createSeriesMarkers(this.series, [], { autoScale: marker_auto_scale });
             this.legend = new Legend(this);
             Handler._all.push(this);
             document.addEventListener('keydown', (event) => {
@@ -2344,7 +2344,6 @@ var Lib = (function (exports, lightweightCharts) {
                 lastValueVisible: false,
                 priceLineVisible: false,
                 crosshairMarkerVisible: true,
-                autoscale: true,
             }, paneIndex);
             oiSeries.priceScale().applyOptions({
                 scaleMargins: { top: 0.8, bottom: 0 },
