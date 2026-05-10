@@ -1,8 +1,5 @@
 # lightweight-charts-python 快查文档
 
-> Python 封装 TradingView Lightweight Charts 的框架 v5.2.0  
-> 作者: louisnw | GitHub: [louisnw01/lightweight-charts-python](https://github.com/louisnw01/lightweight-charts-python)  
-> PyPI: `pip install lightweight-charts` | 需 Python ≥3.8 + pandas + pywebview
 
 ---
 
