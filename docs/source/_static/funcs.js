@@ -84,11 +84,26 @@ if (!window.Chart) {
                 priceFormat: {type: 'volume'},
                 priceScaleId: '',
             })
+            this.openInterestSeries = this.chart.addSeries(
+                LineSeries,
+                {
+                    color: '#F5A623',
+                    lineWidth: 1,
+                    priceScaleId: 'oi_scale',
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                    crosshairMarkerVisible: true,
+                },
+            );
             this.series.priceScale().applyOptions({
                 scaleMargins: {top: 0.2, bottom: 0.2},
             });
             this.volumeSeries.priceScale().applyOptions({
                 scaleMargins: {top: 0.8, bottom: 0},
+            });
+            this.openInterestSeries.priceScale().applyOptions({
+                scaleMargins: {top: 0.8, bottom: 0},
+                autoScale: true,
             });
         }
         toJSON() {

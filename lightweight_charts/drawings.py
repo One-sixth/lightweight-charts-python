@@ -124,7 +124,6 @@ class HorizontalLine(Drawing):
         self.run_script(f'{self.id}.applyOptions({{text: `{text}`}})')
 
 
-
 class VerticalLine(Drawing):
     def __init__(self, chart, time, color, width, style, text, func=None):
         super().__init__(chart, func)
@@ -147,7 +146,7 @@ class VerticalLine(Drawing):
     def update(self, time: TIME):
         self.run_script(f'{self.id}.updatePoints({{time: {time}}})')
         # self.run_script(f'{self.id}.updatePrice({price})')
-        self.price = price
+        self.time = time
 
     def options(self, color='#1E80F0', style='solid', width=4, text=''):
         super().options(color, style, width)
@@ -180,8 +179,6 @@ class RayLine(Drawing):
         )
         {chart.id}.series.attachPrimitive({self.id})
         ''')
-
-
 
 
 class Box(TwoPointDrawing):
@@ -245,7 +242,7 @@ class TrendLine(TwoPointDrawing):
             func
         )
 
-# TODO reimplement/fix
+
 class VerticalSpan(Pane):
     def __init__(self, series: 'SeriesCommon', start_time: Union[TIME, tuple, list], end_time: Optional[TIME] = None,
                  color: str = 'rgba(252, 219, 3, 0.2)'):

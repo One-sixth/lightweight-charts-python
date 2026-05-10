@@ -239,9 +239,10 @@ line = chart.create_line(
     price_line=True, price_label=True,
     price_scale_id=None, pane_index=0
 )
-line.set(df)        # df 列: time + name
-line.update(series) # 实时更新
-line.delete()       # 删除 (JS + Python 双端清理)
+line.set(df)           # df 列: time + name
+line.update(series)    # 逐点实时更新，每次发送一条 JS 命令
+line.update_batch(df)  # 批量追加数据点，所有 JS 命令合并为一次发送（性能优化）
+line.delete()          # 删除 (JS + Python 双端清理)
 
 hist = chart.create_histogram(
     name='volume', color='...',
@@ -251,7 +252,8 @@ hist = chart.create_histogram(
 )
 hist.set(df)
 hist.update(series)
-hist.scale(top=0.0, bottom=0.0)  # 调整缩放边距
+hist.update_batch(df)                # 批量追加数据点（Histogram 同样支持）
+hist.scale(top=0.0, bottom=0.0)     # 调整缩放边距
 hist.delete()
 
 chart.lines()  # 返回所有已创建的 Line 列表
@@ -514,15 +516,8 @@ df = pd.read_csv('data.csv')
 # df 列: time, open, high, low, close, volume, open_interest
 chart.set(df)  # 自动创建持仓量折线
 
-# 方式 2: 独立设置
-chart.set(ohlcv_df)
-chart.set_open_interest(oi_df)  # oi_df 列: time, open_interest
-
-# 方式 3: 实时更新
+# 方式 2: 实时更新
 chart.update(series)  # series 中含 open_interest 时自动更新
-
-# 方式 4: 手动更新持仓量
-chart.update_open_interest(series)
 ```
 
 **实现原理：**
@@ -607,6 +602,7 @@ get_last_trade(ticker)
 | 23 | `23_crosshair_move` | `events.crosshair_move` — 鼠标悬停实时回调 (Hit Testing) | `crosshair_move.py` |
 | 24 | `24_price_format` | `set_price_format(type='base')` — 基础价格格式，避免浮点精度问题 (v5.2.0+) | `price_format.py` |
 | 25 | `25_screenshot_enhanced` | `screenshot(add_top_layer=True, include_crosshair=True)` — 增强截图 (v5.2.0+) | `screenshot_enhanced.py` |
+| 26 | `26_series_batch_update` | 系列批量更新：`update_batch()` 用于 Line 和 Histogram 系列 | `series_batch_update.py` |
 
 ---
 

@@ -45,7 +45,7 @@ def generate_ticks(num_ticks: int, start_time, start_price: float = 105.0) -> pd
     """Generate random tick data within a single bar's timeframe."""
     np.random.seed(int(time.time()) % 10000)
     times = pd.date_range(start_time, periods=num_ticks, freq='3s')
-    prices = start_price + np.cumsum(np.random.randn(num_ticks) * 0.02)
+    prices = start_price + np.cumsum(np.random.randn(num_ticks) * 0.1)
     return pd.DataFrame({
         'time': times,
         'price': prices,

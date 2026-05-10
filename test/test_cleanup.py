@@ -211,9 +211,6 @@ def test_resource_full_cleanup():
         all_clean &= log_check(len(chart._lines) == 0, "_lines cleared", errors, "lines_not_empty")
         print("  4c. lines + histograms [OK]")
 
-        chart.delete_open_interest()
-        print("  4d. OI [OK]")
-
         hl.delete()
         vl.delete()
         tl.delete()

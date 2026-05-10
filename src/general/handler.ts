@@ -125,6 +125,14 @@ export class Handler {
                 }
             }
 
+            // — volume series —
+            if (h.volumeSeries) {
+                try {
+                    const volLen = h.volumeSeries.data().length;
+                    if (volLen >= 0) lines.push(`volume.dataPoints = ${volLen}`);
+                } catch (_) {}
+            }
+
             // — open interest series —
             if (h.openInterestSeries) {
                 try {
@@ -132,14 +140,6 @@ export class Handler {
                     if (opts.color) lines.push(`openInterest.color = ${q(opts.color)}`);
                     const oiLen = h.openInterestSeries.data().length;
                     if (oiLen >= 0) lines.push(`openInterest.dataPoints = ${oiLen}`);
-                } catch (_) {}
-            }
-
-            // — volume series —
-            if (h.volumeSeries) {
-                try {
-                    const volLen = h.volumeSeries.data().length;
-                    if (volLen >= 0) lines.push(`volumeDataPoints = ${volLen}`);
                 } catch (_) {}
             }
 
@@ -304,6 +304,7 @@ export class Handler {
         this.chart = this._createChart();
         this.series = this.createCandlestickSeries(paneIndex);
         this.volumeSeries = this.createVolumeSeries(paneIndex);
+        this.openInterestSeries = this.createOpenInterestSeries(paneIndex);
         this.seriesMarkers = createSeriesMarkers(this.series, [], {autoScale: marker_auto_scale});
 
         this.legend = new Legend(this)
@@ -449,7 +450,6 @@ export class Handler {
             scaleMargins: {top: 0.8, bottom: 0},
             autoScale: true,
         });
-        this.openInterestSeries = oiSeries;
         return oiSeries;
     }
 

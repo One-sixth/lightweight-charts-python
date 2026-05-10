@@ -1,4 +1,5 @@
-import json
+# import json
+import orjson as json
 import os
 from base64 import b64decode
 from datetime import datetime
@@ -6,6 +7,7 @@ from typing import Callable, Union, Literal, List, Optional
 import pandas as pd
 import time as _time
 import tomllib
+import numpy as np
 
 from .table import Table
 from .toolbox import ToolBox
@@ -202,19 +204,24 @@ class SeriesCommon(Pane):
         self.run_script(f'{self.id}.series.pop({count})')
 
     def _set_interval(self, df: pd.DataFrame):
-        if not pd.api.types.is_datetime64_any_dtype(df['time']):
-            df['time'] = pd.to_datetime(df['time']).dt.tz_localize(None)
-        common_interval = df['time'].diff().value_counts()
-        if common_interval.empty:
+        if self._period_locked:
             return
+
+        df.columns = self._format_labels(df, df.columns, df.index, self.name)
+        time_df = pd.to_datetime(df['time'], unit='s').dt.tz_localize(None)
+
+        common_interval = time_df.diff().value_counts(sort=True, ascending=False, dropna=True)
+        if common_interval.empty:
+            raise AssertionError("No common interval found.")
+
         self._interval = common_interval.index[0].total_seconds()
 
         units = [
-            pd.Timedelta(microseconds=df['time'].dt.microsecond.value_counts().index[0]),
-            pd.Timedelta(seconds=df['time'].dt.second.value_counts().index[0]),
-            pd.Timedelta(minutes=df['time'].dt.minute.value_counts().index[0]),
-            pd.Timedelta(hours=df['time'].dt.hour.value_counts().index[0]),
-            pd.Timedelta(days=df['time'].dt.day.value_counts().index[0]),
+            pd.Timedelta(microseconds=time_df.dt.microsecond.value_counts().index[0]),
+            pd.Timedelta(seconds=time_df.dt.second.value_counts().index[0]),
+            pd.Timedelta(minutes=time_df.dt.minute.value_counts().index[0]),
+            pd.Timedelta(hours=time_df.dt.hour.value_counts().index[0]),
+            pd.Timedelta(days=time_df.dt.day.value_counts().index[0]),
         ]
         self.offset = 0
         for value in units:
@@ -227,36 +234,63 @@ class SeriesCommon(Pane):
             break
 
     @staticmethod
-    def _format_labels(data, labels, index, exclude_lowercase):
-        def rename(la, mapper):
-            return [mapper[key] if key in mapper else key for key in la]
+    def _format_labels(data, labels, index, exclude_lowercase: Optional[Union[str, list, tuple, set]] = None):
+        '''
+        格式化列名，将所有列名转换为小写，排除exclude_lowercase中的列名。
+        如果有 date 列，就改名为 time 列。
+        如果没有 time 列，就用 index 作为 time 列。
+        '''
+        labels = list(labels)
 
-        if 'date' not in labels and 'time' not in labels:
-            labels = labels.str.lower()
-            if exclude_lowercase:
-                labels = rename(labels, {exclude_lowercase.lower(): exclude_lowercase})
-        if 'date' in labels:
-            labels = rename(labels, {'date': 'time'})
-        elif 'time' not in labels:
+        if isinstance(exclude_lowercase, str):
+            exclude_lowercase = [exclude_lowercase]
+
+        exclude_lowercase = set() if exclude_lowercase is None else set(exclude_lowercase)
+
+        new_labels = []
+        for l in labels:
+            new_labels.append(l if l in exclude_lowercase else l.lower())
+
+        del labels
+
+        # 不允许 date 和 time 同时出现
+        if 'date' in new_labels and 'time' in new_labels:
+            raise ValueError("date and time cannot be used at the same time.")
+
+        # 替换 date 到 time，如果有
+        new_labels = [l if l != 'date' else 'time' for l in new_labels]
+
+        # 如果没有 time ，就用 index 作为 time 列
+        if 'time' not in new_labels:
             data['time'] = index
-            labels = [*labels, 'time']
-        return labels
+            new_labels.append('time')
 
-    def _df_datetime_format(self, df: pd.DataFrame, exclude_lowercase=None):
+        return new_labels
+
+    def _df_datetime_format(self, df: pd.DataFrame, exclude_lowercase=None, drop_duplicates=False):
+        '''
+        格式化DataFrame，将所有列名转换为小写，排除exclude_lowercase中的列名。
+        如果有 date 列，就改名为 time 列。
+        如果没有 time 列，就用 index 作为 time 列。
+        :param df: 输入的DataFrame
+        :param exclude_lowercase:
+        :param set_interval: 是否设置时间间隔，若 _period_locked 为 True 则不生效
+        :return:
+        '''
         df = df.copy()
         df.columns = self._format_labels(df, df.columns, df.index, exclude_lowercase)
-        if not self._period_locked:
-            self._set_interval(df)
-        assert pd.api.types.is_datetime64_any_dtype(df['time']), "df['time'] must be datetime type."
-        # 清除时区信息
-        df['time'] = df['time'].dt.tz_localize(None)
-        # Solution for pandas 1.x and 2.x:
-        df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
-        # When period is locked, align all time values to the locked interval
-        if self._period_locked:
-            df['time'] = (self._interval * (df['time'] // self._interval)).astype(int)
-            # Deduplicate timestamps: keep last row per time to prevent JS
-            # "Value is null" errors from duplicate timestamps in setData()
+        if df['time'].dtype in (np.int64, np.float64):
+            # 如果输入是 np.int64 或 np.float64，则直接认为是 秒级时间戳。
+            pass
+        else:
+            # 转换为时间戳，清除时区信息
+            df['time'] = pd.to_datetime(df['time'], unit='s').dt.tz_localize(None)
+            # 转换为秒级时间戳，单位是秒，类型是int
+            df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
+
+        # 确保时间值被锁定到最近的bar起点，单位是秒，类型是 np.int64
+        df['time'] = (self._interval * (df['time'] // self._interval)).astype(np.int64)
+        if drop_duplicates:
             df = df.groupby('time', as_index=False).last()
         return df
 
@@ -266,13 +300,11 @@ class SeriesCommon(Pane):
         series['time'] = self._single_datetime_format(series['time'])
         return series
 
-    def _single_datetime_format(self, arg) -> float:
-        if isinstance(arg, (str, int, float)) or not pd.api.types.is_datetime64_any_dtype(arg):
-            try:
-                arg = pd.to_datetime(arg, unit='ms').tz_localize(None)
-            except ValueError:
-                arg = pd.to_datetime(arg).tz_localize(None)
-        arg = self._interval * (arg.timestamp() // self._interval)+self.offset
+    def _single_datetime_format(self, arg) -> int:
+        if not isinstance(arg, (int, np.int64, float, np.float64)):
+            arg = pd.to_datetime(arg, unit='s').tz_localize(None).timestamp()
+        # 把时间锁定到最近的bar起点，单位是秒
+        arg = int(self._interval * (arg // self._interval) + self.offset)
         return arg
 
     def set(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
@@ -280,12 +312,16 @@ class SeriesCommon(Pane):
             self.run_script(f'{self.id}.series.setData([])')
             self.data = pd.DataFrame()
             return
+
         if format_cols:
+            self._set_interval(df)
             df = self._df_datetime_format(df, exclude_lowercase=self.name)
+
         if self.name:
             if self.name not in df:
                 raise NameError(f'No column named "{self.name}".')
             df = df.rename(columns={self.name: 'value'})
+
         self.data = df.copy()
         self._last_bar = df.iloc[-1]
         self.run_script(f'{self.id}.series.setData({js_data(df)}); ')
@@ -293,14 +329,101 @@ class SeriesCommon(Pane):
             self._update_markers()
 
     def update(self, series: pd.Series):
+        if self._last_bar is None:
+            raise AssertionError("set() must be called first.")
         series = self._series_datetime_format(series, exclude_lowercase=self.name)
         if self.name in series.index:
             series.rename({self.name: 'value'}, inplace=True)
-        if self._last_bar is not None and series['time'] != self._last_bar['time']:
-            self.data.loc[self.data.index[-1]] = self._last_bar
+        if series['time'] == self._last_bar['time']:
+            self.data.iloc[-1] = series
+        else:
             self.data = pd.concat([self.data, series.to_frame().T], ignore_index=True)
-        self._last_bar = series
+        self._last_bar = self.data.iloc[-1]
         self.run_script(f'{self.id}.series.update({js_data(series)});')
+
+    def _clean_update_batch(self, df: pd.DataFrame, exclude_lowercase=None):
+        '''
+        通用函数，清理批量更新数据，确保时间是单调递增的，且在 _last_bar 后面。
+        :return:
+        '''
+        if df.empty:
+            return df
+
+        # 先直接清理格式
+        df = self._df_datetime_format(df, exclude_lowercase=exclude_lowercase)
+
+        # 确保时间是单调递增
+        if len(df) > 1:
+            if not df['time'].is_monotonic_increasing:
+                raise ValueError("Time column must be monotonic increasing.")
+
+        # 确保时间都在 _last_bar 后面
+        if self._last_bar is not None:
+            mask = df['time'] >= self._last_bar['time']
+            df = df[mask]
+            n_drop = len(mask) - mask.sum()
+            if n_drop > 0:
+                print(f'Warning! Drop {n_drop} lines because early than _last_bar.')
+
+        return df
+
+    def update_batch(self, df: pd.DataFrame):
+        """
+        Batch-updates the series with multiple data points at once.
+
+        Processes each row from the DataFrame using the same logic as
+        update(), but collects all JavaScript commands into a single
+        batch for efficiency.  This mirrors Candlestick.update_bars()
+        for Line and Histogram series.
+
+        :param df: DataFrame, must contain a 'time' column plus the
+                   series value column(s) (e.g. the line name column
+                   or a 'value' column for Histogram).
+        """
+        if df.empty:
+            return
+
+        # 先直接清理格式
+        df = self._df_datetime_format(df, exclude_lowercase=self.name)
+        df.rename(columns={self.name: 'value'}, inplace=True)
+        # 取出有效数据
+        df = df[['time', 'value']]
+
+        # 确保时间是单调递增
+        if len(df) > 1:
+            if not df['time'].is_monotonic_increasing:
+                raise ValueError("Time column must be monotonic increasing.")
+
+        # 确保时间都在 _last_bar 后面
+        if self._last_bar is not None:
+            mask = df['time'] >= self._last_bar['time']
+            df = df[mask]
+            n_drop = len(mask) - mask.sum()
+            if n_drop > 0:
+                print(f'Warning! Drop {n_drop} lines because early than _last_bar.')
+
+            if df.empty:
+                return
+
+        # 生成 js 命令
+        js_commands = []
+        for _, row in df.iterrows():
+            js_commands.append(f'{self.id}.series.update({js_data(row)});')
+
+        if self.data is None or self.data.empty:
+            # 如果数据为空，则直接设置新数据
+            self.data = df
+        elif self.data['time'].iloc[-1] == df['time'].iloc[0]:
+            # 如果最后一个时间点和第一个时间点相同，则去除原数据的最后一个点，合并新数据
+            self.data = pd.concat([self.data.iloc[:-1], df], ignore_index=True)
+        else:
+            # 如果最后一个时间点和第一个时间点不同，则直接合并新数据
+            self.data = pd.concat([self.data, df], ignore_index=True)
+
+        self._last_bar = df.iloc[-1]
+
+        # 一次性执行
+        self.run_script(' '.join(js_commands))
 
     def _update_markers(self):
         if not self.markers:
@@ -422,7 +545,6 @@ class SeriesCommon(Pane):
         style: LINE_STYLE = 'solid',
         text: str = ''
     ) -> RayLine:
-    # TODO
         return RayLine(*locals().values())
 
     def vertical_line(
@@ -473,8 +595,9 @@ class SeriesCommon(Pane):
 
     def _toggle_data(self, arg):
         self.run_script(f'''
-        {self.id}.series.applyOptions({{visible: {jbool(arg)}}})
-        if ('volumeSeries' in {self.id}) {self.id}.volumeSeries.applyOptions({{visible: {jbool(arg)}}})
+        {self.id}.series.applyOptions({{visible: {jbool(arg)}}});
+        if ('volumeSeries' in {self.id}) {self.id}.volumeSeries.applyOptions({{visible: {jbool(arg)}}});
+        if ('openInterestSeries' in {self.id}) {self.id}.openInterestSeries.applyOptions({{visible: {jbool(arg)}}});
         ''')
 
     def vertical_span(
@@ -654,25 +777,11 @@ class Candlestick(SeriesCommon):
         self._volume_down_color = 'rgba(200,127,130,0.8)'
 
         self.candle_data = pd.DataFrame()
+        self.candle_column = []
         self._open_interest_data = pd.DataFrame()
-        # Create OI series upfront (hidden by default) — no more lazy init needed
-        self.run_script(
-            f'{chart.id}.createOpenInterestSeries(0);'
-            f'{chart.id}.openInterestSeries.applyOptions({{visible: false}});'
-        )
 
-    def _prepare_data(self, df: pd.DataFrame):
-        if df is None or df.empty:
-            return None, None
-        df = self._df_datetime_format(df)
-        candle_df = df[['time', 'open', 'high', 'low', 'close']]
-
-        if 'volume' not in df:
-            return candle_df, None
-        volume = df[['time','volume']].rename(columns={'volume': 'value'})
-        volume['color'] = self._volume_down_color
-        volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-        return candle_df, volume
+        self._has_volume = False
+        self._has_open_interest = False
 
     def clear_data(self):
         """
@@ -682,68 +791,58 @@ class Candlestick(SeriesCommon):
         self.run_script(f'{self.id}.series.setData([])')
         self.run_script(f'{self.id}.volumeSeries.setData([])')
         self.run_script(f'{self.id}.openInterestSeries.setData([])')
-        self.run_script(f'{self.id}.openInterestSeries.applyOptions({{visible: false}})')
+        self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
         self.candle_data = pd.DataFrame()
-        self._last_bar = None
+        self.candle_column = []
         self._open_interest_data = pd.DataFrame()
-
-    def _set_open_interest(self, df: pd.DataFrame, pane_index: int = 0):
-        """
-        Internal: creates or updates the open interest line series.
-        decoupled from volume scaling — uses its own 'oi_scale' price scale.
-        """
-        oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'}).copy()
-        # time may already be Unix seconds (from set()) or raw datetime (from set_open_interest())
-        if not pd.api.types.is_numeric_dtype(oi_df['time']):
-            oi_df['time'] = (pd.to_datetime(oi_df['time']) - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
-        self._open_interest_data = oi_df.copy()
-        oi_js = js_data(oi_df)
-        self.run_script(f'''
-            {self._chart.id}.openInterestSeries.setData({oi_js});
-            {self._chart.id}.openInterestSeries.applyOptions({{visible: true}});
-        ''')
-
-    def _update_open_interest(self, series: pd.Series):
-        """Internal: update the last OI point."""
-        ts = series['time'] if pd.api.types.is_numeric_dtype(type(series['time'])) else self._single_datetime_format(series['time'])
-        oi_val = series['open_interest']
-        self.run_script(f'''
-            {self._chart.id}.openInterestSeries.update({{time: {ts}, value: {oi_val}}});
-            {self._chart.id}.openInterestSeries.applyOptions({{visible: true}});
-        ''')
+        self._last_bar = None
+        self._has_volume = self._has_open_interest = False
 
     def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
         """
         Sets the initial data for the chart.\n
-        :param df: columns: date/time, open, high, low, close, volume (if volume enabled).
+        :param df: columns: date/time, open, high, low, close, volume (if volume enabled), open_interest (if open_interest enabled).
         :param keep_drawings: keeps any drawings made through the toolbox. Otherwise, they will be deleted.
         """
         if df is None or df.empty:
-            self.run_script(f'{self.id}.series.setData([])')
-            self.run_script(f'{self.id}.volumeSeries.setData([])')
-            self.candle_data = pd.DataFrame()
+            self.clear_data()
             return
+
+        self._set_interval(df)
         df = self._df_datetime_format(df)
-        df_copy = df.copy()
-        self.candle_data = df_copy[['time', 'open', 'high', 'low', 'close']]
+
+        self._has_volume = 'volume' in df
+        self._has_open_interest = 'open_interest' in df
+
+        self.candle_column = ['time', 'open', 'high', 'low', 'close']
+        if self._has_volume:
+            self.candle_column.append('volume')
+        if self._has_open_interest:
+            self.candle_column.append('open_interest')
+
+        self.candle_data = df[self.candle_column]
         self._last_bar = df.iloc[-1]
-        candle_js_data = js_data(df[['time', 'open', 'high', 'low', 'close']])
-        self.run_script(f'{self.id}.series.setData({candle_js_data})')
 
-        if 'volume' in df:
-            volume = df[['time', 'volume']].rename(columns={'volume': 'value'})
-            volume['color'] = self._volume_down_color
-            volume.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-            volume_js_data = js_data(volume)
-            self.run_script(f'{self.id}.volumeSeries.setData({volume_js_data})')
+        ohlc_js_data = js_data(self.candle_data[['time', 'open', 'high', 'low', 'close']])
+        self.run_script(f'{self.id}.series.setData({ohlc_js_data})')
 
-        if 'open_interest' in df:
-            self._set_open_interest(df)
+        if self._has_volume:
+            vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
+            vol_df['color'] = self._volume_down_color
+            vol_df.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+            vol_js_data = js_data(vol_df)
+            self.run_script(f'{self.id}.volumeSeries.setData({vol_js_data})')
+
+        if self._has_open_interest:
+            oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
+            oi_js_data = js_data(oi_df)
+            self.run_script(f'{self.id}.openInterestSeries.setData({oi_js_data})')
 
         for line in self._lines:
             if line.name not in df.columns:
                 continue
             line.set(df[['time', line.name]], format_cols=False)
+
         # set autoScale to true in case the user has dragged the price scale
         self.run_script(f'''
             if (!{self.id}.chart.priceScale("right").options.autoScale)
@@ -760,56 +859,51 @@ class Candlestick(SeriesCommon):
         else:
             self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
 
-    def update(self, series: pd.Series, _from_tick=False):
-        """
-        Updates the data from a bar;
-        if series['time'] is the same time as the last bar, the last bar will be overwritten.\n
-        :param series: labels: date/time, open, high, low, close, volume (if using volume).
-        """
-        series = self._series_datetime_format(series) if not _from_tick else series
-        if series['time'] != self._last_bar['time']:
-            self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
-            self.candle_data = pd.concat([self.candle_data, series.to_frame().T], ignore_index=True)
-            self._chart.events.new_bar._emit(self)
+    def update_bar(self, series: pd.Series):
+        '''
+        更新单个 bar
+        :param series:
+        :return:
+        '''
+        self.update_bars(series.to_frame().T)
 
-        self._last_bar = series
-        self.run_script(f'{self.id}.series.update({js_data(series)})')
-
-        if 'volume' in series:
-            volume = series.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
-            volume['color'] = self._volume_up_color if series['close'] > series['open'] else self._volume_down_color
-            self.run_script(f'{self.id}.volumeSeries.update({js_data(volume)})')
-
-        if 'open_interest' in series:
-            self._update_open_interest(series)
+    update = update_bar
 
     def update_from_tick(self, series: pd.Series, cumulative_volume: bool = False):
         """
-        Updates the data from a tick.\n
-        :param series: labels: date/time, price, volume (if using volume).
+        使用 tick 更新
+        :param series: labels: date/time, price, [volume, open_interest] .
         :param cumulative_volume: Adds the given volume onto the latest bar.
         """
         series = self._series_datetime_format(series)
+        # 注意，series 的时间已经锁定到最近的bar起点，所以可安全地进行比较
+
+        if self._last_bar is None:
+            raise AssertionError('update_from_tick() must be called after set()')
+
         if series['time'] < self._last_bar['time']:
             raise ValueError(f'Trying to update tick of time "{pd.to_datetime(series["time"])}", which occurs before the last bar time of "{pd.to_datetime(self._last_bar["time"])}".')
-        bar = pd.Series(dtype='float64')
+
+        bar = self._last_bar.copy()
         if series['time'] == self._last_bar['time']:
-            bar = self._last_bar
             bar['high'] = max(self._last_bar['high'], series['price'])
             bar['low'] = min(self._last_bar['low'], series['price'])
             bar['close'] = series['price']
-            if 'volume' in series:
-                if cumulative_volume:
-                    bar['volume'] += series['volume']
-                else:
-                    bar['volume'] = series['volume']
+
         else:
             for key in ('open', 'high', 'low', 'close'):
                 bar[key] = series['price']
             bar['time'] = series['time']
-            if 'volume' in series:
+
+        if self._has_volume:
+            if cumulative_volume:
+                bar['volume'] += series['volume']
+            else:
                 bar['volume'] = series['volume']
-        self.update(bar, _from_tick=True)
+        if self._has_open_interest:
+            bar['open_interest'] = series['open_interest']
+
+        self.update(bar)
 
     def update_bars(self, df: pd.DataFrame):
         """
@@ -818,43 +912,49 @@ class Candlestick(SeriesCommon):
         Processes each row from the DataFrame using the same logic as update(),
         but collects all JavaScript commands into a single batch for efficiency.
 
-        :param df: DataFrame with columns: date/time, open, high, low, close,
-                   and optionally volume, open_interest.
+        :param df: DataFrame with columns: date/time, open, high, low, close, [volume, open_interest]
         """
+        # 丢弃所有比last_bar数据更旧的数据
+        df = self._clean_update_batch(df)
         if df.empty:
             return
 
-        df = df.copy()
-        df.columns = self._format_labels(df, df.columns, df.index, None)
-        js_commands = []
-
-        for _, row in df.iterrows():
-            series = self._series_datetime_format(row)
+        if self._last_bar is None or self._last_bar['time'] != df['time'].iloc[-1]:
+            is_new_bar = True
+        else:
             is_new_bar = False
 
-            if series['time'] != self._last_bar['time']:
-                self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
-                self.candle_data = pd.concat([self.candle_data, series.to_frame().T], ignore_index=True)
-                is_new_bar = True
+        if self.candle_data.empty:
+            self.candle_data = df
+        elif self.candle_data.iloc[-1]['time'] == df['time'].iloc[0]:
+            self.candle_data = pd.concat([self.candle_data.iloc[:-1], df], ignore_index=True)
+        else:
+            self.candle_data = pd.concat([self.candle_data, df], ignore_index=True)
 
-            self._last_bar = series
+        js_commands = []
+
+        ohlc_df = df[['time', 'open', 'high', 'low', 'close']]
+        for _, series in ohlc_df.iterrows():
             js_commands.append(f'{self.id}.series.update({js_data(series)})')
 
-            if 'volume' in series:
-                volume = series.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
-                volume['color'] = self._volume_up_color if series['close'] > series['open'] else self._volume_down_color
-                js_commands.append(f'{self.id}.volumeSeries.update({js_data(volume)})')
+        if self._has_volume:
+            assert 'volume' in df.columns, 'DataFrame must contain volume column'
+            vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
+            vol_df['color'] = self._volume_down_color
+            vol_df.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
+            for _, series in vol_df.iterrows():
+                js_commands.append(f'{self.id}.volumeSeries.update({js_data(series)})')
 
-            if 'open_interest' in series:
-                ts = series['time']
-                oi_val = series['open_interest']
-                js_commands.append(
-                    f'{self._chart.id}.openInterestSeries.update({{time: {ts}, value: {oi_val}}});'
-                    f'{self._chart.id}.openInterestSeries.applyOptions({{visible: true}});'
-                )
+        if self._has_open_interest:
+            assert 'open_interest' in df.columns, 'DataFrame must contain open_interest column'
+            oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
+            for _, series in oi_df.iterrows():
+                js_commands.append(f'{self.id}.openInterestSeries.update({js_data(series)})')
 
-            if is_new_bar:
-                self._chart.events.new_bar._emit(self)
+        self._last_bar = df.iloc[-1]
+
+        if is_new_bar:
+            self._chart.events.new_bar._emit(self)
 
         # Send all JS commands in one batch
         self.run_script('; '.join(js_commands))
@@ -866,65 +966,65 @@ class Candlestick(SeriesCommon):
         Processes each tick row using the same logic as update_from_tick(),
         but collects all JavaScript commands into a single batch for efficiency.
 
-        :param df: DataFrame with columns: date/time, price, and optionally volume.
+        需要自己组装为多个 bars，然后发给 update_bars进行更新，有点麻烦
+
+        :param df: DataFrame with columns: date/time, price, [volume, open_interest]
         :param cumulative_volume: If True, adds tick volume onto the latest bar's volume.
         """
         if df.empty:
             return
 
-        df = df.copy()
-        df.columns = self._format_labels(df, df.columns, df.index, None)
-        js_commands = []
+        if self._last_bar is None:
+            raise AssertionError('update_from_ticks() must be called after set()')
 
-        for _, row in df.iterrows():
-            series = self._series_datetime_format(row)
+        df = self._df_datetime_format(df)
 
-            if series['time'] < self._last_bar['time']:
-                raise ValueError(
-                    f'Trying to update tick of time "{pd.to_datetime(series["time"])}", '
-                    f'which occurs before the last bar time of '
-                    f'"{pd.to_datetime(self._last_bar["time"])}".'
-                )
+        # 使用 pandas 聚合技巧，把 tick 变成 bar
+        group_df = df.groupby('time')
 
-            bar = pd.Series(dtype='float64')
-            is_new_bar = False
+        bars = pd.DataFrame({
+            'time': list(group_df.groups),
+            'open': group_df['price'].first().array,
+            'high': group_df['price'].max().array,
+            'low': group_df['price'].min().array,
+            'close': group_df['price'].last().array,
+        })
 
-            if series['time'] == self._last_bar['time']:
-                bar = self._last_bar
-                bar['high'] = max(self._last_bar['high'], series['price'])
-                bar['low'] = min(self._last_bar['low'], series['price'])
-                bar['close'] = series['price']
-                if 'volume' in series:
-                    if cumulative_volume:
-                        bar['volume'] += series['volume']
-                    else:
-                        bar['volume'] = series['volume']
+        vol_df = oi_df = None
+
+        if self._has_volume:
+            if cumulative_volume:
+                vol_df = group_df['volume'].sum().array
             else:
-                for key in ('open', 'high', 'low', 'close'):
-                    bar[key] = series['price']
-                bar['time'] = series['time']
-                if 'volume' in series:
-                    bar['volume'] = series['volume']
-                is_new_bar = True
+                vol_df = group_df['volume'].last().array
 
-            # Update Python state
-            if bar['time'] != self._last_bar['time']:
-                self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
-                self.candle_data = pd.concat([self.candle_data, bar.to_frame().T], ignore_index=True)
+        if self._has_open_interest:
+            oi_df = group_df['open_interest'].last().array
 
-            self._last_bar = bar
-            js_commands.append(f'{self.id}.series.update({js_data(bar)})')
+        if self._last_bar['time'] == bars['time'].iloc[0]:
+            # 发现同一个bar，更新
+            bars.iloc[0, 1] = self._last_bar['open']
+            bars.iloc[0, 2] = max(self._last_bar['high'], bars.iloc[0, 2])
+            bars.iloc[0, 3] = min(self._last_bar['low'], bars.iloc[0, 3])
 
-            if 'volume' in bar:
-                volume = bar.drop(['open', 'high', 'low', 'close']).rename({'volume': 'value'})
-                volume['color'] = self._volume_up_color if bar['close'] > bar['open'] else self._volume_down_color
-                js_commands.append(f'{self.id}.volumeSeries.update({js_data(volume)})')
+            if self._has_volume:
+                if cumulative_volume:
+                    vol_df.iloc[0] += self._last_bar['volume']
+                else:
+                    # 无需更新volume，因为volume是单向的
+                    pass
 
-            if is_new_bar:
-                self._chart.events.new_bar._emit(self)
+            # 无需更新open_interest，因为open_interest是单向的
+            # if self._has_open_interest:
+            #     pass
 
-        # Send all JS commands in one batch
-        self.run_script('; '.join(js_commands))
+        if self._has_volume:
+            bars['volume'] = vol_df
+
+        if self._has_open_interest:
+            bars['open_interest'] = oi_df
+
+        self.update_bars(bars)
 
     def price_scale(
         self,
@@ -1007,8 +1107,22 @@ class Candlestick(SeriesCommon):
         self.run_script(f'''
         {self.id}.volumeSeries.priceScale().applyOptions({{
             scaleMargins: {{
-            top: {scale_margin_top},
-            bottom: {scale_margin_bottom},
+                top: {scale_margin_top},
+                bottom: {scale_margin_bottom},
+            }}
+        }})''')
+
+    def open_interest_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0):
+        """
+        Configure open interest settings.
+
+        Numbers for scaling must be greater than 0 and less than 1.
+        """
+        self.run_script(f'''
+        {self.id}.openInterestSeries.priceScale().applyOptions({{
+            scaleMargins: {{
+                top: {scale_margin_top},
+                bottom: {scale_margin_bottom},
             }}
         }})''')
 
@@ -1077,7 +1191,6 @@ class AbstractChart(Candlestick, Pane):
         self.clear_data()
         for line in list(self._lines):
             line.delete()
-        self.delete_open_interest()
         self.clear_markers()
         self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.clearDrawings()')
         if hasattr(self, 'toolbox'):
@@ -1088,45 +1201,6 @@ class AbstractChart(Candlestick, Pane):
                 self.remove_subchart(sub_id)
         self.subcharts = [self.id]
         self.clear_handlers()
-
-    def set_open_interest(self, df: pd.DataFrame, pane_index: int = 0):
-        """
-        Sets or replaces the open interest line series data.
-
-        The open interest is drawn as a line series in the volume sub-pane,
-        with its own independent y-axis scale (decoupled from volume scaling).
-
-        :param df: columns: 'time' (datetime) and one additional column for OI values.
-                   Column name can be anything — the second column is used as the value.
-        :param pane_index: which pane to draw in (default 0, same as volume).
-        """
-        df = df.copy()
-        if 'open_interest' not in df.columns:
-            oi_col = [c for c in df.columns if c != 'time'][0]
-            df = df.rename(columns={oi_col: 'open_interest'})
-        self._set_open_interest(df, pane_index)
-
-    def update_open_interest(self, series: pd.Series):
-        """
-        Updates the last open interest value in real-time.
-
-        :param series: must contain 'time' and 'open_interest' (or use the index name).
-        """
-        if 'open_interest' not in series:
-            if series.name:
-                series['open_interest'] = series[series.name]
-        self._update_open_interest(series)
-
-    def delete_open_interest(self):
-        """
-        Clears and hides the open interest line series from the chart.
-        The series object remains available for future data.
-        """
-        self.run_script(f'''
-            {self._chart.id}.openInterestSeries.setData([]);
-            {self._chart.id}.openInterestSeries.applyOptions({{visible: false}});
-        ''')
-        self._open_interest_data = pd.DataFrame()
 
     def remove_subchart(self, subchart_id: str):
         """

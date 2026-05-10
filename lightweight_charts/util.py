@@ -196,7 +196,9 @@ class JSEmitter:
 
 class Events:
     def __init__(self, chart):
+        # 如果新的bar被创建，该事件会被触发，注意批量更新导致多个bar创建时，只会触发一次事件
         self.new_bar = Emitter()
+
         # 搜索事件，该事件注册后，不能删除
         self.search = JSEmitter(chart, f'search{chart.id}',
             on_iadd=lambda o: chart.run_script(f'''
@@ -204,7 +206,7 @@ class Events:
                 {chart.id}.search = Lib.Handler.makeSearchBox({chart.id})
                 ''')
         )
-        
+
         # -------------------------------------------------
         salt = '_' + chart.id[chart.id.index('.')+1:]
 
