@@ -6,6 +6,8 @@
 
 **lightweight-charts-python** 致力于提供简单、Pythonic 的方式接入 TradingView 的 Lightweight Charts。
 
+English Version ReadMe: [README_EN.md](README_EN.md)
+
 ---
 
 # 尝试继续维护

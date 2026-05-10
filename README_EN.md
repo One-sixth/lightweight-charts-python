@@ -6,9 +6,11 @@
 
 **lightweight-charts-python** aims to provide a simple and Pythonic way to access and implement TradingView's Lightweight Charts.
 
+Chinese Version ReadMe: [README.md](README.md)
+
 ---
 
-# Continued Maintenance
+### Trying to Continue Maintenance
 
 I have limited knowledge of TypeScript and primarily rely on DeepSeek AI for assistance with maintenance.
 
@@ -17,7 +19,21 @@ The main Lightweight Charts library has been updated to v5.2.0, with some new v5
 
 ---
 
-# Continued Maintenance — New Features
+### Recent Updates (v2.3 → v2.3.2)
+
+**New or Updated Features:**
+1. ✅ **Sequence Batch Update API** — `Line.update_batch()` / `Histogram.update_batch()` update multiple data points at once for dramatically improved performance
+2. ✅ **Candlestick Batch Update** — `chart.update_bars()` / `chart.update_from_ticks()` batch data processing with 10x speedup
+3. ✅ **Open Interest Visualization** — Independent Y-axis scaling, overlay with volume
+4. ✅ **Example 26** — Added batch update performance comparison demo for Line and Histogram
+
+**Optimizations & Fixes:**
+- Cleaned up internal Open Interest state management
+- Refactored time/label processing logic for acceleration
+
+---
+
+Added and Enhanced Features
 
 1. **Real-time streaming updates** — Supports updating candlesticks directly from tick data.
 2. **Multi-pane charts** — Create sub-charts using `create_subchart()`.
@@ -35,6 +51,8 @@ The main Lightweight Charts library has been updated to v5.2.0, with some new v5
 14. **Human-readable IDs** — `window.Chart_1`, `window.Line_3`, etc.
 15. **Resource audit** — `chart.audit(use_js=True)` returns full TOML-formatted JS variable state.
 16. **Comprehensive cleanup tests** — test_cleanup.py verifies no leaks in Python + JS for all resource types.
+17. **Sequence Batch Update API** — `Line/Histogram.update_batch()` high-performance batch updates.
+18. **Candlestick Batch Update** — `chart.update_bars()/update_from_ticks()`.
 
 **Primary supported environments:** PySide6, wxPython, asyncio.
 
