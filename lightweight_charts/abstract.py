@@ -206,6 +206,7 @@ class SeriesCommon(Pane):
         if self._period_locked:
             return
 
+        df = df.copy()
         df.columns = self._format_labels(df, df.columns, df.index, self.name)
         time_df = pd.to_datetime(df['time'], unit='s').dt.tz_localize(None)
 
@@ -777,7 +778,6 @@ class Candlestick(SeriesCommon):
 
         self.candle_data = pd.DataFrame()
         self.candle_column = []
-        self._open_interest_data = pd.DataFrame()
 
         self._has_volume = False
         self._has_open_interest = False
@@ -793,7 +793,6 @@ class Candlestick(SeriesCommon):
         self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
         self.candle_data = pd.DataFrame()
         self.candle_column = []
-        self._open_interest_data = pd.DataFrame()
         self._last_bar = None
         self._has_volume = self._has_open_interest = False
 
@@ -1240,7 +1239,6 @@ class AbstractChart(Candlestick, Pane):
                 'id': self.id,
                 'type': 'AbstractChart',
                 'has_data': not self.candle_data.empty,
-                'has_open_interest': not self._open_interest_data.empty,
                 'subchart_ids': [s for s in self.subcharts if s != self.id],
             },
             'lines': [],

@@ -55,6 +55,7 @@ def test_data_column_renaming():
 
     bars = load_bars()
     expected_cols = list(bars.rename(columns={'date': 'time'}).columns)
+    expected_cols = [c.lower() for c in expected_cols]
 
     # Mixed-case column names
     messy = bars.copy().rename({

@@ -11,6 +11,7 @@ Usage:
 import sys, os, json, tomllib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+import time
 import pandas as pd
 import numpy as np
 from lightweight_charts import Chart
@@ -106,7 +107,7 @@ def test_resource_full_cleanup():
 
         print("\n[2] Create resources ...")
         chart.set(bars)
-        assert not chart.candle_data.empty and not chart._open_interest_data.empty
+        assert not chart.candle_data.empty
         print("  2a. set() [OK]")
 
         line1 = chart.create_line('line1', color='#ff0000')
@@ -196,7 +197,6 @@ def test_resource_full_cleanup():
         print("\n[4] Delete resources ...")
         chart.clear_data()
         all_clean &= log_check(chart.candle_data.empty, "candle_data cleared", errors, "candle_data_not_empty")
-        all_clean &= log_check(chart._open_interest_data.empty, "OI data cleared", errors, "oi_data_not_empty")
         print("  4a. clear_data() [OK]")
 
         chart.remove_marker(list(chart.markers.keys())[0])
@@ -307,7 +307,6 @@ def test_resource_full_cleanup():
         print("\n[6] Python-side final state ...")
         py_checks = [
             (chart.candle_data.empty, "candle_data", "py_candle_data"),
-            (chart._open_interest_data.empty, "OI data", "py_oi_data"),
             (len(chart._lines) == 0, "_lines", "py_lines"),
             (len(chart._price_lines) == 0, "_price_lines", "py_price_lines"),
             (len(chart._drawings) == 0, "_drawings", "py_drawings"),
@@ -348,9 +347,6 @@ def test_multi_chart_cleanup():
     print("  test_multi_chart_cleanup")
     print(sep)
 
-    import asyncio
-    from threading import Thread
-
     bars = make_oi_data(30)
     errors = []
     all_clean = True
@@ -361,17 +357,10 @@ def test_multi_chart_cleanup():
     chart2 = Chart(title='Chart-2', toolbox=True)
     print("      [OK]")
 
-    # Show both in daemon threads
-    def _run(chart):
-        asyncio.run(chart.show_async())
-
-    t1 = Thread(target=_run, args=(chart1,), daemon=True)
-    t2 = Thread(target=_run, args=(chart2,), daemon=True)
-    t1.start()
-    t2.start()
+    chart1.show(block=False)
+    chart2.show(block=False)
 
     # Wait for both to load
-    import time
     time.sleep(2)
     print("      [OK] both charts launched")
 
