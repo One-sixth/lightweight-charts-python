@@ -24,6 +24,7 @@ INDEX_BN = os.path.join(current_dir, 'js', 'index_bn.html')
 
 
 class Window:
+    """JS 窗口桥接层，管理脚本执行队列、事件处理器和加载状态。"""
     _id_gen = IDGen()
 
     def __init__(
@@ -32,6 +33,11 @@ class Window:
         js_api_code: Optional[str] = None,
         run_script: Optional[Callable] = None
     ):
+        """
+        :param script_func: 执行 JS 字符串的函数
+        :param js_api_code: 可选，设置 JS 侧回调函数名（如 'window.callbackFunction = ...'）
+        :param run_script: 可选，覆盖默认的 run_script 实现
+        """
         self.handlers = {}
         self.loaded = False
         self.destroyed = False
@@ -47,6 +53,7 @@ class Window:
             self.run_script(f'window.callbackFunction = {js_api_code}')
 
     def on_js_load(self):
+        """JS 页面加载完成后的回调，执行所有排队脚本。"""
         if self.loaded:
             return
         self.loaded = True
@@ -80,6 +87,11 @@ class Window:
             self.scripts.append(script)
 
     def run_script_and_get(self, script: str, timeout: float = 10.0):
+        """同步执行 JS 脚本并获取返回值。
+        :param script: JS 表达式
+        :param timeout: 超时秒数
+        :return: JS 返回值
+        :raises TimeoutError: 超时未返回"""
         self.run_script(f'_~_~RETURN~_~_{script}')
         deadline = _time.time() + timeout
         while _time.time() < deadline:
@@ -120,6 +132,8 @@ class Window:
         return_clicked_cells: bool = False,
         func: Optional[Callable] = None
     ) -> 'Table':
+        """在图表上创建一个可交互的表格组件。
+        :return: Table 实例"""
         return Table(*locals().values())
 
     def create_subchart(
@@ -132,6 +146,15 @@ class Window:
         sync_crosshairs_only: bool = False,
         toolbox: bool = False
     ) -> 'AbstractChart':
+        """创建子图表，支持独立缩放或同步十字光标。
+        :param position: 子图位置（'left' / 'right' / 'top' / 'bottom'）
+        :param width: 宽度比例（0~1）
+        :param height: 高度比例（0~1）
+        :param sync_id: 可选的同步 ID，多个图表同步时间和十字光标
+        :param scale_candles_only: 是否仅以 K 线范围缩放
+        :param sync_crosshairs_only: 是否仅同步十字光标
+        :param toolbox: 是否启用绘图工具箱
+        :return: AbstractChart 子图实例"""
         subchart = AbstractChart(
             self, width, height, scale_candles_only, toolbox, position=position
         )
@@ -158,11 +181,17 @@ class Window:
         color: str = '#d8d9db',
         active_color: str = '#ececed'
     ):
+        """自定义 UI 组件（顶栏、表格等）的全局样式。"""
         self.run_script(f'Lib.Handler.setRootStyles({js_json(locals())});')
 
 
 class SeriesCommon(Pane):
+    """图表的系列数据基类，管理数据更新、标记、绘图和价格线。"""
     def __init__(self, chart: 'AbstractChart', name: str = '', pane_index: int = 0):
+        """
+        :param chart: 所属的 AbstractChart 实例
+        :param name: 系列名称（用于图例标识）
+        :param pane_index: 所属面板索引"""
         super().__init__(chart.win)
         self._chart = chart
         if hasattr(chart, '_interval'):
@@ -519,6 +548,15 @@ class SeriesCommon(Pane):
         width: int = 2,
         style: LINE_STYLE = 'solid',
     ) -> TwoPointDrawing:
+        """创建一条趋势线。
+        :param start_time: 起点时间
+        :param start_value: 起点价格
+        :param end_time: 终点时间
+        :param end_value: 终点价格
+        :param round: 是否取整坐标
+        :param line_color: 线条颜色
+        :param width: 线宽
+        :param style: 线条样式"""
         return TrendLine(*locals().values())
 
     def box(
@@ -533,6 +571,12 @@ class SeriesCommon(Pane):
         width: int = 2,
         style: LINE_STYLE = 'solid',
     ) -> TwoPointDrawing:
+        """创建一个矩形方框。
+        :param start_time: 左上角时间
+        :param start_value: 左上角价格
+        :param end_time: 右下角时间
+        :param end_value: 右下角价格
+        :param fill_color: 填充色"""
         return Box(*locals().values())
 
     def ray_line(
@@ -545,6 +589,10 @@ class SeriesCommon(Pane):
         style: LINE_STYLE = 'solid',
         text: str = ''
     ) -> RayLine:
+        """创建一条射线（从起点延伸至无穷远）。
+        :param start_time: 起点时间
+        :param value: 起点价格
+        :param text: 标签文本"""
         return RayLine(*locals().values())
 
     def vertical_line(
@@ -555,6 +603,9 @@ class SeriesCommon(Pane):
         style: LINE_STYLE ='solid',
         text: str = ''
     ) -> VerticalLine:
+        """创建一条垂直线。
+        :param time: 时间位置
+        :param text: 标签文本"""
         return VerticalLine(*locals().values())
 
     def clear_markers(self):
@@ -588,9 +639,11 @@ class SeriesCommon(Pane):
         self.num_decimals = precision
 
     def hide_data(self):
+        """隐藏当前系列的数据（K 线、成交量、持仓量）。"""
         self._toggle_data(False)
 
     def show_data(self):
+        """显示当前系列的数据。"""
         self._toggle_data(True)
 
     def _toggle_data(self, arg):
@@ -676,6 +729,7 @@ class PriceLine(Pane):
 
 
 class Line(SeriesCommon):
+    """折线系列，用于绘制折线图。"""
     def __init__(self, chart, name, color, style, width, price_line, price_label, price_scale_id=None,
                  crosshair_marker=True, pane_index: int = 0,
     ):
@@ -725,6 +779,7 @@ class Line(SeriesCommon):
 
 
 class Histogram(SeriesCommon):
+    """柱状图系列，常用于成交量或持仓量展示。"""
     def __init__(self, chart, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom,
                  pane_index: int = 0
     ):
@@ -764,6 +819,7 @@ class Histogram(SeriesCommon):
         ''')
 
     def scale(self, scale_margin_top: float = 0.0, scale_margin_bottom: float = 0.0):
+        """调整柱状图的 Y 轴边距。"""
         self.run_script(f'''
         {self.id}.series.priceScale().applyOptions({{
             scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}}
@@ -1042,6 +1098,7 @@ class Candlestick(SeriesCommon):
         minimum_width: int = 0,
         perm_width: int = 0
     ):
+        """配置价格坐标轴的外观与行为。"""
         self.run_script(f'''
             {self.id}.series.priceScale().applyOptions({{
                 autoScale: {jbool(auto_scale)},
@@ -1343,6 +1400,9 @@ class AbstractChart(Candlestick, Pane):
         return self._lines.copy()
 
     def set_visible_range(self, start_time: TIME, end_time: TIME):
+        """设置时间轴的可见范围。
+        :param start_time: 可见范围起始时间
+        :param end_time: 可见范围结束时间"""
         self.run_script(f'''
         {self.id}.chart.timeScale().setVisibleRange({{
             from: {pd.to_datetime(start_time).tz_localize(None).timestamp()},
@@ -1527,10 +1587,15 @@ class AbstractChart(Candlestick, Pane):
         ''')
 
     def spinner(self, visible):
+        """显示或隐藏加载动画。"""
         self.run_script(f"{self.id}.spinner.style.display = '{'block' if visible else 'none'}'")
 
     def hotkey(self, modifier_key: Literal['ctrl', 'alt', 'shift', 'meta', None],
                keys: Union[str, tuple, int], func: Callable):
+        """注册键盘快捷键。
+        :param modifier_key: 修饰键（'ctrl'/'alt'/'shift'/'meta'/None）
+        :param keys: 按键名或按键名元组
+        :param func: 回调函数"""
         if not isinstance(keys, tuple):
             keys = (keys,)
         for key in keys:
@@ -1571,6 +1636,8 @@ class AbstractChart(Candlestick, Pane):
         return_clicked_cells: bool = False,
         func: Optional[Callable] = None
     ) -> Table:
+        """在图表上创建一个可交互的表格组件，并将其注册到当前图表。
+        :return: Table 实例"""
         args = locals()
         del args['self']
         tbl = self.win.create_table(*args.values())
@@ -1606,6 +1673,8 @@ class AbstractChart(Candlestick, Pane):
         return chart
 
     def sync_charts(self, sync_crosshairs_only: bool = False):
+        """同步所有子图表的十字光标和时间轴。
+        :param sync_crosshairs_only: True 则仅同步十字光标"""
         if (len(self.subcharts) > 1):
             self.run_script(f'''
                 Lib.Handler.syncChartsAll
@@ -1615,6 +1684,9 @@ class AbstractChart(Candlestick, Pane):
             ''', run_last=True)
 
     def resize_pane(self, pane_index: int, height: int):
+        """调整指定面板的高度。
+        :param pane_index: 面板索引
+        :param height: 目标高度（像素）"""
         self.run_script(f'''
             if ({self.id}.chart.panes().length > {pane_index}) {{
                 {self.id}.chart.panes()[{pane_index}].setHeight({height});
@@ -1622,6 +1694,7 @@ class AbstractChart(Candlestick, Pane):
         ''')
 
     def remove_pane(self, pane_index: int):
+        """移除指定索引的面板。"""
         self.run_script(f'''
                     {self.id}.chart.removePane({pane_index});
             ''')

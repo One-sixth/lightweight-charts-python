@@ -1,4 +1,5 @@
 import asyncio
+import ast
 import inspect
 import multiprocessing as mp
 from queue import Empty
@@ -13,16 +14,27 @@ from .util import parse_event_message, FLOAT
 
 
 class CallbackAPI:
+    """pywebview JS 回调 API，接收 JS 端 emit 的消息。"""
     def __init__(self, emit_queue):
+        """
+        :param emit_queue: 消息队列，用于从 JS 端接收回调事件
+        """
         self.emit_queue = emit_queue
 
     def callback(self, message: str):
+        """接收 JS 端发来的消息并放入队列。"""
         self.emit_queue.put(message)
 
 
 class PyWV:
-
+    """pywebview 窗口进程，运行在独立子进程中处理窗口生命周期和 JS 求值。"""
     def __init__(self, q, emit_q, return_q, loaded_event):
+        """
+        :param q: 函数调用队列（接收主进程的指令）
+        :param emit_q: 事件发射队列（向主进程发送回调）
+        :param return_q: 返回值队列（JS 求值结果）
+        :param loaded_event: 窗口加载完成事件
+        """
         self.queue = q
         self.return_queue = return_q
         self.emit_queue = emit_q
@@ -39,6 +51,7 @@ class PyWV:
         self, width, height, x, y, screen=None, on_top=False,
         maximize=False, title=''
     ):
+        """创建一个 pywebview 窗口。"""
         screen = webview.screens[screen] if screen is not None else None
         if maximize:
             if screen is None:
@@ -65,6 +78,7 @@ class PyWV:
 
 
     def loop(self):
+        """主事件循环，处理来自队列的指令并执行对应 JS 操作。"""
 
         # self.loaded_event.set()
         while self.is_alive:
@@ -96,7 +110,8 @@ class PyWV:
                 except KeyError as e:
                     return
                 except JavascriptException as e:
-                    msg = eval(str(e))
+                    # msg = eval(str(e))
+                    msg = str(e)
                     pp(msg)
                     if '_~_~RETURN~_~_' in arg:
                         self.return_queue.put(None)
@@ -107,6 +122,7 @@ class PyWV:
 
 
 class WebviewHandler():
+    """pywebview 进程管理器，负责窗口进程的启动、通信和生命周期管理。"""
     def __init__(self) -> None:
         self._reset()
         self.debug = False
@@ -129,6 +145,7 @@ class WebviewHandler():
         self, width, height, x, y, screen=None, on_top=False,
         maximize=False, title=''
     ):
+        """向窗口进程发送创建窗口指令，返回窗口编号。"""
         self.function_call_queue.put((
             'create_window', (width, height, x, y, screen, on_top, maximize, title)
         ))
@@ -136,18 +153,22 @@ class WebviewHandler():
         return self.max_window_num
 
     def start(self):
+        """启动窗口进程并等待加载完成。"""
         self.loaded_event.clear()
         self.wv_process.start()
         self.function_call_queue.put(('start', self.debug))
         self.loaded_event.wait()
 
     def show(self, window_num):
+        """显示指定编号的窗口。"""
         self.function_call_queue.put((window_num, 'show'))
 
     def hide(self, window_num):
+        """隐藏指定编号的窗口。"""
         self.function_call_queue.put((window_num, 'hide'))
 
     def evaluate_js(self, window_num, script):
+        """在指定窗口中执行 JS 脚本。"""
         self._raise_exit_if_destroyed()
         self.function_call_queue.put((window_num, script))
 
@@ -173,6 +194,7 @@ class WebviewHandler():
         raise RuntimeError("Chart window has been destroyed. Cannot execute script.")
 
     def exit(self):
+        """终止窗口进程并清理所有队列。"""
         if self.wv_process.is_alive():
             self.wv_process.terminate()
             self.wv_process.join()
@@ -181,6 +203,7 @@ class WebviewHandler():
 
 
 class Chart(abstract.AbstractChart):
+    """桌面窗口图表，基于 pywebview 实现。"""
 
     def __init__(
         self,
@@ -231,6 +254,7 @@ class Chart(abstract.AbstractChart):
             asyncio.run(self.show_async())
 
     async def show_async(self):
+        """异步主循环，处理 JS 回调事件直到窗口关闭。"""
         self.show(block=False)
         try:
             from . import polygon

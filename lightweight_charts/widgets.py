@@ -60,11 +60,13 @@ except ImportError:
 
 
 def emit_callback(window, string):
+    """将 JS 发来的消息分发到对应的 Python 处理器，自动处理 async/sync。"""
     func, args = parse_event_message(window, string)
     asyncio.create_task(func(*args)) if inspect.iscoroutinefunction(func) else func(*args)
 
 
 class WxChart(abstract.AbstractChart):
+    """基于 wxPython WebView 的图表，可嵌入 wx 应用。"""
     def __init__(self, parent, inner_width: float = 1.0, inner_height: float = 1.0,
                  scale_candles_only: bool = False, toolbox: bool = False):
         if wx is None:
@@ -80,10 +82,12 @@ class WxChart(abstract.AbstractChart):
         self.webview.LoadURL("file://"+abstract.INDEX)
 
     def get_webview(self):
+        """返回底层的 wx.html2.WebView 实例。"""
         return self.webview
 
 
 class QtChart(abstract.AbstractChart):
+    """基于 Qt WebEngine 的图表，支持 PySide6 / PyQt5 / PyQt6。"""
     def __init__(self, widget=None, inner_width: float = 1.0, inner_height: float = 1.0,
                  scale_candles_only: bool = False, toolbox: bool = False):
         if QWebEngineView is None:
@@ -118,10 +122,12 @@ class QtChart(abstract.AbstractChart):
 
 
     def get_webview(self):
+        """返回底层的 QWebEngineView 实例。"""
         return self.webview
 
 
 class StaticLWC(abstract.AbstractChart):
+    """静态 HTML/JS 图表基类，将 JS bundle 内联到 HTML 中，用于 Jupyter / Streamlit / 文件导出。"""
     def __init__(self, width=None, height=None, inner_width=1, inner_height=1,
                 scale_candles_only: bool = False, toolbox=False, autosize=True, template='index.html'):
 
@@ -146,12 +152,14 @@ class StaticLWC(abstract.AbstractChart):
         self.height = height
 
     def run_script(self, script, run_last=False):
+        """将 JS 脚本缓存到内部 HTML 缓冲区。"""
         if run_last:
             self.win.final_scripts.append(script)
         else:
             self._html += '\n' + script
 
     def sync_charts(self, sync_crosshairs_only: bool = False):
+        """同步子图表（仅静态 HTML 模式下生效）。"""
         if (len(self.subcharts) > 1):
             self._html += '\n'f'''
                 Lib.Handler.syncChartsAll
@@ -161,6 +169,7 @@ class StaticLWC(abstract.AbstractChart):
             ''' + '\n'
 
     def load(self):
+        """完成 JS 脚本收集并渲染 HTML。"""
         if self.win.loaded:
             return
         self.win.loaded = True
@@ -172,6 +181,7 @@ class StaticLWC(abstract.AbstractChart):
 
 
 class StreamlitChart(StaticLWC):
+    """基于 Streamlit 的图表组件（使用 st.components.v1.html）。"""
     def __init__(self, width=None, height=None, inner_width=1, inner_height=1, scale_candles_only: bool = False, toolbox: bool = False):
         super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox)
 
@@ -182,6 +192,7 @@ class StreamlitChart(StaticLWC):
 
 
 class JupyterChart(StaticLWC):
+    """基于 Jupyter Notebook 的图表（使用 IPython.display.HTML + iframe）。"""
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1, scale_candles_only: bool = False, toolbox: bool = False):
         super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True)
 
@@ -195,6 +206,7 @@ class JupyterChart(StaticLWC):
 
 
 class HTMLChart(StaticLWC):
+    """导出为独立 HTML 文件的图表。"""
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1,
                 scale_candles_only: bool = False, toolbox: bool = False, filename = "charts.html"):
         super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True)
@@ -207,6 +219,7 @@ class HTMLChart(StaticLWC):
 
 
 class HTMLChart_BN(StaticLWC):
+    """专为回测系统设计的增强 HTML 图表，支持多策略切换、交易明细、绩效指标展示。"""
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1,
                 scale_candles_only: bool = False, toolbox: bool = False, filename = "bn_charts.html"):
         super().__init__(width=width, height=height, inner_width=inner_width, inner_height=inner_height,
@@ -358,6 +371,7 @@ class HTMLChart_BN(StaticLWC):
             file.write(html_code)
 
     def new_window(self):
+        """开始一个新的策略窗口（用于保存当前状态并重置）。"""
         self.js_win.append(self._html)
         self._html = self._html_chart_init
         self.subcharts = [self.id]
@@ -365,12 +379,18 @@ class HTMLChart_BN(StaticLWC):
         self._clear_marker_list()
 
     def set_name(self, name):
+        """设置策略名称，用于侧边栏切换。"""
         self.names.append(name)
 
     def set_trades(self, lst:list):
+        """设置交易明细列表，用于展示交易记录。"""
         self.trades.append(lst)
 
     def set_performance_metrics(self, df:Optional[pd.Series] = None, strat_title: Optional[str] = ''):
+        """设置绩效指标数据。
+        :param df: Series，index 为指标名，value 为指标值
+        :param strat_title: 策略标题
+        """
         v = []
         if df is not None and not df.empty:
             v = series_data(df)
@@ -378,6 +398,9 @@ class HTMLChart_BN(StaticLWC):
         self.strat_titles.append(strat_title)
 
     def set_parameters_list(self, df:Optional[pd.Series] = None):
+        """设置策略参数列表。
+        :param df: Series，index 为参数名，value 为参数值
+        """
         v = []
         if df is not None and not df.empty:
             v = series_data(df)

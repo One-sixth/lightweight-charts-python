@@ -9,6 +9,7 @@ import pandas as pd
 
 
 class Pane:
+    """所有可放置在图表上的组件的基类。自动分配唯一 ID 并持有窗口引用。"""
     def __init__(self, window, prefix=''):
         from .abstract import Window
         self.win: Window = window
@@ -20,14 +21,21 @@ class Pane:
 
 
 class IDGen:
+    """自增 ID 生成器，生成格式如 window.Chart_1 的人类可读 ID。"""
     def __init__(self):
         self._counter = 0
 
     def generate(self, prefix: str = '') -> str:
+        """生成一个全局唯一的 JS 变量名 ID。
+        :param prefix: ID 前缀（如 'Chart_'），最终输出 window.前缀+序号"""
         self._counter += 1
         return f'window.{prefix}{self._counter}'
 
 def format_datetime(dt: datetime, tz: Union[str, ZoneInfo] = None) -> str:
+    """格式化时间为字符串，可选时区转换。
+    :param dt: 待格式化的时间
+    :param tz: 目标时区（IANA 名称或 ZoneInfo 对象），None 则不做时区转换
+    :return: 格式如 '2026-05-11 14:30' 或 '2026-05-11 14:30 GMT+0800'"""
     if tz is None:
         # tz = ZoneInfo(get_localzone_name())
         return dt.strftime('%Y-%m-%d %H:%M')
@@ -42,12 +50,19 @@ def format_datetime(dt: datetime, tz: Union[str, ZoneInfo] = None) -> str:
     return dt.strftime('%Y-%m-%d %H:%M GMT%z')
 
 def parse_event_message(window, string):
+    """解析 JS 端发来的事件消息，拆分为处理器名称和参数列表。
+    :param window: Window 实例（持有 handlers 字典）
+    :param string: 原始消息字符串，格式: handlerName_~_arg1;;;arg2
+    :return: (handler_func, args_list)"""
     name, args = string.split('_~_')
     args = args.split(';;;')
     func = window.handlers[name]
     return func, args
 
 def df_data(data: Union[pd.DataFrame, pd.Series]):
+    """将 DataFrame/Series 转为不含 NaN 的 dict/list 结构。
+    :param data: 输入数据
+    :return: list[dict]（DataFrame）或 dict（Series），已去除 NaN 值"""
     if isinstance(data, pd.DataFrame):
         d = data.to_dict(orient='records')
         filtered_records = [{k: v for k, v in record.items() if v is not None and not pd.isna(v)} for record in d]
@@ -57,6 +72,9 @@ def df_data(data: Union[pd.DataFrame, pd.Series]):
     return filtered_records
 
 def series_data(data: Union[pd.DataFrame, pd.Series]):
+    """将 Series 转为 [{index, value}] 格式，float 保留 4 位小数。
+    :param data: 输入数据
+    :return: list[dict]，每项含 index 和 value 字段"""
     filtered_records = []
     for idx, val in data.items():
         if isinstance(val, float):
@@ -67,6 +85,9 @@ def series_data(data: Union[pd.DataFrame, pd.Series]):
     return filtered_records
 
 def js_data(data: Union[pd.DataFrame, pd.Series]):
+    """将 DataFrame/Series 转为 JSON 字符串，已去除 NaN 值。
+    :param data: 输入数据
+    :return: JSON 字符串，可直接嵌入 JS 代码"""
     if isinstance(data, pd.DataFrame):
         d = data.to_dict(orient='records')
         filtered_records = [{k: v for k, v in record.items() if v is not None and not pd.isna(v)} for record in d]
@@ -76,10 +97,16 @@ def js_data(data: Union[pd.DataFrame, pd.Series]):
     return json.dumps(filtered_records)
 
 def snake_to_camel(s: str):
+    """将蛇形命名转为驼峰命名。
+    :param s: 如 'hello_world'
+    :return: 如 'helloWorld'"""
     components = s.split('_')
     return components[0] + ''.join(x.title() for x in components[1:])
 
 def js_json(d: dict):
+    """将 Python dict 转为 JS 侧 JSON.parse() 调用，键名自动转驼峰。
+    :param d: 输入字典
+    :return: 形如 JSON.parse('{...}') 的 JS 代码字符串"""
     filtered_dict = {}
     for key, val in d.items():
         if key in ('self') or val in (None,):
@@ -111,11 +138,17 @@ FLOAT = Literal['left', 'right', 'top', 'bottom']
 
 
 def as_enum(value, string_types):
+    """将字符串枚举值转为对应的数值索引。
+    :param value: 字符串值（如 'solid'）
+    :param string_types: Literal 类型（如 LINE_STYLE）
+    :return: 对应索引值，未匹配则返回 -1"""
     types = string_types.__args__
     return -1 if value not in types else types.index(value)
 
 
 def marker_shape(shape: MARKER_SHAPE):
+    """将标记形状名转为 Lightweight Charts 识别的格式。
+    :param shape: 如 'arrow_up', 'arrow_down', 'circle', 'square'"""
     return {
         'arrow_up': 'arrowUp',
         'arrow_down': 'arrowDown',
@@ -123,6 +156,8 @@ def marker_shape(shape: MARKER_SHAPE):
 
 
 def marker_position(p: MARKER_POSITION):
+    """将标记位置名转为 Lightweight Charts 识别的格式。
+    :param p: 如 'above', 'below', 'inside', 'atPriceMiddle' 等"""
     return {
         'above' : 'aboveBar',
         'below' : 'belowBar',
@@ -134,14 +169,17 @@ def marker_position(p: MARKER_POSITION):
 
 
 class Emitter:
+    """简单的事件发射器，支持同步/异步回调。"""
     def __init__(self):
         self._callable = None
 
     def __iadd__(self, other):
+        """注册回调函数。"""
         self._callable = other
         return self
 
     def _emit(self, *args):
+        """触发事件，自动判断是否异步执行。"""
         if self._callable:
             if inspect.iscoroutinefunction(self._callable):
                 asyncio.create_task(self._callable(*args))
@@ -149,13 +187,21 @@ class Emitter:
                 self._callable(*args)
 
     def __isub__(self, other):
+        """注销回调函数。"""
         if self._callable is other:
             self._callable = None
         return self
 
 
 class JSEmitter:
+    """JS 端事件发射器，将 Python 回调绑定到 JS 窗口事件。"""
     def __init__(self, chart, name, on_iadd, on_isub=None, wrapper=None):
+        """
+        :param chart: 图表实例
+        :param name: 事件名称（同时也是 JS handler 注册名）
+        :param on_iadd: 注册时触发的 JS 绑定函数
+        :param on_isub: 注销时触发的 JS 解绑函数
+        :param wrapper: 可选包装器，用于转换回调参数"""
         self._on_iadd = on_iadd
         self._on_isub = on_isub
         self._chart = chart
@@ -165,6 +211,8 @@ class JSEmitter:
         self._inited = False
 
     def __iadd__(self, other):
+        """注册回调到 JS 事件。
+        :raises ValueError: 如果该事件已注册过回调（仅支持单回调）"""
         if self._inited:
             raise ValueError(f'JSEmitter {self._name} already initialized')
 
@@ -179,6 +227,7 @@ class JSEmitter:
         return self
 
     def __isub__(self, other):
+        """注销回调。"""
         if not self._inited:
             raise ValueError(f'JSEmitter {self._name} not initialized')
 
@@ -195,7 +244,11 @@ class JSEmitter:
 
 
 class Events:
+    """事件注册中心，管理图表相关的事件（新建 K 线、搜索、范围变化、点击、十字光标移动）。"""
     def __init__(self, chart):
+        """
+        :param chart: 图表实例，用于绑定 JS 事件回调
+        """
         # 如果新的bar被创建，该事件会被触发，注意批量更新导致多个bar创建时，只会触发一次事件
         self.new_bar = Emitter()
 
@@ -272,18 +325,26 @@ class Events:
         print(f'delete window.crosshairHandler{salt};')
 
 class BulkRunScript:
+    """批量脚本执行上下文管理器，暂存多条 JS 脚本并在退出时一次性拼接执行。"""
     def __init__(self, script_func):
+        """
+        :param script_func: 执行 JS 的函数（接收字符串参数）
+        """
         self.enabled = False
         self.scripts = []
         self.script_func = script_func
 
     def __enter__(self):
+        """进入批量模式，后续 add_script 加入到缓冲区。"""
         self.enabled = True
 
     def __exit__(self, *args):
+        """退出批量模式，一次性执行所有缓冲脚本。"""
         self.enabled = False
         self.script_func('\n'.join(self.scripts))
         self.scripts = []
 
     def add_script(self, script):
+        """添加一条 JS 脚本到缓冲区。
+        :param script: JS 代码字符串"""
         self.scripts.append(script)

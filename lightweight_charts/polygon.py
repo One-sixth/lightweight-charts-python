@@ -342,6 +342,7 @@ class PolygonAPI:
             self, symbol: str, timeframe: str, start_date: str, end_date: str = 'now',
             limit: int = 5_000, live: bool = False
     ) -> bool:
+        """异步获取股票数据并展示在图表上（等价于 stock() 的异步版本）。"""
         return await self.async_set('stocks', symbol, timeframe, start_date, end_date, limit, live)
 
     async def async_option(
@@ -349,6 +350,7 @@ class PolygonAPI:
             right: Literal['C', 'P'] = None, strike: Union[int, float] = None,
             end_date: str = 'now', limit: int = 5_000, live: bool = False
     ) -> bool:
+        """异步获取期权数据并展示在图表上。"""
         if any((expiration, right, strike)):
             expiration = dt.datetime.strptime(expiration, "%Y-%m-%d").strftime("%y%m%d")
             symbol = f'{symbol}{expiration}{right}{strike * 1000:08d}'
@@ -358,18 +360,21 @@ class PolygonAPI:
             self, symbol: str, timeframe: str, start_date: str, end_date: str = 'now',
             limit: int = 5_000, live: bool = False
     ) -> bool:
+        """异步获取指数数据并展示在图表上。"""
         return await self.async_set('indices', f'I:{symbol}', timeframe, start_date, end_date, limit, live)
 
     async def async_forex(
             self, fiat_pair: str, timeframe: str, start_date: str, end_date: str = 'now',
             limit: int = 5_000, live: bool = False
     ) -> bool:
+        """异步获取外汇数据并展示在图表上。"""
         return await self.async_set('forex', f'C:{fiat_pair}', timeframe, start_date, end_date, limit, live)
 
     async def async_crypto(
             self, crypto_pair: str, timeframe: str, start_date: str, end_date: str = 'now',
             limit: int = 5_000, live: bool = False
     ) -> bool:
+        """异步获取加密货币数据并展示在图表上。"""
         return await self.async_set('crypto', f'X:{crypto_pair}', timeframe, start_date, end_date, limit, live)
 
     @staticmethod
