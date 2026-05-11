@@ -15,6 +15,7 @@ if __name__ == '__main__':
     tests = [
         'test_cleanup.py',
         'test_features.py',
+        'test_util.py',
     ]
 
     results = []
@@ -28,7 +29,8 @@ if __name__ == '__main__':
     passed = sum(1 for _, ok in results if ok)
     print(f"  {passed}/{len(results)} test suites passed")
     for name, ok in results:
-        print(f"    {'✅' if ok else '❌'} {name}")
+        mark = "PASS" if ok else "FAIL"
+        print(f"    [{mark}] {name}")
     print("=" * 60)
 
     sys.exit(0 if all(ok for _, ok in results) else 1)
