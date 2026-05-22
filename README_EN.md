@@ -33,6 +33,25 @@ The main Lightweight Charts library has been updated to v5.2.0, with some new v5
 
 ---
 
+### Latest: Reflex Framework Support 🆕
+
+**New:**
+1. ✅ **ReflexChart** — New `ReflexChart(StaticLWC)` class for embedding charts in [Reflex](https://reflex.dev) web apps
+2. ✅ **Example 27** — Complete Reflex demo (with SMA indicator, dark theme)
+
+**Usage:**
+```bash
+pip install lightweight-charts-python[reflex]
+cd examples/27_reflex_chart
+reflex run
+```
+
+`ReflexChart` supports two modes:
+- **HTML output** (no reflex installed) — `chart.get_html()`
+- **Reflex component** — `chart.to_reflex()` returns `rx.Component`, drop it into your Reflex page
+
+---
+
 Added and Enhanced Features
 
 1. **Real-time streaming updates** — Supports updating candlesticks directly from tick data.
@@ -54,7 +73,7 @@ Added and Enhanced Features
 17. **Sequence Batch Update API** — `Line/Histogram.update_batch()` high-performance batch updates.
 18. **Candlestick Batch Update** — `chart.update_bars()/update_from_ticks()`.
 
-**Primary supported environments:** PySide6, wxPython, asyncio.
+**Primary supported environments:** PySide6, wxPython, asyncio, Reflex.
 
 ---
 
@@ -255,6 +274,30 @@ if __name__ == '__main__':
                           func=on_timeframe_selection)
     chart.set(get_bar_data('TSLA', '5min'))
     chart.show(block=True)
+```
+
+### 7. Reflex Embedding
+
+```python
+import reflex as rx
+import pandas as pd
+from lightweight_charts import ReflexChart
+
+chart = ReflexChart(width=1000, height=600)
+
+df = pd.read_csv('ohlcv.csv')
+chart.set(df)
+chart.layout(background_color='#0c0d0f', text_color='#d8d9db')
+chart.candle_style(up_color='#26a69a', down_color='#ef5350')
+
+def index() -> rx.Component:
+    return rx.vstack(
+        chart.to_reflex(width='100%'),
+        width='100%', height='100vh', align='stretch',
+    )
+
+app = rx.App()
+app.add_page(index, title='Reflex + Lightweight Charts')
 ```
 
 ## More Examples

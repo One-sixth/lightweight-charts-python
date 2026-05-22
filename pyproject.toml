@@ -24,6 +24,7 @@ pyqt5 = ["pyqt5"]
 pyqt6 = ["pyqt6"]
 wx = ["wxpython"]
 jupyter = ["ipython", "ipywidgets"]
+reflex = ["reflex"]
 dev = ["pytest"]
 
 [tool.setuptools.package-data]

@@ -1,0 +1,100 @@
+from typing import Optional
+
+from .widgets import StaticLWC
+
+try:
+    import reflex as rx
+except ImportError:
+    rx = None
+
+
+class ReflexChart(StaticLWC):
+    """基于 Reflex 框架的图表组件。
+
+    生成自包含的 HTML，可嵌入 Reflex 应用。
+    用法与 StreamlitChart / JupyterChart 类似。
+
+    两种使用方式:
+    1. 纯 HTML 生成（无需安装 reflex）:
+        chart = ReflexChart(width=900, height=600)
+        chart.set(df)
+        html_str = chart.get_html()
+
+    2. Reflex 组件嵌入（需 pip install reflex）:
+        chart = ReflexChart(width=900, height=600)
+        chart.set(df)
+        # 在 Reflex 页面中:
+        def index() -> rx.Component:
+            return rx.vstack(chart.to_reflex(), ...)
+    """
+
+    def __init__(self, width: Optional[int] = None, height: Optional[int] = None,
+                 inner_width: float = 1.0, inner_height: float = 1.0,
+                 scale_candles_only: bool = False, toolbox: bool = False,
+                 output_file: Optional[str] = None):
+        """
+        :param width: 图表宽度（像素）
+        :param height: 图表高度（像素）
+        :param inner_width: 图表在容器中的宽度比例 (0~1)
+        :param inner_height: 图表在容器中的高度比例 (0~1)
+        :param scale_candles_only: 缩放时仅依据 K 线
+        :param toolbox: 是否启用绘图工具箱
+        :param output_file: 可选，调用 load() 时写入的 HTML 文件路径
+        """
+        super().__init__(width, height, inner_width, inner_height,
+                         scale_candles_only, toolbox, autosize=True)
+        self._output_file = output_file
+
+    def get_html(self) -> str:
+        """生成并返回完整的自包含 HTML 字符串（无需 reflex 包）。"""
+        self.load()
+        return self._build_html()
+
+    def _build_html(self) -> str:
+        fill_css = (
+            '<style>'
+            'html,body,#container{width:100%;height:100%;min-height:100vh;margin:0;padding:0}'
+            '</style>'
+        )
+        head_close = '</head>'
+        html_init = self._html_init.replace(
+            head_close, fill_css + head_close
+        )
+        return (f"{html_init}  (async ()=> {{\n{self._html}\n}})();\n"
+                "</script></body></html>")
+
+    def _load(self):
+        """若指定了 output_file，写入文件。"""
+        if self._output_file:
+            with open(self._output_file, 'w', encoding='utf-8') as f:
+                f.write(self._build_html())
+
+    def to_reflex(self, width: Optional[str] = None,
+                  height: Optional[str] = None) -> 'rx.Component':
+        """将图表包装为 Reflex 组件。
+
+        :param width: CSS 宽度值，如 '100%', '900px'（默认 100%）
+        :param height: CSS 高度值，如 '600px'（默认 None，由 flex 撑满）
+        :return: rx.Component 实例
+        """
+        if rx is None:
+            raise ModuleNotFoundError(
+                'reflex is required to use to_reflex(). '
+                'Install it via: pip install reflex'
+            )
+        import base64
+
+        html_str = self.get_html()
+        b64 = base64.b64encode(html_str.encode('utf-8')).decode('utf-8')
+
+        style = {'border': 'none', 'width': '100%'}
+        if height is not None:
+            style['height'] = height
+        else:
+            style['flex'] = '1'
+            style['minHeight'] = '0'
+
+        return rx.el.iframe(
+            src=f'data:text/html;base64,{b64}',
+            style=style,
+        )

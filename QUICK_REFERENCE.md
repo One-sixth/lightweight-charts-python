@@ -103,6 +103,7 @@ chart.load()                        # 生成 HTML 文件
 | `QtChart` | `lightweight_charts.widgets` | PyQt5/PyQt6/PySide6 嵌入 |
 | `WxChart` | `lightweight_charts.widgets` | wxPython 嵌入 |
 | `StreamlitChart` | `lightweight_charts.widgets` | Streamlit 嵌入 |
+| `ReflexChart` | `lightweight_charts` | Reflex 嵌入（生成 HTML / 直接返回 rx.Component） |
 
 ### 3.4 数据方法 (Candlestick)
 
@@ -600,6 +601,7 @@ get_last_trade(ticker)
 | 24 | `24_price_format` | `set_price_format(type='base')` — 基础价格格式，避免浮点精度问题 (v5.2.0+) | `price_format.py` |
 | 25 | `25_screenshot_enhanced` | `screenshot(add_top_layer=True, include_crosshair=True)` — 增强截图 (v5.2.0+) | `screenshot_enhanced.py` |
 | 26 | `26_series_batch_update` | 系列批量更新：`update_batch()` 用于 Line 和 Histogram 系列 | `series_batch_update.py` |
+| 27 | `27_reflex_chart` | Reflex 嵌入：K线 + SMA 指标在 Reflex 应用中渲染 | `rx_chart.py` |
 
 ---
 

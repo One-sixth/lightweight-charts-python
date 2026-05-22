@@ -1,6 +1,6 @@
 # 示例目录说明
 
-本目录包含 lightweight-charts-python 的示例代码，编号 1-26。
+本目录包含 lightweight-charts-python 的示例代码，编号 1-27。
 
 ## 编号说明
 
@@ -32,3 +32,4 @@
 | 24 | `24_price_format` | `set_price_format(type='base')` — 基础价格格式，避免浮点精度问题               | ✅ 已实现  |
 | 25 | `25_screenshot_enhanced` | `screenshot(add_top_layer=True, include_crosshair=True)` — 增强截图 | ✅ 已实现  |
 | 26 | `26_series_batch_update` | 系列批量更新：`update_batch()` 用于 Line 和 Histogram 系列 | ✅ 已实现  |
+| 27 | `27_reflex_chart` | Reflex 嵌入：K线 + SMA 指标在 Reflex 应用中渲染 | ✅ 已实现  |
