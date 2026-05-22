@@ -657,16 +657,137 @@ python test/test_features.py      # 功能测试
 
 ---
 
-## 九、清理与重置 API
+## 九、Reflex 集成 (ReflexChart)
 
-### 9.1 清空 K 线数据
+### 9.1 快速开始
+
+```python
+from lightweight_charts import ReflexChart
+
+# 模块级创建（仅执行一次）
+chart = ReflexChart(width=1000, height=600, auto_flush=True)
+chart.set(ohlcv_df)
+chart.layout(background_color='#0c0d0f', text_color='#d8d9db')
+chart.watermark('Reflex + LWC')
+
+class ChartState(rx.State):
+    def tick(self):
+        bar = _next_bar()
+        chart.update(bar)
+        return chart.flush()   # → rx.call_script → postMessage → iframe eval
+
+def index() -> rx.Component:
+    return rx.vstack(
+        rx.button('+1 Bar', on_click=ChartState.tick),
+        chart.to_reflex(id='lwc-frame', width='100%'),
+        rx.input(id='cb-buffer', on_change=ChartState.on_crosshair,
+                 style={'opacity': 0, 'width': 0, 'height': 0}),
+    )
+
+app = rx.App()
+app.add_page(index, on_load=ChartState.mount)
+```
+
+### 9.2 初始化幂等性 — 防重复创建
+
+**问题：** Reflex 的编译进程和运行时进程分别导入模块。编译时 `to_reflex()` 清空 `_pending` 并生成 HTML；运行时进程的 `chart` 实例是 **新创建** 的，其 `_pending` 残留所有初始化脚本（`new Lib.Handler`、`setData`、`createLineSeries` 等）。若 `to_reflex()` 未被新实例调用，第一次 `flush()` 会把 init 脚本全部发送给 iframe，导致**重复创建图表和指标线**。
+
+**根因位置：** `abstract.py:1207-1208`
+
+```python
+self._html_chart_init = f'window.{self.id} = new Lib.Handler("{self.id}", ...)'
+self.run_script(self._html_chart_init + ';0')  # → 同时加入 _html 和 _pending
+```
+
+**解决（`reflex_chart.py:93-112`）：** 在 `run_script()` 中拦截 `new Lib.Handler` 的 init 脚本，自动包裹清理 IIFE：
+
+```python
+def run_script(self, script, run_last=False):
+    short_id = self.id.replace('window.', '', 1)
+    if script.startswith(f'window.{short_id} = ') and 'new Lib.Handler' in script:
+        guard = (
+            f';!function(){{'
+            f'var h=window.{short_id};'
+            f'if(h){{'
+            f'Lib.Handler.removeHandlerFromAll({_json.dumps(self.id)});'
+            f'try{{h.chart.remove()}}catch(e){{}}'
+            f'try{{h.wrapper.remove()}}catch(e){{}}'
+            f'delete window.{short_id};'
+            f'}}'
+            f'}}();'
+        )
+        script = guard + script
+    super().run_script(script, run_last)
+    if self._auto_flush:
+        self._pending.append(script)
+```
+
+生成的 JS 效果：
+
+```javascript
+;!function(){
+  var h=window.ReflexChart_1;
+  if(h){
+    Lib.Handler.removeHandlerFromAll("window.ReflexChart_1");
+    try{h.chart.remove()}catch(e){}
+    try{h.wrapper.remove()}catch(e){}
+    delete window.ReflexChart_1;
+  }
+}();
+window.ReflexChart_1 = new Lib.Handler("window.ReflexChart_1", 1.0, 1.0, "left", true, 0, true);
+```
+
+**原理：** 初始化前按名称搜索同名 Handler，存在则先销毁再重建，使 `new Lib.Handler` 调用幂等化。无论脚本来自 iframe HTML 还是 `flush()→postMessage`，都不会产生第二个图表示例。
+
+### 9.3 双向通信架构
+
+```
+Python (State handler)                  iframe
+┌─────────────────────┐          ┌──────────────────────┐
+│ chart.update(bar)   │          │ Lib.Handler          │
+│ chart.flush()       │ postMsg  │   chart (Lightweight)│
+│   → rx.call_script ─┼────────► │   series             │
+│                     │          │   wrapper (DOM)      │
+│ cb-buffer input     │ callback │   legend / toolBox   │
+│  on_change=handler ◄┼──────────│ callbackFunction(msg)│
+└─────────────────────┘          └──────────────────────┘
+```
+
+- **下行（Python → JS）：** `flush()` → `rx.call_script(postMessage)` → iframe `eval()` 
+- **上行（JS → Python）：** iframe `callbackFunction()` → `parent.postMessage` → Reflex 隐藏 input `on_change` → State handler
+
+### 9.4 关键注意点
+
+| 注意项 | 说明 |
+|--------|------|
+| `auto_flush=True` | 必须启用，否则 `run_script()` 不入 `_pending` 队列 |
+| `_auto_flush` / `_pending` 在 `super().__init__()` 前设置 | `AbstractChart.__init__` 中会调用 `run_script()`，此时 `_pending` 必须已存在 |
+| `to_reflex()` 清空 `_pending` | 初始化脚本已嵌入 iframe HTML，不需要再发送 |
+| `win.loaded` 运行时为 False | Reflex 运行时进程重新导入模块，Window 是新实例，`loaded` 状态不共享 |
+| `rx.script()` 不可用 | Reflex 0.9.2 用 Helmet 渲染 `<script>`，`innerHTML` 不执行内联脚本；改用 `rx.call_script` |
+| Module `reload` | Reflex dev 模式的 hot-reload 会重新导入用户模块，每次创建新 `chart` 实例 |
+
+### 9.5 相关文件
+
+| 文件 | 职责 |
+|------|------|
+| `lightweight_charts/reflex_chart.py` | ReflexChart 类定义，`run_script`/`flush`/`to_reflex`/`_build_html` |
+| `lightweight_charts/js/bundle.js` | 前端 `Lib.Handler` 类（`Handler._all`、`removeHandlerFromAll`、`chart.remove()`） |
+| `lightweight_charts/abstract.py` | `AbstractChart.__init__` 中的 `_html_chart_init` 定义 |
+| `examples/27_reflex_chart/rx_chart/rx_chart.py` | 完整示例：数据生成、State、mount、tick、crosshair 回调 |
+
+---
+
+## 十、清理与重置 API
+
+### 10.1 清空 K 线数据
 
 ```python
 chart.clear_data()
 # 清空 OHLCV 数据，但保留 series 对象。可继续 chart.set(df)
 ```
 
-### 9.2 重置图表到初始状态
+### 10.2 重置图表到初始状态
 
 ```python
 chart.reset()
@@ -675,14 +796,14 @@ chart.reset()
 # TopBar widget 和样式配置保留
 ```
 
-### 9.3 清理事件处理器
+### 10.3 清理事件处理器
 
 ```python
 chart.clear_handlers()
 # 清空 Window 中累积的所有回调，防止嵌入场景下 handler 内存泄漏
 ```
 
-### 9.4 核心清理方法
+### 10.4 核心清理方法
 
 | 方法 | 行为 |
 |------|------|
@@ -701,7 +822,7 @@ chart.reset()                # 一键清空
 chart.set(new_df)            # 重新开始
 ```
 
-### 9.5 资源审计
+### 10.5 资源审计
 
 ```python
 # Python 侧审计 (零卡死风险, 返回 dict)
@@ -728,7 +849,7 @@ audit = chart.audit(use_js=True)
 # }
 ```
 
-### 9.6 资源追踪与 Event Handler
+### 10.6 资源追踪与 Event Handler
 
 Python 侧自动追踪资源，支持完整生命周期管理：
 
@@ -747,11 +868,11 @@ chart.events.search -= handler       # 取消注册
 chart.clear_handlers()               # 批量清理
 ```
 
-### 9.7 窗口销毁保护
+### 10.7 窗口销毁保护
 
 窗口关闭后，所有 `run_script` / `update` / `set` 抛出：`RuntimeError: Chart window has been destroyed. Cannot execute script.` 主进程检测死亡后自动排空队列、关闭并 join 线程，防止进程卡死。
 
-### 9.8 Marker 漂移修复
+### 10.8 Marker 漂移修复
 
 **问题：** 调用 `chart.set(new_df)` 后，marker 位置可能偏移周围几根 K 线。
 
@@ -773,7 +894,7 @@ if self.markers:
 
 ---
 
-## 十、多 Chart 实例
+## 十一、多 Chart 实例
 
 每个 `Chart()` 实例现在完全独立：
 
@@ -795,7 +916,7 @@ t1.join()
 
 ---
 
-## 十一、OHLC Legend 增强
+## 十二、OHLC Legend 增强
 
 ### 11.1 OI 显示在 Legend
 
@@ -825,7 +946,7 @@ chart.legend(visible=True, shorthand=False)
 
 ---
 
-## 十二、十字浮标时间格式
+## 十三、十字浮标时间格式
 
 自定义 UTC 格式，日/周级别隐藏时分：
 
@@ -836,7 +957,7 @@ chart.legend(visible=True, shorthand=False)
 
 ---
 
-## 十三、update / update_from_tick 内部流程简要说明
+## 十四、update / update_from_tick 内部流程简要说明
 
 本节仅保留关键机制，原详细调用链分析已移除。
 

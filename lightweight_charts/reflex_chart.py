@@ -20,18 +20,21 @@ class ReflexChart(StaticLWC):
         chart.set(df)
         html_str = chart.get_html()
 
-    2. Reflex 组件嵌入（需 pip install reflex）:
-        chart = ReflexChart(width=900, height=600)
+    2. Reflex 组件嵌入 + 实时更新（需 pip install reflex）:
+        chart = ReflexChart(width=900, height=600, auto_flush=True)
         chart.set(df)
         # 在 Reflex 页面中:
         def index() -> rx.Component:
             return rx.vstack(chart.to_reflex(), ...)
+        # 更新数据:
+        chart.update(bar); return chart.flush()  # → rx.call_script(postMessage)
     """
 
     def __init__(self, width: Optional[int] = None, height: Optional[int] = None,
                  inner_width: float = 1.0, inner_height: float = 1.0,
                  scale_candles_only: bool = False, toolbox: bool = False,
-                 output_file: Optional[str] = None):
+                 output_file: Optional[str] = None,
+                 auto_flush: bool = True):
         """
         :param width: 图表宽度（像素）
         :param height: 图表高度（像素）
@@ -40,10 +43,14 @@ class ReflexChart(StaticLWC):
         :param scale_candles_only: 缩放时仅依据 K 线
         :param toolbox: 是否启用绘图工具箱
         :param output_file: 可选，调用 load() 时写入的 HTML 文件路径
+        :param auto_flush: 加载后自动将增量 JS 加入发送队列
         """
+        self._auto_flush = auto_flush
+        self._pending = []
+        self._output_file = output_file
         super().__init__(width, height, inner_width, inner_height,
                          scale_candles_only, toolbox, autosize=True)
-        self._output_file = output_file
+        self._iframe_id = 'lwc-frame'
 
     def get_html(self) -> str:
         """生成并返回完整的自包含 HTML 字符串（无需 reflex 包）。"""
@@ -60,7 +67,18 @@ class ReflexChart(StaticLWC):
         html_init = self._html_init.replace(
             head_close, fill_css + head_close
         )
-        return (f"{html_init}  (async ()=> {{\n{self._html}\n}})();\n"
+        messaging = (
+            'window.addEventListener("message",(e)=>{'
+            'if(e.data?.type==="lwc-eval"){'
+            'try{eval(e.data.script)}catch(e){console.error("iframe eval error:",e)}'
+            '}'
+            '});'
+            'window.callbackFunction=(msg)=>{'
+            'window.parent.postMessage('
+            'JSON.stringify({type:"lwc-callback",payload:msg}),"*")'
+            '};'
+        )
+        return (f"{html_init}{messaging}  (async ()=> {{\n{self._html}\n}})();\n"
                 "</script></body></html>")
 
     def _load(self):
@@ -69,10 +87,50 @@ class ReflexChart(StaticLWC):
             with open(self._output_file, 'w', encoding='utf-8') as f:
                 f.write(self._build_html())
 
-    def to_reflex(self, width: Optional[str] = None,
+    def run_script(self, script, run_last=False):
+        short_id = self.id.replace('window.', '', 1)
+        if script.startswith(f'window.{short_id} = ') and 'new Lib.Handler' in script:
+            import json as _json
+            guard = (
+                f';!function(){{'
+                f'var h=window.{short_id};'
+                f'if(h){{'
+                f'Lib.Handler.removeHandlerFromAll({_json.dumps(self.id)});'
+                f'try{{h.chart.remove()}}catch(e){{}}'
+                f'try{{h.wrapper.remove()}}catch(e){{}}'
+                f'delete window.{short_id};'
+                f'}}'
+                f'}}();'
+            )
+            script = guard + script
+        super().run_script(script, run_last)
+        if self._auto_flush:
+            self._pending.append(script)
+
+    def flush(self):
+        """将 _pending 中的增量脚本直接 postMessage 给 iframe。
+
+        返回 `rx.call_script(...)` 或 None（无待发脚本）。
+        在 State handler 中 return 即可：
+            def handle(self): chart.update(bar); return chart.flush()
+        """
+        if not self._pending:
+            return None
+        import json as _json
+        scripts = '; '.join(self._pending)
+        self._pending = []
+        encoded = _json.dumps(scripts)
+        _id = _json.dumps(self._iframe_id)
+        return rx.call_script(
+            f'document.getElementById({_id})'
+            f'?.contentWindow?.postMessage({{type:"lwc-eval",script:{encoded}}},"*")'
+        )
+
+    def to_reflex(self, id: str = 'lwc-frame', width: Optional[str] = None,
                   height: Optional[str] = None) -> 'rx.Component':
         """将图表包装为 Reflex 组件。
 
+        :param id: iframe DOM id（用于 postMessage 定位）
         :param width: CSS 宽度值，如 '100%', '900px'（默认 100%）
         :param height: CSS 高度值，如 '600px'（默认 None，由 flex 撑满）
         :return: rx.Component 实例
@@ -84,8 +142,10 @@ class ReflexChart(StaticLWC):
             )
         import base64
 
+        self._iframe_id = id
         html_str = self.get_html()
         b64 = base64.b64encode(html_str.encode('utf-8')).decode('utf-8')
+        self._pending = []  # 清理 setup 阶段积累的脚本（已包含于 iframe HTML）
 
         style = {'border': 'none', 'width': '100%'}
         if height is not None:
@@ -95,6 +155,7 @@ class ReflexChart(StaticLWC):
             style['minHeight'] = '0'
 
         return rx.el.iframe(
+            id=id,
             src=f'data:text/html;base64,{b64}',
             style=style,
         )

@@ -19,36 +19,30 @@ The main Lightweight Charts library has been updated to v5.2.0, with some new v5
 
 ---
 
-### Recent Updates (v2.3 → v2.3.2)
+### Recent Updates (v2.3 → v2.3.3)
 
 **New or Updated Features:**
 1. ✅ **Sequence Batch Update API** — `Line.update_batch()` / `Histogram.update_batch()` update multiple data points at once for dramatically improved performance
 2. ✅ **Candlestick Batch Update** — `chart.update_bars()` / `chart.update_from_ticks()` batch data processing with 10x speedup
 3. ✅ **Open Interest Visualization** — Independent Y-axis scaling, overlay with volume
-4. ✅ **Example 26** — Added batch update performance comparison demo for Line and Histogram
-
-**Optimizations & Fixes:**
-- Cleaned up internal Open Interest state management
-- Refactored time/label processing logic for acceleration
-
----
-
-### Latest: Reflex Framework Support 🆕
-
-**New:**
-1. ✅ **ReflexChart** — New `ReflexChart(StaticLWC)` class for embedding charts in [Reflex](https://reflex.dev) web apps
-2. ✅ **Example 27** — Complete Reflex demo (with SMA indicator, dark theme)
+4. ✅ **Reflex Integration** — `ReflexChart(StaticLWC)` for embedding charts in [Reflex](https://reflex.dev) web apps; incremental live updates via postMessage bridge; JS→Python callback bridge forwarding crosshair_move etc. to State
+5. ✅ **Init Idempotency** — Fixes duplicate chart creation caused by Reflex compile/runtime module double-import
+6. ✅ **Example 26** — Batch update performance comparison demo for Line and Histogram
+7. ✅ **Example 27** — Complete Reflex demo (SMA + bar push + crosshair callback), with `clean.ps1` / `run.ps1` scripts
 
 **Usage:**
 ```bash
-pip install lightweight-charts-python[reflex]
+pip install lightweight-charts-python
 cd examples/27_reflex_chart
+.\run.ps1          # auto-clean cache + start Reflex
+# or manually:
 reflex run
 ```
 
-`ReflexChart` supports two modes:
-- **HTML output** (no reflex installed) — `chart.get_html()`
-- **Reflex component** — `chart.to_reflex()` returns `rx.Component`, drop it into your Reflex page
+`ReflexChart` three modes:
+- **Static HTML** (no reflex) — `chart.get_html()`
+- **Static Reflex embed** — `chart.to_reflex()` returns `rx.Component`
+- **Dynamic Reflex embed** — `auto_flush=True` + `chart.flush()` → incremental updates; `on_load` installs callback bridge → receives JS events
 
 ---
 
@@ -276,28 +270,51 @@ if __name__ == '__main__':
     chart.show(block=True)
 ```
 
-### 7. Reflex Embedding
+### 7. Reflex Embedding (with Live Updates + Callbacks)
 
 ```python
 import reflex as rx
 import pandas as pd
 from lightweight_charts import ReflexChart
 
-chart = ReflexChart(width=1000, height=600)
-
-df = pd.read_csv('ohlcv.csv')
-chart.set(df)
+chart = ReflexChart(width=1000, height=600, auto_flush=True)
+chart.set(pd.read_csv('ohlcv.csv'))
 chart.layout(background_color='#0c0d0f', text_color='#d8d9db')
-chart.candle_style(up_color='#26a69a', down_color='#ef5350')
+
+class ChartState(rx.State):
+    def tick(self):
+        chart.update(_next_bar())
+        return chart.flush()  # postMessage incremental update, no duplicate init
+
+    def mount(self):
+        # Install JS→Python callback bridge
+        return rx.call_script("""
+if (!window.__LWC_BRIDGE) {
+    window.__LWC_BRIDGE = true;
+    window.addEventListener('message', function(e) {
+        if (e.data?.type === 'lwc-callback') {
+            var el = document.getElementById('cb-buffer');
+            if (el) {
+                var setter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value').set;
+                setter.call(el, e.data.payload);
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+            }
+        }
+    });
+}""")
 
 def index() -> rx.Component:
     return rx.vstack(
-        chart.to_reflex(width='100%'),
+        rx.button('+1 Bar', on_click=ChartState.tick),
+        chart.to_reflex(id='lwc-frame', width='100%'),
+        rx.input(id='cb-buffer', on_change=ChartState.on_crosshair,
+                 style={'opacity':0,'position':'absolute','width':0,'height':0}),
         width='100%', height='100vh', align='stretch',
     )
 
 app = rx.App()
-app.add_page(index, title='Reflex + Lightweight Charts')
+app.add_page(index, on_load=ChartState.mount, title='Reflex + Lightweight Charts')
 ```
 
 ## More Examples
@@ -327,7 +344,7 @@ See the [examples](examples/README.md) directory for more sample code.
 | `chart.screenshot(...)` | Screenshot (v5.2.0+ enhanced: supports add_top_layer and include_crosshair) |
 | `chart.set_price_format(type, base, precision)` | Set price axis format to avoid floating-point precision issues (v5.2.0+) |
 | `chart.clear_handlers()` | Clear all event handlers |
-| `chart.screenshot(add_top_layer, include_crosshair)` | Enhanced screenshot with watermark and crosshair options (v5.2.0+) |
+| `chart.set_price_format(type, base, precision)` | Set price axis format to avoid floating-point precision issues (v5.2.0+) |
 
 ---
 
