@@ -1,5 +1,5 @@
 from .abstract import AbstractChart, Window
-from .chart import Chart
+from .chart import Chart, CrossProcessChart
 from .widgets import JupyterChart
 from .widgets import HTMLChart
 from .widgets import HTMLChart_BN

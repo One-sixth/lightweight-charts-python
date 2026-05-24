@@ -10,7 +10,7 @@ lightweight-charts-python/
 ├── lightweight_charts/         ← Python 后端 (核心包)
 │   ├── __init__.py             # 导出 Chart, JupyterChart, HTMLChart, PolygonChart
 │   ├── abstract.py             # 核心类: Window, AbstractChart, Candlestick, Line, Histogram, SeriesCommon
-│   ├── chart.py                # Chart (pywebview 桌面窗口实现)
+│   ├── chart.py                # Chart (pywebview 桌面窗口实现) + CrossProcessChart (跨进程嵌入 Qt)
 │   ├── widgets.py              # JupyterChart, HTMLChart, QtChart, WxChart, StreamlitChart
 │   ├── toolbox.py              # ToolBox (绘图的保存/加载/导入/导出)
 │   ├── topbar.py               # TopBar + Widget/Switcher/Menu/Button/TextWidget
@@ -95,12 +95,63 @@ chart.load()                        # 生成 HTML 文件
 # 然后用 webbrowser.open(chart.filename) 打开
 ```
 
+### 3.2.1 CrossProcessChart (跨进程嵌入 Qt)
+
+仅支持 Windows。图表运行在独立子进程中（pywebview），通过 HWND 句柄嵌入到 Qt 布局中，类似 Chrome 多进程窗口嵌入。所有 AbstractChart 方法（set, update, marker, create_line 等）均可用。
+
+```python
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+from lightweight_charts import CrossProcessChart
+
+app = QApplication(sys.argv)
+parent = QMainWindow()
+central = QWidget()
+layout = QVBoxLayout(central)
+
+chart = CrossProcessChart(
+    parent=central,
+    width=800, height=600,
+    title='AAPL',
+    toolbox=True
+)
+layout.addWidget(chart.widget)      # 获取嵌入用的 QWidget
+
+parent.setCentralWidget(central)
+parent.show()
+chart.set(df)                       # 所有 AbstractChart API 均可直接调用
+chart.legend(visible=True)
+app.exec()
+```
+
+**参数：**
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `parent` | `QWidget` | `None` | 父 Qt 控件 |
+| `width` | `int` | `800` | 窗口宽度 |
+| `height` | `int` | `600` | 窗口高度 |
+| `inner_width` | `float` | `1.0` | 图表宽度占比 |
+| `inner_height` | `float` | `1.0` | 图表高度占比 |
+| `toolbox` | `bool` | `False` | 绘图工具箱 |
+| `title` | `str` | `''` | 窗口标题 |
+| `debug` | `bool` | `False` | 调试模式 |
+| `position` | `str` | `'left'` | 图表位置 |
+
+**特有方法：**
+
+| 方法 | 说明 |
+|------|------|
+| `chart.widget` | 返回嵌入用的 QWidget，添加到 Qt 布局中 |
+| `chart.exit()` | 终止子进程并清理资源 |
+| `chart.resize(w, h)` | 调整嵌入窗口大小 |
+
 ### 3.3 其他 Widget 类型
 
 | 类名 | 导入源 | 说明 |
 |------|--------|------|
+| `CrossProcessChart` | `lightweight_charts` | 跨进程嵌入 Qt (Windows): pywebview 窗口通过 HWND 嵌入 QWidget |
 | `JupyterChart` | `lightweight_charts` | Jupyter Notebook 内嵌 |
-| `QtChart` | `lightweight_charts.widgets` | PyQt5/PyQt6/PySide6 嵌入 |
+| `QtChart` | `lightweight_charts.widgets` | PyQt5/PyQt6/PySide6 嵌入（同进程） |
 | `WxChart` | `lightweight_charts.widgets` | wxPython 嵌入 |
 | `StreamlitChart` | `lightweight_charts.widgets` | Streamlit 嵌入 |
 | `ReflexChart` | `lightweight_charts` | Reflex 嵌入（生成 HTML / 直接返回 rx.Component） |
@@ -602,6 +653,7 @@ get_last_trade(ticker)
 | 25 | `25_screenshot_enhanced` | `screenshot(add_top_layer=True, include_crosshair=True)` — 增强截图 (v5.2.0+) | `screenshot_enhanced.py` |
 | 26 | `26_series_batch_update` | 系列批量更新：`update_batch()` 用于 Line 和 Histogram 系列 | `series_batch_update.py` |
 | 27 | `27_reflex_chart` | Reflex 嵌入：K线 + SMA 指标在 Reflex 应用中渲染 | `rx_chart.py` |
+| 28 | `28_cross_process_chart` | CrossProcessChart：跨进程嵌入 PySide6 QWidget | `cross_process_chart.py` |
 
 ---
 

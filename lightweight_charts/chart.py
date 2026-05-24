@@ -2,6 +2,7 @@ import asyncio
 import ast
 import inspect
 import multiprocessing as mp
+import os
 from queue import Empty
 import typing
 from pprint import pp
@@ -49,7 +50,7 @@ class PyWV:
 
     def create_window(
         self, width, height, x, y, screen=None, on_top=False,
-        maximize=False, title=''
+        maximize=False, title='', frameless=False
     ):
         """创建一个 pywebview 窗口。"""
         screen = webview.screens[screen] if screen is not None else None
@@ -60,8 +61,8 @@ class PyWV:
             else:
                 width, height = screen.width, screen.height
 
-        self.windows.append(webview.create_window(
-            title,
+        kwargs = dict(
+            title=title,
             url=abstract.INDEX,
             js_api=self.callback_api,
             width=width,
@@ -70,8 +71,12 @@ class PyWV:
             y=y,
             screen=screen,
             on_top=on_top,
-            background_color='#000000')
+            background_color='#000000',
         )
+        if frameless:
+            kwargs['frameless'] = True
+            kwargs['easy_drag'] = False
+        self.windows.append(webview.create_window(**kwargs))
 
         self.windows[-1].events.loaded += lambda: self.loaded_event.set()
         self.windows[-1].events.closed += lambda: setattr(self, 'is_alive', False)
@@ -100,6 +105,20 @@ class PyWV:
                 window.show()
             elif arg == 'hide':
                 window.hide()
+            elif arg == '_~_~NATIVE_HANDLE~_~_':
+                try:
+                    hwnd = window.native.Handle.ToInt32()
+                except Exception:
+                    hwnd = None
+                self.return_queue.put(hwnd)
+                continue
+            elif arg.startswith('_~_~RESIZE~_~_'):
+                try:
+                    w, h = arg[14:].split(',')
+                    window.resize(int(w), int(h))
+                except Exception:
+                    pass
+                continue
             else:
                 try:
                     if '_~_~RETURN~_~_' in arg:
@@ -143,11 +162,11 @@ class WebviewHandler():
 
     def create_window(
         self, width, height, x, y, screen=None, on_top=False,
-        maximize=False, title=''
+        maximize=False, title='', frameless=False
     ):
         """向窗口进程发送创建窗口指令，返回窗口编号。"""
         self.function_call_queue.put((
-            'create_window', (width, height, x, y, screen, on_top, maximize, title)
+            'create_window', (width, height, x, y, screen, on_top, maximize, title, frameless)
         ))
         self.max_window_num += 1
         return self.max_window_num
@@ -171,6 +190,24 @@ class WebviewHandler():
         """在指定窗口中执行 JS 脚本。"""
         self._raise_exit_if_destroyed()
         self.function_call_queue.put((window_num, script))
+
+    def get_native_handle(self, window_num, timeout=10.0):
+        """获取指定窗口的原生 HWND 句柄（仅 Windows）。"""
+        self._raise_exit_if_destroyed()
+        self.function_call_queue.put((window_num, '_~_~NATIVE_HANDLE~_~_'))
+        import time as _time
+        deadline = _time.time() + timeout
+        while _time.time() < deadline:
+            try:
+                result = self.return_queue.get_nowait()
+                return result
+            except Empty:
+                _time.sleep(0.02)
+        raise TimeoutError("get_native_handle timed out")
+
+    def resize_window(self, window_num, width, height):
+        """调整指定窗口的大小。"""
+        self.function_call_queue.put((window_num, f'_~_~RESIZE~_~_{width},{height}'))
 
     def _clear_all_queue(self):
         # 清理所有队列，只能在结束时调用
@@ -221,12 +258,14 @@ class Chart(abstract.AbstractChart):
         inner_height: float = 1.0,
         scale_candles_only: bool = False,
         position: FLOAT = 'left',
-        marker_auto_scale: bool = True
+        marker_auto_scale: bool = True,
+        frameless: bool = False
     ):
         self.wv = WebviewHandler()
         self.wv.debug = debug
         self._i = self.wv.create_window(
-                    width, height, x, y, screen, on_top, maximize, title
+                    width, height, x, y, screen, on_top, maximize, title,
+                    frameless=frameless
                 )
 
         window = abstract.Window(
@@ -289,3 +328,102 @@ class Chart(abstract.AbstractChart):
         self.wv.exit()
         self.is_alive = False
         self.win.destroyed = True
+
+
+class CrossProcessChart:
+    """跨进程图表：将 pywebview 窗口嵌入到 Qt Widget 中。
+
+    仅支持 Windows。图表运行在独立子进程中（pywebview），
+    通过 HWND 句柄嵌入到 Qt 布局中，类似 Chrome 多进程窗口嵌入。
+
+    所有 AbstractChart 方法（set, update, marker, create_line 等）
+    均通过委托转发给内部的 Chart 实例。
+
+    用法:
+        app = QApplication(sys.argv)
+        parent = QWidget()
+        layout = QVBoxLayout(parent)
+
+        chart = CrossProcessChart(parent, width=800, height=600)
+        layout.addWidget(chart.widget)
+
+        parent.show()
+        chart.set(df)
+        app.exec()
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        width: int = 800,
+        height: int = 600,
+        inner_width: float = 1.0,
+        inner_height: float = 1.0,
+        scale_candles_only: bool = False,
+        toolbox: bool = False,
+        title: str = '',
+        debug: bool = False,
+        position: str = 'left',
+        marker_auto_scale: bool = True
+    ):
+        if os.name != 'nt':
+            raise OSError('CrossProcessChart only supports Windows (requires HWND embedding)')
+
+        try:
+            from PySide6.QtCore import Qt
+            from PySide6.QtGui import QWindow
+            from PySide6.QtWidgets import QWidget
+        except ImportError:
+            try:
+                from PyQt6.QtCore import Qt
+                from PyQt6.QtGui import QWindow
+                from PyQt6.QtWidgets import QWidget
+            except ImportError:
+                raise ModuleNotFoundError(
+                    'PySide6 or PyQt6 is required for CrossProcessChart. '
+                    'Install with: pip install PySide6'
+                )
+
+        self._chart = Chart(
+            width=width, height=height,
+            title=title, debug=debug,
+            toolbox=toolbox,
+            inner_width=inner_width,
+            inner_height=inner_height,
+            scale_candles_only=scale_candles_only,
+            position=position,
+            marker_auto_scale=marker_auto_scale,
+            frameless=True
+        )
+
+        self._chart.show()
+
+        hwnd = self._chart.wv.get_native_handle(self._chart._i)
+        if hwnd is None:
+            raise RuntimeError('Failed to get native window handle from pywebview')
+
+        qwindow = QWindow.fromWinId(hwnd)
+        qwindow.setFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.ForeignWindow)
+        self._container = QWidget.createWindowContainer(qwindow, parent)
+        self._qwindow = qwindow
+
+    @property
+    def widget(self):
+        """返回嵌入用的 QWidget，将其添加到 Qt 布局中。"""
+        return self._container
+
+    def get_webview(self):
+        """兼容 QtChart 接口，返回嵌入用的 QWidget。"""
+        return self._container
+
+    def resize(self, width, height):
+        """调整嵌入窗口的大小。"""
+        self._chart.wv.resize_window(self._chart._i, width, height)
+
+    def exit(self):
+        """终止子进程并清理资源。"""
+        self._chart.exit()
+
+    def __getattr__(self, name):
+        """将所有未定义的属性/方法委托给内部 Chart 实例。"""
+        return getattr(self._chart, name)
