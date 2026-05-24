@@ -29,7 +29,7 @@ The main Lightweight Charts library has been updated to v5.2.0, with some new v5
 5. ✅ **Init Idempotency** — Fixes duplicate chart creation caused by Reflex compile/runtime module double-import
 6. ✅ **Example 26** — Batch update performance comparison demo for Line and Histogram
 7. ✅ **Example 27** — Complete Reflex demo (SMA + bar push + crosshair callback), with `clean.ps1` / `run.ps1` scripts
-8. ✅ **Cross-Process Qt Embedding** — `CrossProcessChart` embeds pywebview chart window into PySide6/PyQt6 QWidget via HWND, with frameless mode and resize sync (Windows only)
+8. ✅ **Cross-Process Qt Embedding** — `CrossProcessChart` embeds pywebview chart window into PySide6/PyQt6 QWidget via native window handle, with frameless mode and resize sync (Windows + Linux/X11)
 9. ✅ **Example 28** — CrossProcessChart cross-process embedding demo
 
 **Usage:**
@@ -68,7 +68,7 @@ Added and Enhanced Features
 16. **Comprehensive cleanup tests** — test_cleanup.py verifies no leaks in Python + JS for all resource types.
 17. **Sequence Batch Update API** — `Line/Histogram.update_batch()` high-performance batch updates.
 18. **Candlestick Batch Update** — `chart.update_bars()/update_from_ticks()`.
-19. **Cross-Process Qt Embedding** — `CrossProcessChart` embeds pywebview window into QWidget via HWND (Windows only).
+19. **Cross-Process Qt Embedding** — `CrossProcessChart` embeds pywebview window into QWidget via native window handle (Windows + Linux/X11).
 
 **Primary supported environments:** PySide6, PyQt6, wxPython, asyncio, Reflex.
 

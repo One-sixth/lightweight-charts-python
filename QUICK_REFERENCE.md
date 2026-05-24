@@ -97,7 +97,7 @@ chart.load()                        # 生成 HTML 文件
 
 ### 3.2.1 CrossProcessChart (跨进程嵌入 Qt)
 
-仅支持 Windows。图表运行在独立子进程中（pywebview），通过 HWND 句柄嵌入到 Qt 布局中，类似 Chrome 多进程窗口嵌入。所有 AbstractChart 方法（set, update, marker, create_line 等）均可用。
+支持 Windows 和 Linux/X11。图表运行在独立子进程中（pywebview），通过原生窗口句柄嵌入到 Qt 布局中，类似 Chrome 多进程窗口嵌入。不支持 Wayland 和 macOS。所有 AbstractChart 方法（set, update, marker, create_line 等）均可用。
 
 ```python
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
@@ -145,11 +145,16 @@ app.exec()
 | `chart.exit()` | 终止子进程并清理资源 |
 | `chart.resize(w, h)` | 调整嵌入窗口大小 |
 
+**平台说明：**
+- **Windows**: 开箱即用
+- **Linux/X11**: 需要安装 `PyGObject` (`pip install PyGObject`)，且不能在 Wayland 下运行
+- **Linux/Wayland / macOS**: 不支持
+
 ### 3.3 其他 Widget 类型
 
 | 类名 | 导入源 | 说明 |
 |------|--------|------|
-| `CrossProcessChart` | `lightweight_charts` | 跨进程嵌入 Qt (Windows): pywebview 窗口通过 HWND 嵌入 QWidget |
+| `CrossProcessChart` | `lightweight_charts` | 跨进程嵌入 Qt (Windows + Linux/X11): pywebview 窗口通过原生句柄嵌入 QWidget |
 | `JupyterChart` | `lightweight_charts` | Jupyter Notebook 内嵌 |
 | `QtChart` | `lightweight_charts.widgets` | PyQt5/PyQt6/PySide6 嵌入（同进程） |
 | `WxChart` | `lightweight_charts.widgets` | wxPython 嵌入 |

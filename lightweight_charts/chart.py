@@ -3,6 +3,7 @@ import ast
 import inspect
 import multiprocessing as mp
 import os
+import sys
 from queue import Empty
 import typing
 from pprint import pp
@@ -12,6 +13,38 @@ from webview.errors import JavascriptException
 
 from . import abstract
 from .util import parse_event_message, FLOAT
+
+
+def _get_native_handle(window):
+    """获取 pywebview 窗口的原生句柄（跨平台）。
+
+    Windows: 返回 HWND (int)
+    Linux/X11: 返回 X11 Window ID (int)
+    其他平台: 抛出 OSError
+    """
+    if os.name == 'nt':
+        return window.native.Handle.ToInt32()
+
+    if sys.platform.startswith('linux'):
+        session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
+        if session_type == 'wayland':
+            raise OSError(
+                'CrossProcessChart does not work under Wayland. '
+                'Use X11 instead (set QT_QPA_PLATFORM=xcb).'
+            )
+        try:
+            import gi
+            gi.require_version('GdkX11', '3.0')
+            from gi.repository import GdkX11
+            gdk_window = window.native.get_window()
+            return gdk_window.get_xid()
+        except ImportError:
+            raise OSError(
+                'Linux/X11 support requires PyGObject and GdkX11. '
+                'Install with: pip install PyGObject'
+            )
+
+    raise OSError(f'CrossProcessChart is not supported on {sys.platform}')
 
 
 class CallbackAPI:
@@ -107,7 +140,7 @@ class PyWV:
                 window.hide()
             elif arg == '_~_~NATIVE_HANDLE~_~_':
                 try:
-                    hwnd = window.native.Handle.ToInt32()
+                    hwnd = _get_native_handle(window)
                 except Exception:
                     hwnd = None
                 self.return_queue.put(hwnd)
@@ -192,7 +225,7 @@ class WebviewHandler():
         self.function_call_queue.put((window_num, script))
 
     def get_native_handle(self, window_num, timeout=10.0):
-        """获取指定窗口的原生 HWND 句柄（仅 Windows）。"""
+        """获取指定窗口的原生句柄（Windows: HWND, Linux/X11: X11 Window ID）。"""
         self._raise_exit_if_destroyed()
         self.function_call_queue.put((window_num, '_~_~NATIVE_HANDLE~_~_'))
         import time as _time
@@ -333,8 +366,9 @@ class Chart(abstract.AbstractChart):
 class CrossProcessChart:
     """跨进程图表：将 pywebview 窗口嵌入到 Qt Widget 中。
 
-    仅支持 Windows。图表运行在独立子进程中（pywebview），
-    通过 HWND 句柄嵌入到 Qt 布局中，类似 Chrome 多进程窗口嵌入。
+    支持 Windows 和 Linux/X11。图表运行在独立子进程中（pywebview），
+    通过原生窗口句柄嵌入到 Qt 布局中，类似 Chrome 多进程窗口嵌入。
+    不支持 Wayland 和 macOS。
 
     所有 AbstractChart 方法（set, update, marker, create_line 等）
     均通过委托转发给内部的 Chart 实例。
@@ -366,8 +400,6 @@ class CrossProcessChart:
         position: str = 'left',
         marker_auto_scale: bool = True
     ):
-        if os.name != 'nt':
-            raise OSError('CrossProcessChart only supports Windows (requires HWND embedding)')
 
         try:
             from PySide6.QtCore import Qt
