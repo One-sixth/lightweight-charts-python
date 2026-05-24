@@ -322,7 +322,7 @@ class Events:
             # delete window.crosshairHandler{salt};
             wrapper=lambda func, c, *args: func(c, json.loads(args[0]) if args else {})
         )
-        print(f'delete window.crosshairHandler{salt};')
+
 
 class BulkRunScript:
     """批量脚本执行上下文管理器，暂存多条 JS 脚本并在退出时一次性拼接执行。"""
