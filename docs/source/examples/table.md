@@ -21,7 +21,7 @@ if __name__ == '__main__':
                   headings=('Ticker', 'Quantity', 'Status', '%', 'PL'),
                   widths=(0.2, 0.1, 0.2, 0.2, 0.3),
                   alignments=('center', 'center', 'right', 'right', 'right'),
-                  position='left', func=on_row_click)
+                  position=(0.02, 0.5), func=on_row_click)
 
     table.format('PL', f'£ {table.VALUE}')
     table.format('%', f'{table.VALUE} %')

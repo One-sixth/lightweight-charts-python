@@ -2386,7 +2386,7 @@ var Lib = (function (exports, lightweightCharts) {
                 this.wrapper.style.width = `${100 * this.scale.width}%`;
                 this.wrapper.style.height = `${chart_height}px`;
             }
-            // TODO definitely a better way to do this
+            // Hide toolbox when chart has zero dimensions (e.g., hidden subchart)
             if (this.scale.height === 0 || this.scale.width === 0) {
                 // if (this.legend.div.style.display == 'flex') this.legend.div.style.display = 'none'
                 if (this.toolBox) {
@@ -2637,7 +2637,7 @@ var Lib = (function (exports, lightweightCharts) {
             chart.spinner = document.createElement('div');
             chart.spinner.classList.add('spinner');
             chart.wrapper.appendChild(chart.spinner);
-            // TODO below can be css (animate)
+            // Spinner animation using requestAnimationFrame (could also be done with CSS animation)
             let rotation = 0;
             const speed = 10;
             function animateSpinner() {
@@ -2751,6 +2751,8 @@ var Lib = (function (exports, lightweightCharts) {
             overflowWrapper.style.overflowY = 'auto';
             overflowWrapper.style.overflowX = 'hidden';
             overflowWrapper.style.backgroundColor = tableBackgroundColor;
+            overflowWrapper.style.flex = '1';
+            overflowWrapper.style.minHeight = '0';
             overflowWrapper.appendChild(this.table);
             this._div.appendChild(overflowWrapper);
             window.containerDiv.appendChild(this._div);
@@ -2845,8 +2847,20 @@ var Lib = (function (exports, lightweightCharts) {
             }
         }
         reSize(width, height) {
-            this._div.style.width = width <= 1 ? width * 100 + '%' : width + 'px';
-            this._div.style.height = height <= 1 ? height * 100 + '%' : height + 'px';
+            if (typeof width === 'string' && width === 'auto') {
+                this._div.style.width = 'auto';
+            }
+            else {
+                const w = width;
+                this._div.style.width = w <= 1 ? w * 100 + '%' : w + 'px';
+            }
+            if (typeof height === 'string' && height === 'auto') {
+                this._div.style.height = 'auto';
+            }
+            else {
+                const h = height;
+                this._div.style.height = h <= 1 ? h * 100 + '%' : h + 'px';
+            }
         }
     }
 

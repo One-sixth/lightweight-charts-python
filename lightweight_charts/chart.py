@@ -273,7 +273,16 @@ class WebviewHandler():
 
 
 class Chart(abstract.AbstractChart):
-    """桌面窗口图表，基于 pywebview 实现。"""
+    """桌面窗口图表，基于 pywebview 实现。
+
+    这是 lightweight-charts-python 的核心图表类，提供完整的交互式图表功能，
+    包括 K线显示、技术指标、绘图工具、事件回调等。
+
+    Example:
+        >>> chart = Chart(width=1000, height=600, title='My Chart')
+        >>> chart.set(df)
+        >>> chart.show(block=True)
+    """
 
     def __init__(
         self,
@@ -294,6 +303,27 @@ class Chart(abstract.AbstractChart):
         marker_auto_scale: bool = True,
         frameless: bool = False
     ):
+        """
+        :param width: 窗口宽度（像素），默认 800
+        :param height: 窗口高度（像素），默认 600
+        :param x: 窗口左上角 X 坐标（像素），None 表示居中
+        :param y: 窗口左上角 Y 坐标（像素），None 表示居中
+        :param title: 窗口标题，默认为空字符串
+        :param screen: 多显示器环境下的屏幕索引，None 表示主屏幕
+        :param on_top: 是否置顶显示，默认 False
+        :param maximize: 是否最大化窗口，默认 False
+        :param debug: 是否启用调试模式（输出 JS 错误信息），默认 False
+        :param toolbox: 是否启用绘图工具箱，默认 False
+        :param inner_width: 图表在窗口内的宽度比例（0.0-1.0），默认 1.0
+        :param inner_height: 图表在窗口内的高度比例（0.0-1.0），默认 1.0
+        :param scale_candles_only: 缩放时是否仅依据 K线范围，默认 False
+        :param position: 图表位置（网格格式），支持三种格式：
+                        - 整数：如 111（百位=行数，十位=列数，个位=位置索引）
+                        - 元组：如 (2, 2, 1)（行数, 列数, 位置索引）
+                        - 字符串：'left', 'right', 'top', 'bottom'（已弃用）
+        :param marker_auto_scale: 标记是否参与价格轴自动缩放，默认 True
+        :param frameless: 是否无边框窗口，默认 False
+        """
         self.wv = WebviewHandler()
         self.wv.debug = debug
         self._i = self.wv.create_window(
@@ -314,8 +344,15 @@ class Chart(abstract.AbstractChart):
 
     def show(self, block: bool = False):
         """
-        Shows the chart window.\n
-        :param block: blocks execution until the chart is closed.
+        显示图表窗口。
+
+        :param block: 如果为 True，阻塞当前线程直到窗口关闭；
+                     如果为 False，窗口显示后立即返回，适用于异步场景。
+        :type block: bool
+
+        Example:
+            >>> chart.show()  # 非阻塞模式
+            >>> chart.show(block=True)  # 阻塞模式，等待窗口关闭
         """
         if not self.win.loaded:
             self.wv.start()
@@ -344,19 +381,29 @@ class Chart(abstract.AbstractChart):
                     return
                 else:
                     func, args = parse_event_message(self.win, response)
-                    await func(*args) if inspect.iscoroutinefunction(func) else func(*args)
+                    if func is not None:
+                        await func(*args) if inspect.iscoroutinefunction(func) else func(*args)
         except KeyboardInterrupt:
             return
 
     def hide(self):
         """
-        Hides the chart window.\n
+        隐藏图表窗口（不销毁）。
+
+        窗口被隐藏后可以通过再次调用 show() 重新显示。
         """
         self.wv.function_call_queue.put((self._i, 'hide'))
 
     def exit(self):
         """
-        Exits and destroys the chart window.\n
+        退出并销毁图表窗口。
+
+        关闭窗口并释放所有相关资源，包括：
+        - 停止 pywebview 进程
+        - 设置 is_alive 为 False
+        - 标记窗口已销毁
+
+        调用此方法后，图表对象将不再可用。
         """
         self.wv.exit()
         self.is_alive = False
@@ -373,17 +420,20 @@ class CrossProcessChart:
     所有 AbstractChart 方法（set, update, marker, create_line 等）
     均通过委托转发给内部的 Chart 实例。
 
-    用法:
-        app = QApplication(sys.argv)
-        parent = QWidget()
-        layout = QVBoxLayout(parent)
-
-        chart = CrossProcessChart(parent, width=800, height=600)
-        layout.addWidget(chart.widget)
-
-        parent.show()
-        chart.set(df)
-        app.exec()
+    Example:
+        >>> from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
+        >>> import sys
+        >>> 
+        >>> app = QApplication(sys.argv)
+        >>> parent = QWidget()
+        >>> layout = QVBoxLayout(parent)
+        >>> 
+        >>> chart = CrossProcessChart(parent, width=800, height=600)
+        >>> layout.addWidget(chart.widget)
+        >>> 
+        >>> parent.show()
+        >>> chart.set(df)
+        >>> app.exec()
     """
 
     def __init__(
@@ -397,9 +447,40 @@ class CrossProcessChart:
         toolbox: bool = False,
         title: str = '',
         debug: bool = False,
-        position: str = 'left',
+        position: Position = 111,
         marker_auto_scale: bool = True
     ):
+        """
+        :param parent: 父 Qt 控件，用于嵌入布局，默认为 None
+        :type parent: QWidget or None
+        :param width: 窗口宽度（像素），默认 800
+        :type width: int
+        :param height: 窗口高度（像素），默认 600
+        :type height: int
+        :param inner_width: 图表在窗口内的宽度比例（0.0-1.0），默认 1.0
+        :type inner_width: float
+        :param inner_height: 图表在窗口内的高度比例（0.0-1.0），默认 1.0
+        :type inner_height: float
+        :param scale_candles_only: 缩放时是否仅依据 K线范围，默认 False
+        :type scale_candles_only: bool
+        :param toolbox: 是否启用绘图工具箱，默认 False
+        :type toolbox: bool
+        :param title: 窗口标题，默认为空字符串
+        :type title: str
+        :param debug: 是否启用调试模式（输出 JS 错误信息），默认 False
+        :type debug: bool
+        :param position: 图表位置（网格格式），支持三种格式：
+                        - 整数：如 111（百位=行数，十位=列数，个位=位置索引）
+                        - 元组：如 (2, 2, 1)（行数, 列数, 位置索引）
+                        - 字符串：'left', 'right', 'top', 'bottom'（已弃用）
+        :type position: Position
+        :param marker_auto_scale: 标记是否参与价格轴自动缩放，默认 True
+        :type marker_auto_scale: bool
+
+        :raises ModuleNotFoundError: 如果未安装 PySide6 或 PyQt6
+        :raises OSError: 如果平台不支持（Wayland 或 macOS）
+        :raises RuntimeError: 如果无法获取原生窗口句柄
+        """
 
         try:
             from PySide6.QtCore import Qt
@@ -441,21 +522,65 @@ class CrossProcessChart:
 
     @property
     def widget(self):
-        """返回嵌入用的 QWidget，将其添加到 Qt 布局中。"""
+        """
+        返回嵌入用的 QWidget，将其添加到 Qt 布局中。
+
+        :return: 包装了原生窗口的 QWidget 容器
+        :rtype: QWidget
+
+        Example:
+            >>> layout.addWidget(chart.widget)
+        """
         return self._container
 
     def get_webview(self):
-        """兼容 QtChart 接口，返回嵌入用的 QWidget。"""
+        """
+        兼容 QtChart 接口，返回嵌入用的 QWidget。
+
+        此方法是为了兼容旧版 API，功能与 widget 属性相同。
+
+        :return: 包装了原生窗口的 QWidget 容器
+        :rtype: QWidget
+        """
         return self._container
 
     def resize(self, width, height):
-        """调整嵌入窗口的大小。"""
+        """
+        调整嵌入窗口的大小。
+
+        :param width: 新的宽度（像素）
+        :type width: int
+        :param height: 新的高度（像素）
+        :type height: int
+
+        Example:
+            >>> chart.resize(1000, 600)  # 将图表调整为 1000x600
+        """
         self._chart.wv.resize_window(self._chart._i, width, height)
 
     def exit(self):
-        """终止子进程并清理资源。"""
+        """
+        终止子进程并清理资源。
+
+        关闭嵌入的图表窗口，释放所有相关资源。
+        调用此方法后，图表对象将不再可用。
+        """
         self._chart.exit()
 
     def __getattr__(self, name):
-        """将所有未定义的属性/方法委托给内部 Chart 实例。"""
+        """
+        将所有未定义的属性/方法委托给内部 Chart 实例。
+
+        这使得 CrossProcessChart 可以直接调用 AbstractChart 的所有方法，
+        如 set(), update(), create_line(), create_subchart() 等。
+
+        :param name: 属性或方法名称
+        :type name: str
+        :return: 内部 Chart 实例的属性或方法
+        :rtype: Any
+
+        Example:
+            >>> chart.set(df)  # 委托给 self._chart.set(df)
+            >>> chart.create_line('SMA')  # 委托给 self._chart.create_line('SMA')
+        """
         return getattr(self._chart, name)

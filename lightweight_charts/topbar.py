@@ -72,7 +72,6 @@ class MenuWidget(Widget):
         {self.id} = {topbar.id}.makeMenu({list(options)}, "{default}", {jbool(separator)}, "{self.id}", "{align}")
         ''')
 
-    # TODO this will probably need to be fixed
     def set(self, option):
         """选中指定菜单项。"""
         if option not in self.options:
@@ -81,7 +80,8 @@ class MenuWidget(Widget):
         self.run_script(f'''
             {self.id}._clickHandler("{option}")
         ''')
-        # self.win.handlers[self.id](option)
+        # Note: The handler callback is invoked internally by _clickHandler,
+        # so we don't need to call it explicitly here
 
     def update_items(self, *items: str):
         """更新菜单项列表。"""

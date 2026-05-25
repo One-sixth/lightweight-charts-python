@@ -1,4 +1,4 @@
-// TODO this won't be necessary with ws
+// Note: This module structure may change when WebSocket support is added
 
 export * from './handler';
 export * from './global-params';

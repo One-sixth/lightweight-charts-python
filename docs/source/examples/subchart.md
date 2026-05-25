@@ -7,10 +7,11 @@ import pandas as pd
 from lightweight_charts import Chart
 
 if __name__ == '__main__':
-    chart = Chart(inner_width=0.5, inner_height=0.5)
-    chart2 = chart.create_subchart(position='right', width=0.5, height=0.5)
-    chart3 = chart.create_subchart(position='left', width=0.5, height=0.5)
-    chart4 = chart.create_subchart(position='right', width=0.5, height=0.5)
+    # setting position like matplotlib figure plot
+    chart = Chart(position=221)
+    chart2 = chart.create_subchart(position=222)
+    chart3 = chart.create_subchart(position=223)
+    chart4 = chart.create_subchart(position=224)
 
     chart.watermark('1')
     chart2.watermark('2')
@@ -28,7 +29,9 @@ if __name__ == '__main__':
 ```
 ___
 
-## Synced Line Chart
+## Synced Charts
+
+### Full Sync (Time Scale + Crosshair)
 
 ```python
 import pandas as pd
@@ -38,6 +41,7 @@ if __name__ == '__main__':
     chart = Chart(inner_width=1, inner_height=0.8)
     chart.time_scale(visible=False)
 
+    # 创建完全同步的子图表
     chart2 = chart.create_subchart(width=1, height=0.2, sync=True)
     line = chart2.create_line()
     
@@ -46,6 +50,31 @@ if __name__ == '__main__':
 
     chart.set(df)
     line.set(df2)
+
+    chart.show(block=True)
+```
+
+### Crosshair Only Sync
+
+```python
+import pandas as pd
+from lightweight_charts import Chart
+
+if __name__ == '__main__':
+    chart = Chart(width=1200, height=800)
+    chart.legend(visible=True, persistent=True)
+
+    df_main = pd.read_csv('ohlcv.csv')
+    chart.set(df_main)
+
+    # 创建仅同步十字光标的子图表（时间轴独立）
+    subchart = chart.create_subchart(
+        position=(2, 1, 2),
+        sync=chart.id,
+        sync_crosshairs_only=True
+    )
+    df_sub = pd.read_csv('another_ohlcv.csv')
+    subchart.set(df_sub)
 
     chart.show(block=True)
 ```
@@ -78,9 +107,9 @@ if __name__ == '__main__':
     main_chart = Chart(inner_width=0.5, inner_height=0.5)
     charts = [
         main_chart,
-        main_chart.create_subchart(position='top', width=0.5, height=0.5),
-        main_chart.create_subchart(position='left', width=0.5, height=0.5),
-        main_chart.create_subchart(position='right', width=0.5, height=0.5),
+        main_chart.create_subchart(position=(2, 2, 2), width=0.5, height=0.5),
+        main_chart.create_subchart(position=(2, 2, 3), width=0.5, height=0.5),
+        main_chart.create_subchart(position=(2, 2, 4), width=0.5, height=0.5),
     ]
 
     df = pd.read_csv('examples/1_setting_data/ohlcv.csv')

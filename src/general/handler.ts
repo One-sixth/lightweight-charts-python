@@ -502,7 +502,7 @@ export class Handler {
             this.wrapper.style.height = `${chart_height}px`
         }
 
-        // TODO definitely a better way to do this
+        // Hide toolbox when chart has zero dimensions (e.g., hidden subchart)
         if (this.scale.height === 0 || this.scale.width === 0) {
             // if (this.legend.div.style.display == 'flex') this.legend.div.style.display = 'none'
             if (this.toolBox) {
@@ -790,7 +790,7 @@ export class Handler {
         chart.spinner.classList.add('spinner');
         chart.wrapper.appendChild(chart.spinner)
 
-        // TODO below can be css (animate)
+        // Spinner animation using requestAnimationFrame (could also be done with CSS animation)
         let rotation = 0;
         const speed = 10;
         function animateSpinner() {

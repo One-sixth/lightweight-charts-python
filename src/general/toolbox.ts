@@ -8,12 +8,19 @@ import { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
 import { HorizontalLine } from "../horizontal-line/horizontal-line";
 import { RayLine } from "../horizontal-line/ray-line";
 import { VerticalLine } from "../vertical-line/vertical-line";
+import { Point } from "../drawing/data-source";
 
 
 interface Icon {
     div: HTMLDivElement,
     group: SVGGElement,
     type: new (...args: any[]) => Drawing
+}
+
+interface DrawingData {
+    type: string;
+    points: Point[];
+    options: object;
 }
 
 declare const window: GlobalParams
@@ -156,7 +163,7 @@ export class ToolBox {
         window.callbackFunction(`save_drawings${this._handlerID}_~_${string}`)
     }
 
-    loadDrawings(drawings: any[]) { // TODO any
+    loadDrawings(drawings: DrawingData[]) {
         drawings.forEach((d) => {
             switch (d.type) {
                 case "Box":

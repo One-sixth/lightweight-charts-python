@@ -13,7 +13,9 @@ The `Table` and `Row` objects act as dictionaries, and can be manipulated as suc
 : Given as a `float` between 0 and 1.
 
 `position`
-: Used as you would with [`create_subchart`](#AbstractChart.create_subchart), representing how the table will float within the window.
+: A tuple `(x, y)` representing the position of the table. Values between 0 and 1 are interpreted as percentages of the window size, while values >= 1 are interpreted as pixel coordinates.
+
+**Deprecated**: String values like `'left'`, `'right'`, `'top'`, `'bottom'` are no longer supported and will trigger a `DeprecationWarning`. They are now equivalent to `(0, 0)`.
 
 `draggable`
 : If `True`, then the window can be dragged to any position within the window.
@@ -132,11 +134,3 @@ table.footer(3, func=on_footer_click)
 ```
 
 ````
-
-
-
-
-
-
-
-

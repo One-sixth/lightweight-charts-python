@@ -113,7 +113,7 @@ if __name__ == '__main__':
         width=0.25, height=0.3,
         headings=('Symbol', 'Price', 'Chg%'),
         widths=(0.4, 0.3, 0.3),
-        position='right',
+        position=(0.7, 0.1),  # 使用相对坐标：右侧位置
     )
     for sym, pr, chg in [('AAPL', 198.5, '+1.2'), ('TSLA', 245.0, '-0.8'),
                            ('GOOG', 175.2, '+0.5'), ('MSFT', 420.3, '+2.1')]:

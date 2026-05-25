@@ -57,6 +57,8 @@ def parse_event_message(window, string):
     :return: (handler_func, args_list)"""
     name, args = string.split('_~_')
     args = args.split(';;;')
+    if name == 'null':
+        return None, args
     func = window.handlers[name]
     return func, args
 
@@ -142,80 +144,63 @@ GridPosition = Tuple[int, int, int]  # (nrows, ncols, index)
 Position = Union[GridPosition, int, str]  # 支持三种格式（字符串已弃用）
 
 
-def parse_position(pos: Position, chart_count: int = 1) -> dict:
+def _validate_grid(nrows: int, ncols: int, index: int) -> None:
+    """验证网格参数的有效性"""
+    if nrows <= 0:
+        raise ValueError(f"行数必须是正整数，当前值: {nrows}")
+    if ncols <= 0:
+        raise ValueError(f"列数必须是正整数，当前值: {ncols}")
+    if index <= 0:
+        raise ValueError(f"位置索引必须是正整数，当前值: {index}")
+    if index > nrows * ncols:
+        raise ValueError(f"index {index} 超出网格范围 {nrows}x{ncols}={nrows*ncols}")
+
+
+def parse_position(pos: Position) -> dict:
     """
     解析 position 参数为统一格式
-    :param pos: 位置参数
-    :param chart_count: 当前图表数量（用于字符串格式转换）
-    :return: {'nrows': 3, 'ncols': 1, 'index': 1}
+    
+    :param pos: 位置参数，支持三种格式：
+                - 字符串: 'left', 'right', 'top', 'bottom'
+                - 元组: (nrows, ncols, index)
+                - 整数: 3位数字，如 111, 221, 311
+    :return: {'nrows': int, 'ncols': int, 'index': int}
     """
     if isinstance(pos, str):
-        # 字符串格式支持 Chart() 和 create_subchart()
-        if pos not in ('left', 'right', 'top', 'bottom'):
-            raise ValueError(f"无效的字符串 position: {pos}")
-        
-        # 超过 2 个图表时不支持字符串格式
-        if chart_count > 2:
-            raise ValueError(
-                f"超过2个图表时不支持字符串格式 position='{pos}'，"
-                f"请使用数字格式，如 position=111 或 position=(2,2,1)"
-            )
-        
-        # 单个图表时字符串没有实际意义，不发出警告
-        if chart_count > 1:
-            warnings.warn(
-                f"字符串格式 position='{pos}' 已弃用，请使用数字格式，如 position=111",
-                DeprecationWarning,
-                stacklevel=2
-            )
-        return _convert_string_to_grid(pos, chart_count)
+        warnings.warn(
+            f"字符串格式 position='{pos}' 已弃用，请使用数字格式，如 position=121",
+            DeprecationWarning,
+            stacklevel=3
+        )
+        return _convert_string_to_grid(pos)
     
-    elif isinstance(pos, tuple) and len(pos) == 3:
+    if isinstance(pos, tuple) and len(pos) == 3:
         nrows, ncols, index = pos
-        if not all(isinstance(x, int) and x > 0 for x in (nrows, ncols, index)):
-            raise ValueError("nrows, ncols, index 必须是正整数")
-        if index > nrows * ncols:
-            raise ValueError(f"index {index} 超出网格范围 {nrows}x{ncols}={nrows*ncols}")
+        _validate_grid(nrows, ncols, index)
         return {'nrows': nrows, 'ncols': ncols, 'index': index}
     
-    elif isinstance(pos, int):
+    if isinstance(pos, int):
         s = str(pos)
         if len(s) != 3:
-            raise ValueError(f"整数格式必须是3位数字，如 311")
-        nrows = int(s[0])
-        ncols = int(s[1])
-        index = int(s[2])
-        if nrows == 0 or ncols == 0:
-            raise ValueError("行数和列数不能为0")
-        if index == 0:
-            raise ValueError(f"位置索引不能为0，必须是 1-{nrows*ncols}")
-        if index > nrows * ncols:
-            raise ValueError(f"index {index} 超出网格范围 {nrows}x{ncols}={nrows*ncols}")
+            raise ValueError(f"整数格式必须是3位数字，如 311，当前值: {pos}")
+        nrows, ncols, index = int(s[0]), int(s[1]), int(s[2])
+        _validate_grid(nrows, ncols, index)
         return {'nrows': nrows, 'ncols': ncols, 'index': index}
     
-    else:
-        raise ValueError(f"无效的 position 格式: {pos}")
+    raise ValueError(f"无效的 position 格式: {pos}")
 
 
-def _convert_string_to_grid(pos: str, chart_count: int) -> dict:
-    """将字符串格式转换为网格格式（仅支持 1-2 个图表）"""
-    if chart_count == 1:
-        # 单个图表：1行1列
-        return {'nrows': 1, 'ncols': 1, 'index': 1}
-    
-    elif chart_count == 2:
-        # 两个图表
-        if pos in ('left', 'right'):
-            # 左右布局：1行2列
-            index = 1 if pos == 'left' else 2
-            return {'nrows': 1, 'ncols': 2, 'index': index}
-        else:
-            # 上下布局：2行1列
-            index = 1 if pos == 'top' else 2
-            return {'nrows': 2, 'ncols': 1, 'index': index}
-    
-    else:
-        raise ValueError("字符串格式仅支持 1-2 个图表")
+def _convert_string_to_grid(pos: str) -> dict:
+    """将字符串格式转换为网格格式"""
+    mapping = {
+        'left': {'nrows': 1, 'ncols': 2, 'index': 1},
+        'right': {'nrows': 1, 'ncols': 2, 'index': 2},
+        'top': {'nrows': 2, 'ncols': 1, 'index': 1},
+        'bottom': {'nrows': 2, 'ncols': 1, 'index': 2},
+    }
+    if pos not in mapping:
+        raise ValueError(f"无效的字符串 position: {pos}")
+    return mapping[pos]
 
 
 def as_enum(value, string_types):

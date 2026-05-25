@@ -79,20 +79,72 @@ chart = Chart(
 )
 ```
 
-**position 参数支持三种格式：**
+**position 参数支持三种格式（类似 matplotlib 的 subplot）：**
 
 | 格式 | 示例 | 说明 |
 |------|------|------|
-| 整数 | `111`, `221`, `311` | 3位数字：行数、列数、位置索引 |
-| 元组 | `(2, 2, 1)` | (行数, 列数, 位置索引) |
+| 整数 | `111`, `221`, `311` | 3位数字：百位=行数、十位=列数、个位=位置索引 |
+| 元组 | `(2, 2, 1)` | (行数, 列数, 位置索引)，推荐使用 |
 | 字符串（已弃用） | `'left'`, `'right'` | 仅支持 1-2 个图表 |
 
 **网格布局示例：**
+```
+2行2列布局 (221-224):
+┌──────────┬──────────┐
+│   221    │   222    │
+├──────────┼──────────┤
+│   223    │   224    │
+└──────────┴──────────┘
+
+3行1列布局 (311-313):
+┌────────────────────────┐
+│         311           │
+├────────────────────────┤
+│         312           │
+├────────────────────────┤
+│         313           │
+└────────────────────────┘
+```
+
 - `111` = 1行1列，第1个位置（占满窗口）
 - `121` = 1行2列，第1个位置（左半部分）
 - `122` = 1行2列，第2个位置（右半部分）
 - `221` = 2行2列，第1个位置（左上角）
 - `311` = 3行1列，第1个位置（顶部三分之一）
+
+**图表同步功能：**
+
+通过 `sync` 参数实现多图表同步：
+
+```python
+# 创建主图表
+chart = Chart()
+chart.set(df_main)
+
+# 创建同步子图表（完全同步：时间轴 + 十字光标）
+subchart = chart.create_subchart(
+    position=(2, 1, 2),      # 右侧位置
+    sync=chart.id,            # 同步到主图表
+    sync_crosshairs_only=False  # 完全同步
+)
+subchart.set(df_sub)
+
+# 创建仅同步十字光标的子图表
+subchart2 = chart.create_subchart(
+    position=211,             # 底部位置
+    sync=chart.id,            # 同步到主图表
+    sync_crosshairs_only=True   # 仅同步十字光标
+)
+subchart2.set(df_indicator)
+```
+
+**同步选项：**
+
+| 参数 | 说明 |
+|------|------|
+| `sync` | 目标图表 ID 或 `True`（使用当前图表 ID），子图表将与此图表同步 |
+| `sync_crosshairs_only=False` | 完全同步（时间轴缩放 + 十字光标移动） |
+| `sync_crosshairs_only=True` | 仅同步十字光标，时间轴独立 |
 
 ### 3.2 HTMLChart (浏览器)
 
@@ -442,13 +494,19 @@ sub.set(df)
 
 **运行时位置控制：**
 ```python
-# 获取当前位置
+# 获取当前位置（show 前后均可调用）
 x, y, w, h = chart.get_position()
 print(f"位置: x={x}, y={y}, width={w}, height={h}")
 
-# 动态设置位置（百分比 0-1）
+# 动态设置位置（百分比 0-1，show 前后均可调用）
 chart.set_position(0.0, 0.0, 0.5, 1.0)  # 左半部分
 chart.set_position(0.5, 0.0, 0.5, 1.0)  # 右半部分
+
+# 传入 None 恢复默认网格位置
+chart.set_position(None, None, None, None)  # 全部恢复默认
+
+# 单个参数传入 None，仅恢复该参数的默认值
+chart.set_position(x=0.1, y=None, width=0.5, height=0.5)  # y 恢复默认
 ```
 
 ### 3.8 事件回调 (Events)
@@ -751,6 +809,7 @@ python test/test_features.py      # 功能测试
 动态位置控制:
   x, y, w, h = chart.get_position()
   chart.set_position(0.0, 0.0, 0.5, 1.0)  # 左半部分
+  chart.set_position(None, None, None, None)  # 恢复默认网格位置
 
 事件驱动:
   chart.events.search += handler

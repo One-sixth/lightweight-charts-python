@@ -1,6 +1,6 @@
 # 示例目录说明
 
-本目录包含 lightweight-charts-python 的示例代码，编号 1-29。
+本目录包含 lightweight-charts-python 的示例代码，编号 1-30。
 
 ## 编号说明
 
@@ -35,3 +35,5 @@
 | 27 | `27_reflex_chart` | Reflex 嵌入：实时 bar 推送 + crosshair 回调 (postMessage 桥接) | ✅ 已实现  |
 | 28 | `28_cross_process_chart` | CrossProcessChart：跨进程嵌入 PySide6 QWidget | ✅ 已实现  |
 | 29 | `29_grid_layout` | 网格布局：position 参数三种格式 + get_position/set_position | ✅ 已实现  |
+| 30 | `30_table_component` | 表格组件：自选股列表 + 持仓管理 + 动态更新 + 多表格布局 | ✅ 已实现  |
+| 31 | `31_chart_sync` | 图表同步：`sync_id` 参数实现多图表时间轴和十字光标同步 | ✅ 已实现  |

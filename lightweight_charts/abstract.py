@@ -47,6 +47,9 @@ class Window:
         self.scripts = []
         self.final_scripts = []
         self.bulk_run = BulkRunScript(script_func)
+        
+        # 网格布局跟踪
+        self._grid_spec: Optional[Tuple[int, int]] = None  # (nrows, ncols)
 
         if run_script:
             self.run_script = run_script
@@ -134,8 +137,35 @@ class Window:
         return_clicked_cells: bool = False,
         func: Optional[Callable] = None
     ) -> 'Table':
-        """在图表上创建一个可交互的表格组件。
-        :return: Table 实例"""
+        """
+        在图表上创建一个可交互的表格组件。
+
+        :param width: 表格宽度。支持三种格式：
+            - 整数（如 200）：固定像素宽度
+            - 小数（如 0.2）：相对窗口宽度的百分比（0-1）
+            - None：自动适应内容宽度
+        :param height: 表格高度。支持三种格式：
+            - 整数（如 150）：固定像素高度
+            - 小数（如 0.3）：相对窗口高度的百分比（0-1）
+            - None：自动适应内容高度
+        :param headings: 表头列名元组，如 ('Symbol', 'Price', 'Volume')
+        :param widths: 各列宽度比例元组，总和应为 1，如 (0.3, 0.35, 0.35)
+        :param alignments: 各列对齐方式元组，可选值：'left', 'right', 'center'
+        :param position: 表格位置，支持：
+            - 'left'：左侧浮动
+            - 'right'：右侧浮动
+            - 元组 (x, y)：绝对位置，使用百分比坐标（0-1范围），如 (0.7, 0.1)
+        :param draggable: 是否可拖动，默认为 False
+        :param background_color: 表格背景颜色，默认为 '#121417'
+        :param border_color: 边框颜色，默认为 'rgb(70, 70, 70)'
+        :param border_width: 边框宽度（像素），默认为 1
+        :param heading_text_colors: 表头文字颜色元组，如 ('#FFFFFF', '#FFFFFF', '#FFFFFF')
+        :param heading_background_colors: 表头背景颜色元组，如 ('rgba(70, 130, 180, 0.8)',) * 3
+        :param return_clicked_cells: 是否返回点击的单元格信息，默认为 False。
+            为 True 时，回调函数会接收 (row, column) 参数；否则只接收 row 参数
+        :param func: 行点击回调函数，签名为 func(row) 或 func(row, column)（当 return_clicked_cells=True 时）
+        :return: Table 实例，可用于添加行、更新单元格数据等操作
+        """
         return Table(*locals().values())
 
     def create_subchart(
@@ -152,28 +182,54 @@ class Window:
         marker_auto_scale: bool = True
     ) -> 'AbstractChart':
         """创建子图表，支持独立缩放或同步十字光标。
+
         :param position: 子图位置（网格格式或字符串格式，如 111, (2,2,1), 'left'）
         :param width: 宽度比例（相对于网格单元，1.0=占满，<1.0=内缩对齐左上角，>1.0=侵占）
         :param height: 高度比例（相对于网格单元）
-        :param sync_id: 可选的同步 ID，多个图表同步时间和十字光标
+        :param sync_id: 可选的同步目标图表 ID，用于将此子图与指定图表同步时间轴和十字光标
         :param scale_candles_only: 是否仅以 K 线范围缩放
-        :param sync_crosshairs_only: 是否仅同步十字光标
+        :param sync_crosshairs_only: 是否仅同步十字光标（不同步时间轴），默认为 False
         :param toolbox: 是否启用绘图工具箱
         :param autosize: 是否自动调整大小
         :param pane_index: 面板索引
         :param marker_auto_scale: 标记是否自动缩放
-        :return: AbstractChart 子图实例"""
+        :return: AbstractChart 子图实例
+        
+        :raises ValueError: 如果网格规格冲突（如先创建 311 再创建 221）
+        """
+        # 获取当前图表数量（用于字符串格式转换）
+        chart_count = len(self.handlers) + 1
+        
+        # 解析 position 获取网格规格
+        position_info = parse_position(position)
+        new_grid_spec = (position_info['nrows'], position_info['ncols'])
+        
+        # 检查网格规格冲突
+        if self._grid_spec is not None and self._grid_spec != new_grid_spec:
+            raise ValueError(
+                f"网格规格冲突：当前窗口使用 {self._grid_spec[0]}x{self._grid_spec[1]} 网格，"
+                f"但尝试创建 {new_grid_spec[0]}x{new_grid_spec[1]} 网格的图表。"
+                f"所有图表必须使用相同的网格规格。"
+            )
+        
+        # 更新网格规格（首次设置或相同规格）
+        if self._grid_spec is None:
+            self._grid_spec = new_grid_spec
+        
         subchart = AbstractChart(
             self, width, height, scale_candles_only, toolbox, 
             autosize=autosize, position=position, pane_index=pane_index,
             marker_auto_scale=marker_auto_scale
         )
+        # 如果指定了 sync_id，执行图表同步
         if sync_id:
-            warnings.warn(
-                f"sync_id 参数当前未实现，图表同步功能暂时不可用",
-                UserWarning,
-                stacklevel=2
-            )
+            self.run_script(f'''
+                Lib.Handler.syncCharts(
+                    {subchart.id},
+                    {sync_id},
+                    {'true' if sync_crosshairs_only else 'false'}
+                )
+            ''')
         return subchart
 
     def style(
@@ -343,6 +399,15 @@ class SeriesCommon(Pane):
         return arg
 
     def set(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
+        """
+        设置或更新系列数据。
+
+        :param df: 包含时间序列数据的 DataFrame，必须包含 'time' 列。
+            对于 Line 系列，还需要 'value' 列或与系列同名的列。
+            对于 Candlestick 系列，需要 'open', 'high', 'low', 'close' 列。
+            如果为 None 或空 DataFrame，则清空数据。
+        :param format_cols: 是否自动格式化列（包括日期时间转换），默认为 True
+        """
         if df is None or df.empty:
             self.run_script(f'{self.id}.series.setData([])')
             self.data = pd.DataFrame()
@@ -364,6 +429,13 @@ class SeriesCommon(Pane):
             self._update_markers()
 
     def update(self, series: pd.Series):
+        """
+        更新系列的最后一个数据点或添加新数据点。
+
+        :param series: 包含单个数据点的 Series，必须包含 'time' 索引。
+            如果时间与最后一个数据点相同，则更新该数据点；否则添加为新数据点。
+        :raises AssertionError: 如果尚未调用 set() 设置初始数据
+        """
         if self._last_bar is None:
             raise AssertionError("set() must be called first.")
         series = self._series_datetime_format(series, exclude_lowercase=self.name)
@@ -539,7 +611,16 @@ class SeriesCommon(Pane):
                         func: Optional[Callable] = None
                         ) -> 'HorizontalLine':
         """
-        Creates a horizontal line at the given price.
+        在指定价格位置创建一条水平线。
+
+        :param price: 水平线所在的价格位置
+        :param color: 线条颜色，默认为 'rgb(122, 146, 202)'
+        :param width: 线条宽度（像素），默认为 2
+        :param style: 线条样式，可选值：'solid', 'dotted', 'dashed', 'large_dashed', 'sparse_dotted'
+        :param text: 线条标签文本
+        :param axis_label_visible: 是否在坐标轴上显示标签，默认为 True
+        :param func: 点击回调函数，签名为 func(price)
+        :return: HorizontalLine 实例
         """
         return HorizontalLine(self, price, color, width, style, text, axis_label_visible, func)
 
@@ -913,7 +994,8 @@ class Candlestick(SeriesCommon):
         # re-send markers with updated interval alignment to prevent drift
         if self.markers:
             self._update_markers()
-        # TODO keep drawings doesn't work consistenly w
+        # Note: keep_drawings behavior may vary depending on timing of toolbox initialization
+        # The toolBox may not be fully initialized when set() is called early
         if keep_drawings:
             self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
         else:
@@ -1214,7 +1296,20 @@ class AbstractChart(Candlestick, Pane):
         chart_count = len(self.win.handlers) + 1
         
         # 解析并存储 position 信息
-        self._position_info = parse_position(position, chart_count)
+        self._position_info = parse_position(position)
+        grid_spec = (self._position_info['nrows'], self._position_info['ncols'])
+        
+        # 检查网格规格冲突（仅在已有图表时）
+        if chart_count > 1 and self.win._grid_spec is not None and self.win._grid_spec != grid_spec:
+            raise ValueError(
+                f"网格规格冲突：当前窗口使用 {self.win._grid_spec[0]}x{self.win._grid_spec[1]} 网格，"
+                f"但尝试创建 {grid_spec[0]}x{grid_spec[1]} 网格的图表。"
+                f"所有图表必须使用相同的网格规格。"
+            )
+        
+        # 设置窗口网格规格（首次设置）
+        if self.win._grid_spec is None:
+            self.win._grid_spec = grid_spec
         self._position = position
         
         # 生成 JS 初始化脚本（统一使用网格格式）
@@ -1393,7 +1488,17 @@ class AbstractChart(Candlestick, Pane):
             pane_index: int = 0
     ) -> Line:
         """
-        Creates and returns a Line object.
+        创建并返回一个折线图对象。
+
+        :param name: 线图名称，用于图例显示
+        :param color: 线条颜色，支持 CSS 颜色格式，如 'rgba(214, 237, 255, 0.6)'
+        :param style: 线条样式，可选值：'solid', 'dotted', 'dashed', 'large_dashed', 'sparse_dotted'
+        :param width: 线条宽度（像素），默认为 2
+        :param price_line: 是否显示价格线（在图表右侧显示当前价格）
+        :param price_label: 是否显示价格标签
+        :param price_scale_id: 价格刻度ID，用于共享刻度
+        :param pane_index: 面板索引，用于在多个面板中放置
+        :return: Line 实例
         """
         line = Line(self, name, color, style, width, price_line, price_label, price_scale_id, pane_index=pane_index)
         self._lines.append(line)
@@ -1406,7 +1511,16 @@ class AbstractChart(Candlestick, Pane):
             pane_index: int = 0,
     ) -> Histogram:
         """
-        Creates and returns a Histogram object.
+        创建并返回一个柱状图（直方图）对象，通常用于显示成交量。
+
+        :param name: 柱状图名称，用于图例显示
+        :param color: 柱状图颜色，支持 CSS 颜色格式
+        :param price_line: 是否显示价格线
+        :param price_label: 是否显示价格标签
+        :param scale_margin_top: 顶部刻度边距（0-1），默认为 0.0
+        :param scale_margin_bottom: 底部刻度边距（0-1），默认为 0.0
+        :param pane_index: 面板索引，用于在多个面板中放置
+        :return: Histogram 实例
         """
         hist = Histogram(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index)
         self._lines.append(hist)
@@ -1499,20 +1613,32 @@ class AbstractChart(Candlestick, Pane):
                    precompute_conflation_on_init: bool = None,
                    precompute_conflation_priority: str = None):
         """
-        Options for the timescale of the chart.
+        设置时间轴的显示选项。
 
-        :param right_offset_pixels: Margin from the right side of the chart in pixels (v5.0.9+).
-        :param enable_conflation: Enable data conflation for large datasets (v5.1.0+).
-        :param conflation_threshold_factor: Adjust the zoom level threshold for conflation (v5.1.0+).
-        :param precompute_conflation_on_init: Pre-calculate conflated data on initialization (v5.1.0+).
-        :param precompute_conflation_priority: Background computation priority (v5.1.0+).
+        :param right_offset: 右侧偏移的K线数量，默认为 0
+        :param min_bar_spacing: 最小K线间距（像素），默认为 0.5
+        :param visible: 时间轴是否可见，默认为 True
+        :param time_visible: 时间标签是否可见，默认为 True
+        :param seconds_visible: 秒数是否显示在时间标签中，默认为 False
+        :param border_visible: 时间轴边框是否可见，默认为 True
+        :param border_color: 时间轴边框颜色
+        :param right_offset_pixels: 右侧像素边距 (v5.0.9+)
+        :param enable_conflation: 启用大数据集的数据合并 (v5.1.0+)
+        :param conflation_threshold_factor: 调整合并的缩放级别阈值 (v5.1.0+)
+        :param precompute_conflation_on_init: 初始化时预计算合并数据 (v5.1.0+)
+        :param precompute_conflation_priority: 后台计算优先级 (v5.1.0+)
         """
         self.run_script(f'''{self.id}.chart.applyOptions({{timeScale: {js_json(locals())}}})''')
 
     def layout(self, background_color: str = '#000000', text_color: Optional[str] = None,
                font_size: Optional[int] = None, font_family: Optional[str] = None):
         """
-        Global layout options for the chart.
+        设置图表的全局布局选项。
+
+        :param background_color: 图表背景颜色，默认为 '#000000'（黑色）
+        :param text_color: 文本颜色，如 '#FFFFFF'（白色）
+        :param font_size: 字体大小（像素）
+        :param font_family: 字体族，如 'Arial', 'Microsoft YaHei'
         """
         self.run_script(f"""
             document.getElementById('container').style.backgroundColor = '{background_color}'
@@ -1622,12 +1748,19 @@ class AbstractChart(Candlestick, Pane):
                text: str = '', color_based_on_candle: bool = False, persistent: bool = False,
                shorthand: bool = True):
         """
-        Configures the legend of the chart.
+        配置图表的图例显示选项。
 
-        :param persistent: when True, OHLC info stays visible even when the
-                           mouse leaves the chart area.
-        :param shorthand: when True, volume and open interest are abbreviated
-                          (e.g. 24.5K, 1.2M). Set to False for full numbers.
+        :param visible: 图例是否可见，默认为 False
+        :param ohlc: 是否显示 OHLC（开盘/最高/最低/收盘）信息，默认为 True
+        :param percent: 是否显示涨跌幅百分比，默认为 False
+        :param lines: 是否显示指标线信息，默认为 True
+        :param color: 图例文本颜色，默认为 'rgb(191, 195, 203)'
+        :param font_size: 字体大小（像素），默认为 11
+        :param font_family: 字体族，默认为 'Monaco'
+        :param text: 自定义图例文本
+        :param color_based_on_candle: 是否根据K线颜色动态改变文本颜色，默认为 False
+        :param persistent: 当为 True 时，鼠标离开图表区域后 OHLC 信息保持可见，默认为 False
+        :param shorthand: 当为 True 时，成交量和持仓量使用缩写形式（如 24.5K, 1.2M），默认为 True。设为 False 显示完整数字。
         """
         l_id = f'{self.id}.legend'
         if not visible:
@@ -1703,8 +1836,35 @@ class AbstractChart(Candlestick, Pane):
         return_clicked_cells: bool = False,
         func: Optional[Callable] = None
     ) -> Table:
-        """在图表上创建一个可交互的表格组件，并将其注册到当前图表。
-        :return: Table 实例"""
+        """
+        在图表上创建一个可交互的表格组件，并将其注册到当前图表。
+
+        :param width: 表格宽度。支持三种格式：
+            - 整数（如 200）：固定像素宽度
+            - 小数（如 0.2）：相对窗口宽度的百分比（0-1）
+            - None：自动适应内容宽度
+        :param height: 表格高度。支持三种格式：
+            - 整数（如 150）：固定像素高度
+            - 小数（如 0.3）：相对窗口高度的百分比（0-1）
+            - None：自动适应内容高度
+        :param headings: 表头列名元组，如 ('Symbol', 'Price', 'Volume')
+        :param widths: 各列宽度比例元组，总和应为 1，如 (0.3, 0.35, 0.35)
+        :param alignments: 各列对齐方式元组，可选值：'left', 'right', 'center'
+        :param position: 表格位置，支持：
+            - 'left'：左侧浮动
+            - 'right'：右侧浮动
+            - 元组 (x, y)：绝对位置，使用百分比坐标（0-1范围），如 (0.7, 0.1)
+        :param draggable: 是否可拖动，默认为 False
+        :param background_color: 表格背景颜色，默认为 '#121417'
+        :param border_color: 边框颜色，默认为 'rgb(70, 70, 70)'
+        :param border_width: 边框宽度（像素），默认为 1
+        :param heading_text_colors: 表头文字颜色元组，如 ('#FFFFFF', '#FFFFFF', '#FFFFFF')
+        :param heading_background_colors: 表头背景颜色元组，如 ('rgba(70, 130, 180, 0.8)',) * 3
+        :param return_clicked_cells: 是否返回点击的单元格信息，默认为 False。
+            为 True 时，回调函数会接收 (row, column) 参数；否则只接收 row 参数
+        :param func: 行点击回调函数，签名为 func(row) 或 func(row, column)（当 return_clicked_cells=True 时）
+        :return: Table 实例，可用于添加行、更新单元格数据等操作
+        """
         args = locals()
         del args['self']
         tbl = self.win.create_table(*args.values())

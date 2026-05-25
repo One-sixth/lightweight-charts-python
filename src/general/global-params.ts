@@ -1,5 +1,5 @@
 export interface GlobalParams extends Window {
-    pane: paneStyle;    // TODO shouldnt need this cause of css variables
+    pane: paneStyle;    // Note: This could potentially be replaced with CSS variables in the future
     handlerInFocus: string;
     textBoxFocused: boolean;
     callbackFunction: Function;
@@ -71,4 +71,3 @@ export function htmlToElement(html:string): HTMLElement {
 //     name?: string,
 //     precision: number,
 // }
-

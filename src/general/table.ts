@@ -80,6 +80,8 @@ export class Table {
         overflowWrapper.style.overflowY = 'auto'
         overflowWrapper.style.overflowX = 'hidden'
         overflowWrapper.style.backgroundColor = tableBackgroundColor
+        overflowWrapper.style.flex = '1'
+        overflowWrapper.style.minHeight = '0'
         overflowWrapper.appendChild(this.table)
         this._div.appendChild(overflowWrapper)
         window.containerDiv.appendChild(this._div)
@@ -192,8 +194,18 @@ export class Table {
 
     }
 
-    reSize(width: number, height: number) {
-        this._div.style.width = width <= 1 ? width * 100 + '%' : width + 'px'
-        this._div.style.height = height <= 1 ? height * 100 + '%' : height + 'px'
+    reSize(width: number | string, height: number | string) {
+        if (typeof width === 'string' && width === 'auto') {
+            this._div.style.width = 'auto'
+        } else {
+            const w = width as number
+            this._div.style.width = w <= 1 ? w * 100 + '%' : w + 'px'
+        }
+        if (typeof height === 'string' && height === 'auto') {
+            this._div.style.height = 'auto'
+        } else {
+            const h = height as number
+            this._div.style.height = h <= 1 ? h * 100 + '%' : h + 'px'
+        }
     }
 }

@@ -1,5 +1,6 @@
 import inspect
 import random
+import warnings
 from typing import Union, Optional, Callable
 
 from .util import jbool, Pane, NUM
@@ -79,7 +80,7 @@ class Table(Pane, dict):
             headings: tuple,
             widths: Optional[tuple] = None,
             alignments: Optional[tuple] = None,
-            position='left',
+            position=(0, 0),
             draggable: bool = False,
             background_color: str = '#121417',
             border_color: str = 'rgb(70, 70, 70)',
@@ -109,14 +110,36 @@ class Table(Pane, dict):
         self.win.handlers[self.id] = async_wrapper if inspect.iscoroutinefunction(func) else wrapper
         self.return_clicked_cells = return_clicked_cells
 
+        if isinstance(position, tuple):
+            # 处理绝对位置 (x, y) - 支持百分比或像素
+            pos_x, pos_y = position
+            pos_str = 'custom'
+        else:
+            # 字符串 position 已废弃，发出警告
+            warnings.warn(
+                "create_table 的 position 参数字符串输入已废弃！"
+                "输入任何字符串等效于输入 (0, 0)。"
+                "当前维护者还没想清楚如何处理字符串的 position 输入。"
+                "建议使用元组格式 position=(x, y) 来设置精确位置。",
+                DeprecationWarning,
+                stacklevel=3
+            )
+            # 将字符串 position 视为 (0, 0)
+            pos_x, pos_y = (0, 0)
+            pos_str = 'custom'
+            
+        # 处理宽度和高度：None 表示自动适应内容
+        js_width = '"auto"' if width is None else width
+        js_height = '"auto"' if height is None else height
+        
         self.run_script(f'''
         {self.id} = new Lib.Table(
-            {width},
-            {height},
+            {js_width},
+            {js_height},
             {list(headings)},
             {list(widths) if widths else []},
             {list(alignments) if alignments else []},
-            '{position}',
+            '{pos_str}',
             {jbool(draggable)},
             '{background_color}',
             '{border_color}',
@@ -124,6 +147,27 @@ class Table(Pane, dict):
             {list(heading_text_colors) if heading_text_colors else []},
             {list(heading_background_colors) if heading_background_colors else []}
         )''')
+        
+        # 设置自定义位置（字符串 position 已转换为 (0, 0)）
+        if pos_str == 'custom':
+            # 自定义位置需要设置为绝对定位
+            self.run_script(f'''
+            {self.id}._div.style.position = "absolute";
+            {self.id}._div.style.float = "none";
+            ''')
+            if pos_x < 1 and pos_y < 1:
+                # 百分比位置
+                self.run_script(f'''
+                {self.id}._div.style.left = "{pos_x * 100}%";
+                {self.id}._div.style.top = "{pos_y * 100}%";
+                ''')
+            else:
+                # 像素位置
+                self.run_script(f'''
+                {self.id}._div.style.left = "{pos_x}px";
+                {self.id}._div.style.top = "{pos_y}px";
+                ''')
+        
         self.run_script(f'{self.id}.callbackName = "{self.id}"') if func else None
         self.footer = Section(self, 'footer')
         self.header = Section(self, 'header')
