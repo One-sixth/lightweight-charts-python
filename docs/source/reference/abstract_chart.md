@@ -366,10 +366,168 @@ Price axis scales vary depending on the precision of the data used, and there is
 ````
 `````
 
+---
 
+## 📊 网格布局与冲突处理
 
+### position 参数详解
 
+`position` 参数支持三种格式：
 
+| 格式 | 示例 | 说明 |
+|------|------|------|
+| **字符串** | `'left'`, `'right'`, `'top'`, `'bottom'` | 快捷方式，自动转换为对应的网格布局（已弃用） |
+| **整数** | `111`, `221`, `311` | 3位数字：`nrows` + `ncols` + `index` |
+| **元组** | `(1, 1, 1)`, `(2, 2, 3)` | `(nrows, ncols, index)` |
 
+**字符串到网格的转换规则：**
 
+| 字符串 | 转换结果 | 网格规格 |
+|--------|----------|----------|
+| `'left'` | `121` | 1行2列，第1个位置 |
+| `'right'` | `122` | 1行2列，第2个位置 |
+| `'top'` | `211` | 2行1列，第1个位置 |
+| `'bottom'` | `212` | 2行1列，第2个位置 |
 
+---
+
+### 网格冲突的触发条件
+
+**当同一窗口中的图表使用不同的网格规格时，会触发 `ValueError` 异常。**
+
+网格规格由 `(nrows, ncols)` 组成，表示布局的行数和列数：
+
+```python
+from lightweight_charts import Chart
+
+# 第一个图表使用 2x2 网格
+chart1 = Chart(position=221)  
+
+# ❌ 冲突！第二个图表尝试使用 1x2 网格
+chart2 = chart1.create_subchart(position=121)  
+# ValueError: 网格规格冲突：当前窗口使用 2x2 网格，
+# 但尝试创建 1x2 网格的图表。所有图表必须使用相同的网格规格。
+```
+
+#### 冲突场景示例
+
+| 第一个图表 | 第二个图表 | 是否冲突 | 原因 |
+|-----------|-----------|----------|------|
+| `position=221` | `position=222` | ✅ 不冲突 | 同属 2x2 网格 |
+| `position=221` | `position=121` | ❌ 冲突 | 2x2 vs 1x2 |
+| `position='left'` | `position='right'` | ✅ 不冲突 | 都转换为 1x2 网格 |
+| `position='left'` | `position=311` | ❌ 冲突 | 1x2 vs 3x1 |
+| `position=(2, 2, 1)` | `position=(2, 2, 4)` | ✅ 不冲突 | 同属 2x2 网格 |
+
+---
+
+### 如何规避网格冲突
+
+#### 方法1：统一使用相同的网格规格
+
+```python
+from lightweight_charts import Chart
+
+# 方案：统一使用 2x2 网格
+chart = Chart(position=221)           # 2行2列，位置1
+subchart_right = chart.create_subchart(position=222)  # 2行2列，位置2
+subchart_bottom = chart.create_subchart(position=223) # 2行2列，位置3
+subchart_corner = chart.create_subchart(position=224) # 2行2列，位置4
+```
+
+#### 方法2：使用宽度/高度参数实现跨列/跨行
+
+```python
+from lightweight_charts import Chart
+
+# 创建 2x2 网格布局
+chart = Chart(position=221)  # 左上角
+subchart_right = chart.create_subchart(position=222)  # 右上角
+
+# bottom 图表跨两列显示
+subchart_bottom = chart.create_subchart(
+    position=223,  # 左下角位置
+    width=2.0      # 宽度设为2.0，横跨两列
+)
+```
+
+#### 方法3：使用字符串快捷方式（不推荐）
+
+虽然字符串格式会发出弃用警告，但它们会自动转换为相同的网格规格：
+
+```python
+from lightweight_charts import Chart
+
+# 'left' 和 'right' 都转换为 1x2 网格，不会冲突
+chart_left = Chart(position='left')
+chart_right = chart_left.create_subchart(position='right')  # ✅ 不冲突
+```
+
+---
+
+### 复杂布局示例
+
+#### 示例1：3图表布局（2行2列，底部跨列）
+
+```python
+from lightweight_charts import Chart
+
+# 2x2 网格布局
+chart = Chart(position=221, width=1200, height=800)  # 左上角
+subchart_right = chart.create_subchart(position=222)  # 右上角
+
+# 底部图表横跨两列
+subchart_bottom = chart.create_subchart(
+    position=223,
+    width=2.0  # 跨两列
+)
+```
+
+#### 示例2：垂直排列（3行1列）
+
+```python
+from lightweight_charts import Chart
+
+# 3行1列布局
+chart_top = Chart(position=311)      # 顶部
+chart_middle = chart_top.create_subchart(position=312)  # 中间
+chart_bottom = chart_top.create_subchart(position=313)  # 底部
+```
+
+#### 示例3：水平排列（1行3列）
+
+```python
+from lightweight_charts import Chart
+
+# 1行3列布局
+chart_left = Chart(position=131)     # 左侧
+chart_middle = chart_left.create_subchart(position=132)  # 中间
+chart_right = chart_left.create_subchart(position=133)   # 右侧
+```
+
+---
+
+### 错误处理建议
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart(position=221)
+
+try:
+    subchart = chart.create_subchart(position=121)
+except ValueError as e:
+    print(f"⚠️  创建子图表失败: {e}")
+    # 使用正确的规格重新创建
+    subchart = chart.create_subchart(position=222)
+```
+
+---
+
+### 关键要点
+
+1. **同一窗口所有图表必须使用相同的网格规格**（`nrows` 和 `ncols` 必须相同）
+2. **位置索引 `index` 可以不同**，表示在网格中的不同位置
+3. **使用 `width` 和 `height` 参数**可以实现跨列/跨行布局
+4. **字符串格式已弃用**，建议使用数字或元组格式
+5. **冲突会立即抛出 `ValueError`**，需要在代码中处理或避免

@@ -8,18 +8,24 @@
 
 ### Added
 
-- **图表同步功能**: `create_subchart()` 新增 `sync_id` 参数，支持多图表同步时间轴和十字光标
-- **图表同步示例**: 新增示例 `31_chart_sync`，演示 `sync_id` 和 `sync_crosshairs_only` 参数的使用
+- **图表同步功能**: `create_subchart()` 新增 `sync` 参数，支持多图表同步时间轴和十字光标
+- **图表同步示例**: 新增示例 `31_chart_sync`，演示 `sync` 和 `sync_crosshairs_only` 参数的使用
 - **表格组件改进**: `create_table()` 支持 `height=None` 和 `width=None` 实现自动适应内容大小
 - **网格布局系统**: `position` 参数支持三种格式：整数（如 `111`）、元组（如 `(2,2,1)`）、字符串（已弃用）
 - **运行时位置控制**: 新增 `get_position()` 和 `set_position()` 方法，支持动态调整图表位置
 - **相对大小控制**: `width`/`height` 参数相对于网格单元，支持内缩（<1.0）和侵占（>1.0）
+- **网格冲突检测**: 自动检测同一窗口中图表网格规格冲突，防止布局混乱，抛出清晰的 `ValueError` 异常
+- **测试整合**: 将根目录测试文件整合到 `tests/` 文件夹，统一管理测试用例
+- **文档完善**: 添加详细的网格布局与冲突处理说明到 API 参考文档
 
 ### Changed
 
 - **表格 position 参数变更**: `create_table()` 的 `position` 参数字符串输入已废弃，输入任何字符串等效于输入 `(0, 0)`，会发出 `DeprecationWarning`
 - **表格位置处理逻辑**: 统一 position 参数处理，移除重复的类型检查
 - **Table 类默认位置**: 默认值从 `'left'` 改为 `(0, 0)`
+- **position 参数弃用警告**: `parse_position()` 对字符串输入发出 `DeprecationWarning`，推荐使用数字格式
+- **代码优化**: 重构 `parse_position()` 和 `_convert_string_to_grid()` 函数，使用字典映射替代 if-elif 链，提高代码可维护性
+- **参数重命名**: `sync_id` 重命名为 `sync`，更符合 Python 命名规范
 
 ### Fixed
 
@@ -28,10 +34,12 @@
 - **回调 KeyError**: 修复了表格点击时 `KeyError: 'null'` 的问题
 - **表格样式修复**: 添加 `overflowWrapper.style.flex = '1'` 和 `overflowWrapper.style.minHeight = '0'`
 - **代码质量**: 清理了多处 TODO 注释，添加了详细说明和类型定义
+- **Rollup 编译警告**: 修复了 TypeScript 类型错误，解决 `example.ts` 和 `toolbox.ts` 的编译警告
 
 ### Deprecated
 
-- **表格 position 字符串**: `create_table()` 的 `position` 参数不再支持字符串（`'left'`, `'right'`, `'top'`, `'bottom'`），建议使用元组格式 `position=(x, y)`
+- **表格 position 字符串**: `create_table()` 的 `position` 参数不再支持字符串（`'left'`, `'right'`, `'top'`, `'bottom'`），建议使用相对坐标元组格式 `position=(x, y)`
+- **字符串 position 格式**: `parse_position()` 对字符串输入发出弃用警告，推荐使用数字格式（如 `121`）或元组格式（如 `(1, 2, 1)`）
 
 ---
 

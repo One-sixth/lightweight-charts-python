@@ -3,7 +3,7 @@ import os
 import warnings
 from base64 import b64decode
 from datetime import datetime
-from typing import Callable, Union, Literal, List, Optional
+from typing import Callable, Union, Literal, Optional
 import pandas as pd
 import time as _time
 import tomllib
@@ -47,9 +47,9 @@ class Window:
         self.scripts = []
         self.final_scripts = []
         self.bulk_run = BulkRunScript(script_func)
-        
+
         # 网格布局跟踪
-        self._grid_spec: Optional[Tuple[int, int]] = None  # (nrows, ncols)
+        self._grid_spec: Optional[tuple[int, int]] = None  # (nrows, ncols)
 
         if run_script:
             self.run_script = run_script
@@ -194,16 +194,16 @@ class Window:
         :param pane_index: 面板索引
         :param marker_auto_scale: 标记是否自动缩放
         :return: AbstractChart 子图实例
-        
+
         :raises ValueError: 如果网格规格冲突（如先创建 311 再创建 221）
         """
         # 获取当前图表数量（用于字符串格式转换）
         chart_count = len(self.handlers) + 1
-        
+
         # 解析 position 获取网格规格
         position_info = parse_position(position)
         new_grid_spec = (position_info['nrows'], position_info['ncols'])
-        
+
         # 检查网格规格冲突
         if self._grid_spec is not None and self._grid_spec != new_grid_spec:
             raise ValueError(
@@ -211,13 +211,13 @@ class Window:
                 f"但尝试创建 {new_grid_spec[0]}x{new_grid_spec[1]} 网格的图表。"
                 f"所有图表必须使用相同的网格规格。"
             )
-        
+
         # 更新网格规格（首次设置或相同规格）
         if self._grid_spec is None:
             self._grid_spec = new_grid_spec
-        
+
         subchart = AbstractChart(
-            self, width, height, scale_candles_only, toolbox, 
+            self, width, height, scale_candles_only, toolbox,
             autosize=autosize, position=position, pane_index=pane_index,
             marker_auto_scale=marker_auto_scale
         )
@@ -1282,7 +1282,7 @@ class AbstractChart(Candlestick, Pane):
         self.subcharts = []
         self._drawings = []
         self._tables = []
-        self._price_lines: List['PriceLine'] = []
+        self._price_lines: list['PriceLine'] = []
         self._scale_candles_only = scale_candles_only
         self._width = width
         self._height = height
@@ -1294,11 +1294,11 @@ class AbstractChart(Candlestick, Pane):
 
         # 获取当前图表数量（用于字符串格式转换）
         chart_count = len(self.win.handlers) + 1
-        
+
         # 解析并存储 position 信息
         self._position_info = parse_position(position)
         grid_spec = (self._position_info['nrows'], self._position_info['ncols'])
-        
+
         # 检查网格规格冲突（仅在已有图表时）
         if chart_count > 1 and self.win._grid_spec is not None and self.win._grid_spec != grid_spec:
             raise ValueError(
@@ -1306,12 +1306,12 @@ class AbstractChart(Candlestick, Pane):
                 f"但尝试创建 {grid_spec[0]}x{grid_spec[1]} 网格的图表。"
                 f"所有图表必须使用相同的网格规格。"
             )
-        
+
         # 设置窗口网格规格（首次设置）
         if self.win._grid_spec is None:
             self.win._grid_spec = grid_spec
         self._position = position
-        
+
         # 生成 JS 初始化脚本（统一使用网格格式）
         self._html_chart_init = (
             f'{self.id} = new Lib.Handler('
@@ -1526,7 +1526,7 @@ class AbstractChart(Candlestick, Pane):
         self._lines.append(hist)
         return hist
 
-    def lines(self) -> List[Line]:
+    def lines(self) -> list[Line]:
         """
         Returns all lines for the chart.
         """
@@ -1578,8 +1578,8 @@ class AbstractChart(Candlestick, Pane):
         )
         pos = json.loads(result)
         return (pos['x'], pos['y'], pos['width'], pos['height'])
-    
-    def set_position(self, x: Optional[float] = None, y: Optional[float] = None, 
+
+    def set_position(self, x: Optional[float] = None, y: Optional[float] = None,
                      width: Optional[float] = None, height: Optional[float] = None):
         """
         设置图表的渲染位置
@@ -1587,7 +1587,7 @@ class AbstractChart(Candlestick, Pane):
         :param y: 左上角 y 坐标百分比 (0-1)，传入 None 使用默认网格位置
         :param width: 宽度百分比 (0-1)，传入 None 使用默认网格位置 (1.0)
         :param height: 高度百分比 (0-1)，传入 None 使用默认网格位置 (1.0)
-        
+
         示例:
             chart.set_position(0.0, 0.0, 0.5, 0.5)  # 左上角 50% 区域
             chart.set_position(None, 0.5, 0.5, 0.5)  # x 使用默认，其他自定义
@@ -1597,11 +1597,11 @@ class AbstractChart(Candlestick, Pane):
         for val, name in [(x, 'x'), (y, 'y'), (width, 'width'), (height, 'height')]:
             if val is not None and not 0 <= val <= 1:
                 raise ValueError(f"{name} 必须在 0-1 之间，当前值: {val}")
-        
+
         # 构建 JS 参数字符串
         def to_js(val):
             return 'null' if val is None else str(val)
-        
+
         self.run_script(f'{self.id}.setPosition({to_js(x)}, {to_js(y)}, {to_js(width)}, {to_js(height)})')
 
     def time_scale(self, right_offset: int = 0, min_bar_spacing: float = 0.5,

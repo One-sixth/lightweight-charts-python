@@ -752,21 +752,24 @@ get_last_trade(ticker)
 | 27 | `27_reflex_chart` | Reflex 嵌入：K线 + SMA 指标在 Reflex 应用中渲染 | `rx_chart.py` |
 | 28 | `28_cross_process_chart` | CrossProcessChart：跨进程嵌入 PySide6 QWidget | `cross_process_chart.py` |
 | 29 | `29_grid_layout` | 网格布局：position 参数三种格式 + get_position/set_position | `grid_layout.py` |
+| 30 | `30_table_component` | 表格组件：自选股表格 + 动态更新 + 样式定制 | `table_component.py` |
+| 31 | `31_chart_sync` | 图表同步：多图表时间轴同步 + 十字光标同步 | `chart_sync.py` |
 
 ---
 
-## 六、测试 (test/)
+## 六、测试 (tests/)
 
 ```
-test/
-├── run_tests.py           # 简约运行器
-├── test_cleanup.py        # 资源全链路创建/删除 + JS TOML 审计 + 多图表独立清理
-└── test_features.py       # 独特功能测试: 数据重命名/line追踪/截图/topbar事件
+tests/
+├── test_position.py       # position 参数解析测试：字符串转换、整数格式、元组格式、网格冲突检测
+├── test/test_cleanup.py   # 资源全链路创建/删除 + JS TOML 审计 + 多图表独立清理
+└── test/test_features.py  # 独特功能测试: 数据重命名/line追踪/截图/topbar事件
 ```
 
 运行:
 ```
-python test/run_tests.py
+python -m pytest tests/ -v        # 运行所有测试
+python -m pytest tests/test_position.py -v  # 运行 position 解析测试
 python test/test_cleanup.py       # 资源清理测试 (需 GUI 环境)
 python test/test_features.py      # 功能测试
 ```
