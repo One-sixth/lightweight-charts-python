@@ -72,10 +72,10 @@ def demo_two_charts_horizontal():
     使用整数格式：121 (左) 和 122 (右)
     """
     print("示例 2: 两个图表左右排列 (position=121, 122)")
-    
+
     chart1 = Chart(width=800, height=600, position=121, title='Left (121)')
     chart1.legend(visible=True)
-    
+
     # 创建第二个图表在同一窗口
     chart2 = chart1.create_subchart(position=122)
     chart2.legend(visible=True)
@@ -101,10 +101,10 @@ def demo_two_charts_vertical():
     使用元组格式：(2, 1, 1) (上) 和 (2, 1, 2) (下)
     """
     print("示例 3: 两个图表上下排列 (position=(2,1,1), (2,1,2))")
-    
+
     chart1 = Chart(width=800, height=800, position=(2, 1, 1), title='Top (2,1,1)')
     chart1.legend(visible=True)
-    
+
     chart2 = chart1.create_subchart(position=(2, 1, 2))
     chart2.legend(visible=True)
 
@@ -123,16 +123,16 @@ def demo_four_charts():
     使用整数格式：221, 222, 223, 224
     """
     print("示例 4: 四个图表 2x2 网格 (position=221, 222, 223, 224)")
-    
+
     chart1 = Chart(width=1000, height=800, position=221, title='Top-Left (221)')
     chart1.legend(visible=True)
-    
+
     chart2 = chart1.create_subchart(position=222)
     chart2.legend(visible=True)
-    
+
     chart3 = chart1.create_subchart(position=223)
     chart3.legend(visible=True)
-    
+
     chart4 = chart1.create_subchart(position=224)
     chart4.legend(visible=True)
 
@@ -153,19 +153,27 @@ def demo_custom_size():
     """
     示例 5: 自定义图表大小
     width/height < 1.0 时向内缩，对齐左上角
+    使用 create_subchart 的 width/height 参数
     """
     print("示例 5: 自定义图表大小 (width=0.6, height=0.6)")
-    
-    chart = Chart(width=800, height=600, title='Custom Size (0.6 x 0.6)')
+
+    # 创建主图表占满窗口
+    chart = Chart(width=800, height=600, title='Custom Size Demo')
     chart.legend(visible=True)
-    
+
+    # 创建子图表，使用 width/height 参数控制大小
+    # width=0.6, height=0.6 表示占网格单元的 60%
+    sub = chart.create_subchart(position=111, width=0.6, height=0.6)
+    sub.legend(visible=True)
+
     df = generate_data('AAPL', seed=42)
     chart.set(df)
-    
+    sub.set(df)
+
     # 获取位置
-    x, y, w, h = chart.get_position()
-    print(f"  位置: x={x:.2f}, y={y:.2f}, width={w:.2f}, height={h:.2f}")
-    
+    x, y, w, h = sub.get_position()
+    print(f"  子图位置: x={x:.2f}, y={y:.2f}, width={w:.2f}, height={h:.2f}")
+
     chart.show(block=True)
 
 
@@ -173,26 +181,78 @@ def demo_dynamic_position():
     """
     示例 6: 动态设置位置
     使用 set_position() 方法动态调整图表位置
+    展示 show() 后动态改变位置的效果
     """
+    import time
+
     print("示例 6: 动态设置位置")
-    
-    chart = Chart(width=800, height=600, title='Dynamic Position')
+    print("  窗口将先显示，然后自动切换多个位置...")
+
+    chart = Chart(width=800, height=600, title='Dynamic Position Demo')
     chart.legend(visible=True)
-    
+
+    # 添加信息栏
+    chart.topbar.textbox('status', '准备就绪')
+
     df = generate_data('AAPL', seed=42)
     chart.set(df)
-    
-    # 获取初始位置
-    x, y, w, h = chart.get_position()
-    print(f"  初始位置: x={x:.2f}, y={y:.2f}, width={w:.2f}, height={h:.2f}")
-    
-    # 动态设置新位置（左半部分）
-    chart.set_position(0.0, 0.0, 0.5, 1.0)
-    
-    # 获取新位置
-    x, y, w, h = chart.get_position()
-    print(f"  新位置: x={x:.2f}, y={y:.2f}, width={w:.2f}, height={h:.2f}")
-    
+
+    # 显示窗口
+    chart.show(block=False)
+
+    # 等待窗口显示
+    chart.topbar['status'].set('窗口已显示，3秒后开始切换位置...')
+    print("  窗口已显示，3秒后开始切换位置...")
+    time.sleep(3)
+
+    # 位置 1: 左上角 50%
+    chart.topbar['status'].set('位置 1: 左上角 50%')
+    chart.set_position(0.0, 0.0, 0.5, 0.5)
+    print("  切换到: 左上角 50%")
+    time.sleep(2)
+
+    # 位置 2: 右上角 50%
+    chart.topbar['status'].set('位置 2: 右上角 50%')
+    chart.set_position(0.5, 0.0, 0.5, 0.5)
+    print("  切换到: 右上角 50%")
+    time.sleep(2)
+
+    # 位置 3: 左下角 50%
+    chart.topbar['status'].set('位置 3: 左下角 50%')
+    chart.set_position(0.0, 0.5, 0.5, 0.5)
+    print("  切换到: 左下角 50%")
+    time.sleep(2)
+
+    # 位置 4: 右下角 50%
+    chart.topbar['status'].set('位置 4: 右下角 50%')
+    chart.set_position(0.5, 0.5, 0.5, 0.5)
+    print("  切换到: 右下角 50%")
+    time.sleep(2)
+
+    # 位置 5: 居中 60%
+    chart.topbar['status'].set('位置 5: 居中 60%')
+    chart.set_position(0.2, 0.2, 0.6, 0.6)
+    print("  切换到: 居中 60%")
+    time.sleep(2)
+
+    # 位置 6: 恢复默认网格位置
+    chart.topbar['status'].set('位置 6: 恢复默认网格位置')
+    chart.set_position(None, None, None, None)
+    print("  切换到: 恢复默认网格位置")
+    time.sleep(2)
+
+    # 位置 7: 只设置 x，其他使用默认
+    chart.topbar['status'].set('位置 7: 只设置 x=0.1')
+    chart.set_position(x=0.1)
+    print("  切换到: 只设置 x=0.1")
+    time.sleep(2)
+
+    # 最终恢复默认
+    chart.topbar['status'].set('演示完成，恢复默认位置')
+    chart.set_position(None, None, None, None)
+    print("  演示完成，已恢复默认位置")
+
+    # 阻塞等待窗口关闭
     chart.show(block=True)
 
 
@@ -213,7 +273,7 @@ if __name__ == '__main__':
     print()
     print("=" * 60)
     print()
-    
+
     # 运行示例
     demo_single_chart()
     print()

@@ -1465,19 +1465,30 @@ class AbstractChart(Candlestick, Pane):
         pos = json.loads(result)
         return (pos['x'], pos['y'], pos['width'], pos['height'])
     
-    def set_position(self, x: float, y: float, width: float, height: float):
+    def set_position(self, x: Optional[float] = None, y: Optional[float] = None, 
+                     width: Optional[float] = None, height: Optional[float] = None):
         """
         设置图表的渲染位置
-        :param x: 左上角 x 坐标百分比 (0-1)
-        :param y: 左上角 y 坐标百分比 (0-1)
-        :param width: 宽度百分比 (0-1)
-        :param height: 高度百分比 (0-1)
+        :param x: 左上角 x 坐标百分比 (0-1)，传入 None 使用默认网格位置
+        :param y: 左上角 y 坐标百分比 (0-1)，传入 None 使用默认网格位置
+        :param width: 宽度百分比 (0-1)，传入 None 使用默认网格位置 (1.0)
+        :param height: 高度百分比 (0-1)，传入 None 使用默认网格位置 (1.0)
+        
+        示例:
+            chart.set_position(0.0, 0.0, 0.5, 0.5)  # 左上角 50% 区域
+            chart.set_position(None, 0.5, 0.5, 0.5)  # x 使用默认，其他自定义
+            chart.set_position(None, None, None, None)  # 恢复默认网格位置
         """
+        # 验证非 None 参数
         for val, name in [(x, 'x'), (y, 'y'), (width, 'width'), (height, 'height')]:
-            if not 0 <= val <= 1:
+            if val is not None and not 0 <= val <= 1:
                 raise ValueError(f"{name} 必须在 0-1 之间，当前值: {val}")
         
-        self.run_script(f'{self.id}.setPosition({x}, {y}, {width}, {height})')
+        # 构建 JS 参数字符串
+        def to_js(val):
+            return 'null' if val is None else str(val)
+        
+        self.run_script(f'{self.id}.setPosition({to_js(x)}, {to_js(y)}, {to_js(width)}, {to_js(height)})')
 
     def time_scale(self, right_offset: int = 0, min_bar_spacing: float = 0.5,
                    visible: bool = True, time_visible: bool = True, seconds_visible: bool = False,
