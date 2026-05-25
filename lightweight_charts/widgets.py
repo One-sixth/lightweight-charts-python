@@ -5,7 +5,7 @@ import json
 import os
 from typing import Optional
 import pandas as pd
-from .util import (format_datetime, parse_event_message, js_data, df_data, series_data)
+from .util import (format_datetime, parse_event_message, js_data, df_data, series_data, Position)
 from . import abstract
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -68,12 +68,16 @@ def emit_callback(window, string):
 class WxChart(abstract.AbstractChart):
     """基于 wxPython WebView 的图表，可嵌入 wx 应用。"""
     def __init__(self, parent, inner_width: float = 1.0, inner_height: float = 1.0,
-                 scale_candles_only: bool = False, toolbox: bool = False):
+                 scale_candles_only: bool = False, toolbox: bool = False,
+                 autosize: bool = True, position: Position = 111,
+                 pane_index: int = 0, marker_auto_scale: bool = True):
         if wx is None:
             raise ModuleNotFoundError('wx.html2 was not found, and must be installed to use WxChart.')
         self.webview: wx.html2.WebView = wx.html2.WebView.New(parent)
         super().__init__(abstract.Window(self.webview.RunScript, 'window.wx_msg.postMessage.bind(window.wx_msg)'),
-                         inner_width, inner_height, scale_candles_only, toolbox)
+                         inner_width, inner_height, scale_candles_only, toolbox,
+                         autosize=autosize, position=position, pane_index=pane_index,
+                         marker_auto_scale=marker_auto_scale)
 
         self.webview.Bind(wx.html2.EVT_WEBVIEW_LOADED, lambda e: wx.CallLater(500, self.win.on_js_load))
         self.webview.Bind(wx.html2.EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, lambda e: emit_callback(self.win, e.GetString()))
@@ -89,12 +93,16 @@ class WxChart(abstract.AbstractChart):
 class QtChart(abstract.AbstractChart):
     """基于 Qt WebEngine 的图表，支持 PySide6 / PyQt5 / PyQt6。"""
     def __init__(self, widget=None, inner_width: float = 1.0, inner_height: float = 1.0,
-                 scale_candles_only: bool = False, toolbox: bool = False):
+                 scale_candles_only: bool = False, toolbox: bool = False,
+                 autosize: bool = True, position: Position = 111,
+                 pane_index: int = 0, marker_auto_scale: bool = True):
         if QWebEngineView is None:
             raise ModuleNotFoundError('QWebEngineView was not found, and must be installed to use QtChart.')
         self.webview = QWebEngineView(widget)
         super().__init__(abstract.Window(self.webview.page().runJavaScript, 'window.pythonObject.callback'),
-                         inner_width, inner_height, scale_candles_only, toolbox)
+                         inner_width, inner_height, scale_candles_only, toolbox,
+                         autosize=autosize, position=position, pane_index=pane_index,
+                         marker_auto_scale=marker_auto_scale)
 
         self.web_channel = QWebChannel()
         self.bridge = Bridge(self)

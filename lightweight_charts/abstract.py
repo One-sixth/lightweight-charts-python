@@ -1,5 +1,6 @@
 import json
 import os
+import warnings
 from base64 import b64decode
 from datetime import datetime
 from typing import Callable, Union, Literal, List, Optional
@@ -15,7 +16,8 @@ from .topbar import TopBar
 from .util import (
     BulkRunScript, Pane, Events, IDGen, as_enum, jbool, js_json, TIME, NUM, FLOAT,
     LINE_STYLE, MARKER_POSITION, MARKER_SHAPE, CROSSHAIR_MODE,
-    PRICE_SCALE_MODE, marker_position, marker_shape, js_data
+    PRICE_SCALE_MODE, marker_position, marker_shape, js_data,
+    Position, GridPosition, parse_position
 )
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -138,36 +140,40 @@ class Window:
 
     def create_subchart(
         self,
-        position: FLOAT = 'left',
-        width: float = 0.5,
-        height: float = 0.5,
+        position: Position = 111,
+        width: float = 1.0,
+        height: float = 1.0,
         sync_id: Optional[str] = None,
         scale_candles_only: bool = False,
         sync_crosshairs_only: bool = False,
-        toolbox: bool = False
+        toolbox: bool = False,
+        autosize: bool = True,
+        pane_index: int = 0,
+        marker_auto_scale: bool = True
     ) -> 'AbstractChart':
         """创建子图表，支持独立缩放或同步十字光标。
-        :param position: 子图位置（'left' / 'right' / 'top' / 'bottom'）
-        :param width: 宽度比例（0~1）
-        :param height: 高度比例（0~1）
+        :param position: 子图位置（网格格式或字符串格式，如 111, (2,2,1), 'left'）
+        :param width: 宽度比例（相对于网格单元，1.0=占满，<1.0=内缩对齐左上角，>1.0=侵占）
+        :param height: 高度比例（相对于网格单元）
         :param sync_id: 可选的同步 ID，多个图表同步时间和十字光标
         :param scale_candles_only: 是否仅以 K 线范围缩放
         :param sync_crosshairs_only: 是否仅同步十字光标
         :param toolbox: 是否启用绘图工具箱
+        :param autosize: 是否自动调整大小
+        :param pane_index: 面板索引
+        :param marker_auto_scale: 标记是否自动缩放
         :return: AbstractChart 子图实例"""
         subchart = AbstractChart(
-            self, width, height, scale_candles_only, toolbox, position=position
+            self, width, height, scale_candles_only, toolbox, 
+            autosize=autosize, position=position, pane_index=pane_index,
+            marker_auto_scale=marker_auto_scale
         )
-        if not sync_id:
-            return subchart
-        # self.run_script(f'''
-        #     Lib.Handler.syncCharts(
-        #         {subchart.id},
-        #         {sync_id},
-        #         {jbool(sync_crosshairs_only)}
-        #     )
-        # ''', run_last=True
-        # )
+        if sync_id:
+            warnings.warn(
+                f"sync_id 参数当前未实现，图表同步功能暂时不可用",
+                UserWarning,
+                stacklevel=2
+            )
         return subchart
 
     def style(
@@ -1186,7 +1192,7 @@ class AbstractChart(Candlestick, Pane):
 
     def __init__(self, window: Window, width: float = 1.0, height: float = 1.0,
                  scale_candles_only: bool = False, toolbox: bool = False,
-                 autosize: bool = True, position: FLOAT = 'left', pane_index:int = 0, marker_auto_scale: bool = True
+                 autosize: bool = True, position: Position = 111, pane_index:int = 0, marker_auto_scale: bool = True
                  ):
         Pane.__init__(self, window)
 
@@ -1204,7 +1210,20 @@ class AbstractChart(Candlestick, Pane):
 
         self.polygon: PolygonAPI = PolygonAPI(self)
 
-        self._html_chart_init = f'{self.id} = new Lib.Handler("{self.id}", {width}, {height}, "{position}", {jbool(autosize)}, {pane_index}, {jbool(marker_auto_scale)})'
+        # 获取当前图表数量（用于字符串格式转换）
+        chart_count = len(self.win.handlers) + 1
+        
+        # 解析并存储 position 信息
+        self._position_info = parse_position(position, chart_count)
+        self._position = position
+        
+        # 生成 JS 初始化脚本（统一使用网格格式）
+        self._html_chart_init = (
+            f'{self.id} = new Lib.Handler('
+            f'"{self.id}", {width}, {height}, '
+            f'{self._position_info["nrows"]}, {self._position_info["ncols"]}, {self._position_info["index"]}, '
+            f'{jbool(autosize)}, {pane_index}, {jbool(marker_auto_scale)})'
+        )
         self.run_script(self._html_chart_init + ';0')
 
         Candlestick.__init__(self, self)
@@ -1422,6 +1441,43 @@ class AbstractChart(Candlestick, Pane):
         {self.id}.scale.height = {self._height}
         {self.id}.reSize()
         ''')
+
+    def get_position(self) -> tuple:
+        """
+        获取当前图表的渲染位置
+        :return: (x, y, width, height) 百分比值 (0-1)
+        """
+        if not self.win.loaded:
+            info = self._position_info
+            nrows = info['nrows']
+            ncols = info['ncols']
+            index = info['index']
+            row = (index - 1) // ncols
+            col = (index - 1) % ncols
+            x = col / ncols
+            y = row / nrows
+            w = self._width / ncols
+            h = self._height / nrows
+            return (x, y, w, h)
+        result = self.win.run_script_and_get(
+            f'JSON.stringify({self.id}.getPosition())'
+        )
+        pos = json.loads(result)
+        return (pos['x'], pos['y'], pos['width'], pos['height'])
+    
+    def set_position(self, x: float, y: float, width: float, height: float):
+        """
+        设置图表的渲染位置
+        :param x: 左上角 x 坐标百分比 (0-1)
+        :param y: 左上角 y 坐标百分比 (0-1)
+        :param width: 宽度百分比 (0-1)
+        :param height: 高度百分比 (0-1)
+        """
+        for val, name in [(x, 'x'), (y, 'y'), (width, 'width'), (height, 'height')]:
+            if not 0 <= val <= 1:
+                raise ValueError(f"{name} 必须在 0-1 之间，当前值: {val}")
+        
+        self.run_script(f'{self.id}.setPosition({x}, {y}, {width}, {height})')
 
     def time_scale(self, right_offset: int = 0, min_bar_spacing: float = 0.5,
                    visible: bool = True, time_visible: bool = True, seconds_visible: bool = False,
@@ -1661,14 +1717,30 @@ class AbstractChart(Candlestick, Pane):
         serial_data = self.win.run_script_and_get(f'{self.id}.chart.takeScreenshot({opts}).toDataURL()')
         return b64decode(serial_data.split(',')[1])
 
-    def create_subchart(self, position: FLOAT = 'left', width: float = 0.5, height: float = 0.5,
+    def create_subchart(self, position: Position = 111, width: float = 1.0, height: float = 1.0,
                         sync: Optional[Union[str, bool]] = None, scale_candles_only: bool = False,
                         sync_crosshairs_only: bool = False,
-                        toolbox: bool = False) -> 'AbstractChart':
+                        toolbox: bool = False,
+                        autosize: bool = True,
+                        pane_index: int = 0,
+                        marker_auto_scale: bool = True) -> 'AbstractChart':
+        """创建子图表，支持独立缩放或同步十字光标。
+        :param position: 子图位置（网格格式或字符串格式，如 111, (2,2,1), 'left'）
+        :param width: 宽度比例（相对于网格单元，1.0=占满，<1.0=内缩对齐左上角，>1.0=侵占）
+        :param height: 高度比例（相对于网格单元）
+        :param sync: 同步 ID 或 True（使用当前图表 ID）
+        :param scale_candles_only: 是否仅以 K 线范围缩放
+        :param sync_crosshairs_only: 是否仅同步十字光标
+        :param toolbox: 是否启用绘图工具箱
+        :param autosize: 是否自动调整大小
+        :param pane_index: 面板索引
+        :param marker_auto_scale: 标记是否自动缩放
+        :return: AbstractChart 子图实例"""
         if sync is True:
             sync = self.id
         chart = self.win.create_subchart(position, width, height, sync, scale_candles_only,
-                                         sync_crosshairs_only, toolbox)
+                                         sync_crosshairs_only, toolbox, autosize, pane_index,
+                                         marker_auto_scale)
         self.subcharts.append(chart.id)
         return chart
 

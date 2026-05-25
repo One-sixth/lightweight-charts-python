@@ -12,7 +12,7 @@ import webview
 from webview.errors import JavascriptException
 
 from . import abstract
-from .util import parse_event_message, FLOAT
+from .util import parse_event_message, FLOAT, Position
 
 
 def _get_native_handle(window):
@@ -290,7 +290,7 @@ class Chart(abstract.AbstractChart):
         inner_width: float = 1.0,
         inner_height: float = 1.0,
         scale_candles_only: bool = False,
-        position: FLOAT = 'left',
+        position: Position = 111,
         marker_auto_scale: bool = True,
         frameless: bool = False
     ):

@@ -1,6 +1,6 @@
 # 示例目录说明
 
-本目录包含 lightweight-charts-python 的示例代码，编号 1-27。
+本目录包含 lightweight-charts-python 的示例代码，编号 1-29。
 
 ## 编号说明
 
@@ -33,3 +33,5 @@
 | 25 | `25_screenshot_enhanced` | `screenshot(add_top_layer=True, include_crosshair=True)` — 增强截图 | ✅ 已实现  |
 | 26 | `26_series_batch_update` | 系列批量更新：`update_batch()` 用于 Line 和 Histogram 系列 | ✅ 已实现  |
 | 27 | `27_reflex_chart` | Reflex 嵌入：实时 bar 推送 + crosshair 回调 (postMessage 桥接) | ✅ 已实现  |
+| 28 | `28_cross_process_chart` | CrossProcessChart：跨进程嵌入 PySide6 QWidget | ✅ 已实现  |
+| 29 | `29_grid_layout` | 网格布局：position 参数三种格式 + get_position/set_position | ✅ 已实现  |

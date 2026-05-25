@@ -246,13 +246,17 @@ export class Handler {
     private resize_hdr_height: number = 8;
     public watermark: any;
     public seriesMarkers: any;
+    private gridPosition: { row: number; col: number } | null = null;
+    private isGridLayout: boolean = false;
+    private customPosition: { x: number; y: number; width: number; height: number } | null = null;
 
-    // TODO find a better solution rather than the 'position' parameter
     constructor(
         chartId: string,
         innerWidth: number,
         innerHeight: number,
-        position: string,
+        nrows: number,
+        ncols: number,
+        index: number,
         autoSize: boolean,
         paneIndex: number = 0,
         marker_auto_scale: boolean = true
@@ -267,7 +271,10 @@ export class Handler {
 
         this.wrapper = document.createElement('div')
         this.wrapper.classList.add("handler");
-        this.wrapper.style.float = position
+        
+        // 设置网格布局
+        this.setupGridLayout(nrows, ncols, index, innerWidth, innerHeight)
+        this.isGridLayout = true
 
         this.div = document.createElement('div')
         this.div.style.position = 'relative'
@@ -324,10 +331,96 @@ export class Handler {
         window.addEventListener('resize', () => this.reSize())
     }
 
+    private setupGridLayout(nrows: number, ncols: number, index: number, 
+                            widthRatio: number, heightRatio: number) {
+        const container = window.containerDiv
+        
+        // 设置容器为 CSS Grid（仅在未设置时）
+        if (!container.style.display || container.style.display !== 'grid') {
+            container.style.display = 'grid'
+            container.style.width = '100%'
+            container.style.height = '100vh'
+        }
+        // 只有当新模板与现有模板兼容时才更新
+        const newCols = `repeat(${ncols}, 1fr)`
+        const newRows = `repeat(${nrows}, 1fr)`
+        if (!container.style.gridTemplateColumns || container.style.gridTemplateColumns === newCols) {
+            container.style.gridTemplateColumns = newCols
+        }
+        if (!container.style.gridTemplateRows || container.style.gridTemplateRows === newRows) {
+            container.style.gridTemplateRows = newRows
+        }
+        
+        // 计算网格位置
+        const row = Math.floor((index - 1) / ncols)
+        const col = (index - 1) % ncols
+        this.gridPosition = { row: row + 1, col: col + 1 }
+        
+        // 设置网格位置
+        this.wrapper.style.gridRow = `${row + 1}`
+        this.wrapper.style.gridColumn = `${col + 1}`
+        
+        // 应用宽度和高度比例（相对于网格单元）
+        // widthRatio/heightRatio = 1.0 表示占满网格单元
+        // < 1.0 表示向内缩（对齐左上角），> 1.0 表示侵占其他网格
+        if (widthRatio !== 1.0 || heightRatio !== 1.0) {
+            this.wrapper.style.width = `${widthRatio * 100}%`
+            this.wrapper.style.height = `${heightRatio * 100}%`
+            // 对齐左上角
+            this.wrapper.style.alignSelf = 'start'
+            this.wrapper.style.justifySelf = 'start'
+        }
+        
+        // 确保不使用 float
+        this.wrapper.style.float = 'none'
+    }
+
+    getPosition(): { x: number; y: number; width: number; height: number } {
+        const rect = this.wrapper.getBoundingClientRect()
+        const containerRect = window.containerDiv.getBoundingClientRect()
+        
+        return {
+            x: (rect.left - containerRect.left) / containerRect.width,
+            y: (rect.top - containerRect.top) / containerRect.height,
+            width: rect.width / containerRect.width,
+            height: rect.height / containerRect.height
+        }
+    }
+
+    setPosition(x: number, y: number, width: number, height: number) {
+        this.customPosition = { x, y, width, height }
+        
+        // 切换到绝对定位模式
+        this.wrapper.style.position = 'absolute'
+        this.wrapper.style.float = 'none'
+        this.wrapper.style.gridRow = 'auto'
+        this.wrapper.style.gridColumn = 'auto'
+        
+        // 设置位置和尺寸
+        this.wrapper.style.left = `${x * 100}%`
+        this.wrapper.style.top = `${y * 100}%`
+        this.wrapper.style.width = `${width * 100}%`
+        this.wrapper.style.height = `${height * 100}%`
+        
+        // 调整图表大小
+        this.chart.resize(
+            this.wrapper.offsetWidth,
+            this.wrapper.offsetHeight - this.resize_hdr_height
+        )
+    }
+
 
     reSize() {
       let topBarOffset = this.scale.height !== 0 ? this._topBar?._div.offsetHeight || 0 : 0
-        if (this.scale.height >= 0) {
+      
+      // 网格模式下，只调整图表大小，不覆盖 wrapper 的 width/height
+      if (this.isGridLayout && !this.customPosition) {
+          const rect = this.wrapper.getBoundingClientRect()
+          this.chart.resize(rect.width, rect.height - topBarOffset - this.resize_hdr_height)
+          return
+      }
+      
+      if (this.scale.height >= 0) {
             this.chart.resize(window.innerWidth * this.scale.width, (window.innerHeight * this.scale.height) - topBarOffset - this.resize_hdr_height)
             this.wrapper.style.width = `${100 * this.scale.width}%`
             this.wrapper.style.height = `${100 * this.scale.height}%`

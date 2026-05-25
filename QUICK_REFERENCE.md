@@ -73,11 +73,26 @@ chart = Chart(
     toolbox=False,                  # 是否启用绘图工具箱
     inner_width=1.0, inner_height=1.0,  # 图表在窗口中的占比
     scale_candles_only=False,       # 缩放时仅依据K线
-    position='left',                # 图表位置
+    position=111,                   # 图表位置 (网格格式)
     on_top=False, maximize=False,   # 窗口行为
     debug=False                     # 调试模式
 )
 ```
+
+**position 参数支持三种格式：**
+
+| 格式 | 示例 | 说明 |
+|------|------|------|
+| 整数 | `111`, `221`, `311` | 3位数字：行数、列数、位置索引 |
+| 元组 | `(2, 2, 1)` | (行数, 列数, 位置索引) |
+| 字符串（已弃用） | `'left'`, `'right'` | 仅支持 1-2 个图表 |
+
+**网格布局示例：**
+- `111` = 1行1列，第1个位置（占满窗口）
+- `121` = 1行2列，第1个位置（左半部分）
+- `122` = 1行2列，第2个位置（右半部分）
+- `221` = 2行2列，第1个位置（左上角）
+- `311` = 3行1列，第1个位置（顶部三分之一）
 
 ### 3.2 HTMLChart (浏览器)
 
@@ -135,7 +150,7 @@ app.exec()
 | `toolbox` | `bool` | `False` | 绘图工具箱 |
 | `title` | `str` | `''` | 窗口标题 |
 | `debug` | `bool` | `False` | 调试模式 |
-| `position` | `str` | `'left'` | 图表位置 |
+| `position` | `int/tuple` | `111` | 图表位置（网格格式） |
 
 **特有方法：**
 
@@ -405,16 +420,35 @@ chart.resize(width=0.8, height=0.6)  # 比例 0~1
 
 ```python
 sub = chart.create_subchart(
-    position='left',        # left | right
-    width=0.5, height=0.5,  # 面板大小比例
-    sync_id=None,           # 同步滚动/光标
+    position=122,                   # 网格位置 (1行2列，第2个)
+    width=1.0, height=1.0,          # 相对于网格单元的大小
+    sync_id=None,                   # 同步滚动/光标
     scale_candles_only=False,
     sync_crosshairs_only=False,
-    toolbox=False
+    toolbox=False,
+    autosize=True,                  # 是否自动调整大小
+    pane_index=0,                   # 面板索引
+    marker_auto_scale=True          # 标记是否自动缩放
 )
 # sub 是 AbstractChart 实例，有完整的 API
 line = sub.create_line(...)
 sub.set(df)
+```
+
+**width/height 参数说明：**
+- `1.0`：占满网格单元
+- `< 1.0`：向内缩，对齐左上角
+- `> 1.0`：侵占其他网格空间
+
+**运行时位置控制：**
+```python
+# 获取当前位置
+x, y, w, h = chart.get_position()
+print(f"位置: x={x}, y={y}, width={w}, height={h}")
+
+# 动态设置位置（百分比 0-1）
+chart.set_position(0.0, 0.0, 0.5, 1.0)  # 左半部分
+chart.set_position(0.5, 0.0, 0.5, 1.0)  # 右半部分
 ```
 
 ### 3.8 事件回调 (Events)
@@ -607,7 +641,7 @@ get_last_trade(ticker)
 |------|------|------|
 | **入口** | `src/index.ts` | 导出所有前端类 |
 | **插件基类** | `src/plugin-base.ts` | `IPlugin` 接口定义 |
-| **图表核心** | `src/general/handler.ts` | `Handler` 类 — 前端总控 |
+| **图表核心** | `src/general/handler.ts` | `Handler` 类 — 前端总控，支持网格布局 |
 | **图例** | `src/general/legend.ts` | 图例实现 |
 | **顶栏** | `src/general/topbar.ts` | 顶栏 UI 组件 |
 | **工具箱** | `src/general/toolbox.ts` | 绘图工具箱 UI |
@@ -659,6 +693,7 @@ get_last_trade(ticker)
 | 26 | `26_series_batch_update` | 系列批量更新：`update_batch()` 用于 Line 和 Histogram 系列 | `series_batch_update.py` |
 | 27 | `27_reflex_chart` | Reflex 嵌入：K线 + SMA 指标在 Reflex 应用中渲染 | `rx_chart.py` |
 | 28 | `28_cross_process_chart` | CrossProcessChart：跨进程嵌入 PySide6 QWidget | `cross_process_chart.py` |
+| 29 | `29_grid_layout` | 网格布局：position 参数三种格式 + get_position/set_position | `grid_layout.py` |
 
 ---
 
@@ -703,9 +738,19 @@ python test/test_features.py      # 功能测试
     或 chart.update_from_tick(tick)  # Tick更新
 
 多面板:
-  sub = chart.create_subchart(...)
+  sub = chart.create_subchart(position=122)
   line = sub.create_line(...)
   sub.set(data)
+
+网格布局:
+  chart1 = Chart(position=221)  # 2行2列，第1个
+  chart2 = chart1.create_subchart(position=222)
+  chart3 = chart1.create_subchart(position=223)
+  chart4 = chart1.create_subchart(position=224)
+
+动态位置控制:
+  x, y, w, h = chart.get_position()
+  chart.set_position(0.0, 0.0, 0.5, 1.0)  # 左半部分
 
 事件驱动:
   chart.events.search += handler
@@ -752,7 +797,7 @@ app.add_page(index, on_load=ChartState.mount)
 **根因位置：** `abstract.py:1207-1208`
 
 ```python
-self._html_chart_init = f'window.{self.id} = new Lib.Handler("{self.id}", ...)'
+self._html_chart_init = f'window.{self.id} = new Lib.Handler("{self.id}", {width}, {height}, {nrows}, {ncols}, {index}, ...)'
 self.run_script(self._html_chart_init + ';0')  # → 同时加入 _html 和 _pending
 ```
 
@@ -791,7 +836,7 @@ def run_script(self, script, run_last=False):
     delete window.ReflexChart_1;
   }
 }();
-window.ReflexChart_1 = new Lib.Handler("window.ReflexChart_1", 1.0, 1.0, "left", true, 0, true);
+window.ReflexChart_1 = new Lib.Handler("window.ReflexChart_1", 1.0, 1.0, 1, 1, 1, true, 0, true);
 ```
 
 **原理：** 初始化前按名称搜索同名 Handler，存在则先销毁再重建，使 `new Lib.Handler` 调用幂等化。无论脚本来自 iframe HTML 还是 `flush()→postMessage`，都不会产生第二个图表示例。
@@ -851,6 +896,7 @@ chart.reset()
 # 执行后 chart 像刚创建时一样干净，WebView 不销毁
 # 包括: 清空K线 + 删除附加系列 + 清空 markers + 清空 drawings + 清理 handlers
 # TopBar widget 和样式配置保留
+# 网格布局保持不变
 ```
 
 ### 10.3 清理事件处理器
@@ -970,6 +1016,22 @@ t1.join()
 ```
 
 各自拥有独立的子进程、队列、回调 handlers，互不干扰。
+
+**网格布局模式：**
+
+```python
+# 在同一窗口内创建多个子图表
+chart = Chart(width=1000, height=800, position=221)
+chart2 = chart.create_subchart(position=222)
+chart3 = chart.create_subchart(position=223)
+chart4 = chart.create_subchart(position=224)
+
+# 每个子图表独立设置数据
+chart.set(df1)
+chart2.set(df2)
+chart3.set(df3)
+chart4.set(df4)
+```
 
 ---
 

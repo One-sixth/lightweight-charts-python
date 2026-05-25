@@ -1,10 +1,11 @@
 import asyncio
 import json
 import inspect
+import warnings
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from tzlocal import get_localzone_name
-from typing import Literal, Union
+from typing import Literal, Union, Tuple
 import pandas as pd
 
 
@@ -135,6 +136,86 @@ TIME = Union[datetime, pd.Timestamp, str, float]
 NUM = Union[float, int]
 
 FLOAT = Literal['left', 'right', 'top', 'bottom']
+
+# 新增类型定义
+GridPosition = Tuple[int, int, int]  # (nrows, ncols, index)
+Position = Union[GridPosition, int, str]  # 支持三种格式（字符串已弃用）
+
+
+def parse_position(pos: Position, chart_count: int = 1) -> dict:
+    """
+    解析 position 参数为统一格式
+    :param pos: 位置参数
+    :param chart_count: 当前图表数量（用于字符串格式转换）
+    :return: {'nrows': 3, 'ncols': 1, 'index': 1}
+    """
+    if isinstance(pos, str):
+        # 字符串格式支持 Chart() 和 create_subchart()
+        if pos not in ('left', 'right', 'top', 'bottom'):
+            raise ValueError(f"无效的字符串 position: {pos}")
+        
+        # 超过 2 个图表时不支持字符串格式
+        if chart_count > 2:
+            raise ValueError(
+                f"超过2个图表时不支持字符串格式 position='{pos}'，"
+                f"请使用数字格式，如 position=111 或 position=(2,2,1)"
+            )
+        
+        # 单个图表时字符串没有实际意义，不发出警告
+        if chart_count > 1:
+            warnings.warn(
+                f"字符串格式 position='{pos}' 已弃用，请使用数字格式，如 position=111",
+                DeprecationWarning,
+                stacklevel=2
+            )
+        return _convert_string_to_grid(pos, chart_count)
+    
+    elif isinstance(pos, tuple) and len(pos) == 3:
+        nrows, ncols, index = pos
+        if not all(isinstance(x, int) and x > 0 for x in (nrows, ncols, index)):
+            raise ValueError("nrows, ncols, index 必须是正整数")
+        if index > nrows * ncols:
+            raise ValueError(f"index {index} 超出网格范围 {nrows}x{ncols}={nrows*ncols}")
+        return {'nrows': nrows, 'ncols': ncols, 'index': index}
+    
+    elif isinstance(pos, int):
+        s = str(pos)
+        if len(s) != 3:
+            raise ValueError(f"整数格式必须是3位数字，如 311")
+        nrows = int(s[0])
+        ncols = int(s[1])
+        index = int(s[2])
+        if nrows == 0 or ncols == 0:
+            raise ValueError("行数和列数不能为0")
+        if index == 0:
+            raise ValueError(f"位置索引不能为0，必须是 1-{nrows*ncols}")
+        if index > nrows * ncols:
+            raise ValueError(f"index {index} 超出网格范围 {nrows}x{ncols}={nrows*ncols}")
+        return {'nrows': nrows, 'ncols': ncols, 'index': index}
+    
+    else:
+        raise ValueError(f"无效的 position 格式: {pos}")
+
+
+def _convert_string_to_grid(pos: str, chart_count: int) -> dict:
+    """将字符串格式转换为网格格式（仅支持 1-2 个图表）"""
+    if chart_count == 1:
+        # 单个图表：1行1列
+        return {'nrows': 1, 'ncols': 1, 'index': 1}
+    
+    elif chart_count == 2:
+        # 两个图表
+        if pos in ('left', 'right'):
+            # 左右布局：1行2列
+            index = 1 if pos == 'left' else 2
+            return {'nrows': 1, 'ncols': 2, 'index': index}
+        else:
+            # 上下布局：2行1列
+            index = 1 if pos == 'top' else 2
+            return {'nrows': 2, 'ncols': 1, 'index': index}
+    
+    else:
+        raise ValueError("字符串格式仅支持 1-2 个图表")
 
 
 def as_enum(value, string_types):
