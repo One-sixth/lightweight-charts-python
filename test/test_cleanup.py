@@ -146,7 +146,7 @@ def test_resource_full_cleanup():
         pl = chart.create_price_line(price=102, title='PL', price_label=True)
         print("  2e. price_line [OK]")
 
-        sub = chart.create_subchart(position=212, width=1.0, height=0.3)
+        sub = chart.create_subchart(position=212)
         assert sub.id in chart.subcharts
         print("  2f. subchart [OK]")
 

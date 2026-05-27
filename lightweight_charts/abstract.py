@@ -872,7 +872,7 @@ class Line(SeriesCommon):
                     """ if chart._scale_candles_only else ''}
                 }},
                 {pane_index}
-            )''')
+            );null''')  # 后面的 null 是为了防止 JS 异常，必不可少
 
     def delete(self):
         """
