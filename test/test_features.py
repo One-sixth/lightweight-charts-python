@@ -62,12 +62,12 @@ def test_data_column_renaming():
         'date': 'Date', 'open': 'OPEN', 'high': 'HIgh',
         'low': 'Low', 'close': 'close', 'volUME': 'volume'
     })
-    result = chart._df_datetime_format(messy)
+    result = chart._normal_df(messy)
     ok = list(result.columns) == expected_cols
     all_clean &= log_check(ok, "mixed-case columns renamed correctly", errors, "rename_mixed")
 
     # Already lowercase — should pass through
-    result2 = chart._df_datetime_format(bars)
+    result2 = chart._normal_df(bars)
     ok = list(result2.columns) == expected_cols
     all_clean &= log_check(ok, "lowercase columns pass through", errors, "rename_lower")
 

@@ -33,7 +33,7 @@ if __name__ == '__main__':
     df = pd.DataFrame(rows)
 
     # ---- create chart ----
-    chart = Chart(toolbox=True, width=1000, height=700)
+    chart = Chart(toolbox=True, width=1000, height=700, position=211)
     chart.legend(visible=True, persistent=True, shorthand=True)
     chart.set(df)
     chart.show(block=False)
@@ -97,7 +97,7 @@ if __name__ == '__main__':
     print("  created 6 drawings + 1 vertical span")
 
     # Subchart
-    sub = chart.create_subchart(position='bottom', width=1.0, height=0.25)
+    sub = chart.create_subchart(position=212)
     sub.create_line('RSI', color='#ff6600')
     sub_hist = sub.create_histogram('Momentum', color='rgba(0,200,100,0.4)')
     sub_time = pd.date_range('2024-01-01', periods=100, freq='D')

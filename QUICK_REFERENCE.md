@@ -310,7 +310,9 @@ chart.update_from_ticks(df, cumulative_volume=False)
 
 ### 3.4.3 锁定时间级别 — set_period()
 
-锁定 `_interval`，`set()` 时跳过自动推断，并将 DataFrame 中所有时间戳对齐到锁定间隔。
+锁定 _interval，set() 时跳过自动推断，并将 DataFrame 中所有时间戳对齐到锁定间隔。
+
+> **重要提示**: set_period() 后，需要重新调用 chart.set(df) 来使其生效，否则后续的各种标记可能会错乱。
 
 ```python
 chart.set_period(60)       # 锁定到 1 分钟 (60s)
@@ -330,7 +332,7 @@ print(chart._period_locked)  # False
 ```
 
 **实现原理：**
-- 锁定后，`_df_datetime_format()` 跳过 `_set_interval()`，`_interval` 保持不变
+- 锁定后，`_normal_df() → _time_to_bar_time()` 跳过 `_set_interval()`，`_interval` 保持不变
 - 时间戳转换后执行：`time = interval * (time // interval)`，对齐到间隔边界
 - **去重保护：** 对齐后按时间戳去重（保留每组最后一行），防止 JS `Value is null` 错误
   - 例如：10 根 30min K 线锁定到 1h → 对齐后得到 5 个唯一时间戳
@@ -1041,7 +1043,7 @@ chart.clear_handlers()               # 批量清理
 
 **问题：** 调用 `chart.set(new_df)` 后，marker 位置可能偏移周围几根 K 线。
 
-**根因：** `set()` 会通过 `_df_datetime_format` → `_set_interval` 重新计算 `_interval`。Markers 的时间戳需要按新 `_interval` 对齐后重新发送到 JS 端，但 `set()` 中没有调用 `_update_markers()`。
+**根因：** `set()` 会通过 `_normal_df() → _time_to_bar_time()` → `_set_interval` 重新计算 `_interval`。Markers 的时间戳需要按新 `_interval` 对齐后重新发送到 JS 端，但 `set()` 中没有调用 `_update_markers()`。
 
 **修复：** 在 `AbstractChart.set()` 末尾和 `SeriesCommon.set()` 末尾，当 `self.markers` 非空时调用 `self._update_markers()`。
 

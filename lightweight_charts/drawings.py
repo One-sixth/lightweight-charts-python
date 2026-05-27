@@ -1,11 +1,10 @@
-import asyncio
 import json
 import pandas as pd
 import inspect
 
 from typing import Union, Optional
+from .util import NUM, Pane, as_enum, LINE_STYLE, TIME
 
-from .util import NUM, Pane, as_enum, LINE_STYLE, TIME, snake_to_camel, js_json
 
 def make_js_point(chart, time, price):
     """构造一个包含 time/logical/price 的 JS 点对象字符串。"""

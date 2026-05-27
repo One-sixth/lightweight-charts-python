@@ -1,6 +1,6 @@
 import pandas as pd
-import webbrowser
-from lightweight_charts import HTMLChart
+from lightweight_charts import Chart
+
 
 def calculate_sma(df, period: int = 50, name = None):
     name = name or f'SMA {period}'
@@ -11,7 +11,8 @@ def calculate_sma(df, period: int = 50, name = None):
 
 
 def demo():
-    chart = HTMLChart(width=1200, height=800, inner_height=-500, filename='charts.html')
+    # chart = HTMLChart(width=1200, height=800, inner_height=-500, filename='charts.html')
+    chart = Chart(width=1200, height=800, title='Multi Pane Demo')
     chart.legend(visible=True)
     df = pd.read_csv('ohlcv.csv')
     chart.set(df)
@@ -34,8 +35,8 @@ def demo():
     line50 = chart.create_line('SMA 50', color='green', price_line=False, price_label=False, pane_index=2)
     line50.set(sma50_data)
 
-    chart.load()
-    webbrowser.open(chart.filename)
+    chart.show(True)
+
 
 if __name__ == '__main__':
     demo()

@@ -607,7 +607,7 @@ if __name__ == '__main__':
     chart = Chart()
     chart.set(df_5min)
     chart.set_period(3600)  # 锁定为1小时
-    chart.set(df_30min)  # 仍按1小时显示
+    chart.set(df_30min)  # 重要：set_period 后需重新 set() 使其生效，仍按1小时显示
     chart.show(block=True)
 ```
 

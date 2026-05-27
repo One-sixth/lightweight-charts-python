@@ -384,7 +384,7 @@ class HTMLChart_BN(StaticLWC):
         self._html = self._html_chart_init
         self.subcharts = [self.id]
         self._lines = []
-        self._clear_marker_list()
+        self.clear_markers(_dont_update=True)
 
     def set_name(self, name):
         """设置策略名称，用于侧边栏切换。"""

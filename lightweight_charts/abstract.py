@@ -274,6 +274,7 @@ class SeriesCommon(Pane):
         Locks the chart's time interval to the given value in seconds.
         When locked, set() will skip automatic interval detection,
         using the locked interval for time alignment instead.
+        注意，set_period 后，需要重新 chart.set(df) 来使其生效，否则后面的各种标记，可能都会错乱
 
         :param seconds: The interval in seconds to lock to, or None to unlock.
 
@@ -282,6 +283,7 @@ class SeriesCommon(Pane):
             chart.set_period(60)       # lock to 1-minute bars
             chart.set_period(300)      # lock to 5-minute bars
             chart.set_period(None)     # unlock, re-enable auto-detection
+            chart.set(df)              # 下一次 set 时生效
         """
         if seconds is not None:
             self._interval = seconds
@@ -289,23 +291,29 @@ class SeriesCommon(Pane):
         else:
             self._period_locked = False
 
+        if hasattr(self, "_lines"):
+            # 如果是 'AbstractChart' 对象，需要更新所有价格线的时间间隔
+            for line in self._lines:
+                line.set_period(seconds)
+
     def pop(self, count: int = 1):
         """从系列末尾移除指定数量的数据点。"""
         self.run_script(f'{self.id}.series.pop({count})')
 
-    def _set_interval(self, df: pd.DataFrame):
-        if self._period_locked:
-            return
+    def _get_df_interval_offset(self, df: pd.DataFrame) -> (int, int):
+        """获取数据DF内时间点的通常间隔（秒），返回，时间间隔（秒）和偏移时间（秒）"""
 
-        df = df.copy()
-        df.columns = self._format_labels(df, df.columns, df.index, self.name)
-        time_df = pd.to_datetime(df['time'], unit='s').dt.tz_localize(None)
+        if df['time'].dtype not in (np.int64, np.float64):
+            raise ValueError('请先使用 _normal_df 对输入进行标准化')
+
+        # df['time'] 为 1970年以来的秒数，无时区
+        time_df = pd.to_datetime(df['time'], unit='s')
 
         common_interval = time_df.diff().value_counts(sort=True, ascending=False, dropna=True)
         if common_interval.empty:
             raise AssertionError("No common interval found.")
 
-        self._interval = common_interval.index[0].total_seconds()
+        interval = common_interval.index[0].total_seconds()
 
         units = [
             pd.Timedelta(microseconds=time_df.dt.microsecond.value_counts().index[0]),
@@ -314,24 +322,34 @@ class SeriesCommon(Pane):
             pd.Timedelta(hours=time_df.dt.hour.value_counts().index[0]),
             pd.Timedelta(days=time_df.dt.day.value_counts().index[0]),
         ]
-        self.offset = 0
+        offset = 0
         for value in units:
             value = value.total_seconds()
             if value == 0:
                 continue
-            elif value >= self._interval:
+            elif value >= interval:
                 break
-            self.offset = value
+            offset = value
             break
 
+        return interval, offset
+
+    def _set_interval(self, df: pd.DataFrame):
+        """根据数据时间点，智能地设置时间间隔"""
+        if self._period_locked:
+            return
+        self._interval, self.offset = self._get_df_interval_offset(df)
+
     @staticmethod
-    def _format_labels(data, labels, index, exclude_lowercase: Optional[Union[str, list, tuple, set]] = None):
+    def _normal_df(df: pd.DataFrame, exclude_lowercase: Optional[Union[str, list, tuple, set]] = None) -> pd.DataFrame:
         '''
+        标准化输入DF
         格式化列名，将所有列名转换为小写，排除exclude_lowercase中的列名。
         如果有 date 列，就改名为 time 列。
         如果没有 time 列，就用 index 作为 time 列。
+        时间转换为秒数
         '''
-        labels = list(labels)
+        df = df.copy()
 
         if isinstance(exclude_lowercase, str):
             exclude_lowercase = [exclude_lowercase]
@@ -339,37 +357,27 @@ class SeriesCommon(Pane):
         exclude_lowercase = set() if exclude_lowercase is None else set(exclude_lowercase)
 
         new_labels = []
-        for l in labels:
-            new_labels.append(l if l in exclude_lowercase else l.lower())
+        for n in df.columns:
+            n = str(n)
+            new_labels.append(n if n in exclude_lowercase else n.lower())
 
-        del labels
+        if any(df.columns != new_labels):
+            # 仅在不同时才修改
+            df.columns = new_labels
 
         # 不允许 date 和 time 同时出现
         if 'date' in new_labels and 'time' in new_labels:
             raise ValueError("date and time cannot be used at the same time.")
 
         # 替换 date 到 time，如果有
-        new_labels = [l if l != 'date' else 'time' for l in new_labels]
+        if 'date' in df.columns:
+            df.rename(columns={'date': 'time'}, inplace=True)
 
         # 如果没有 time ，就用 index 作为 time 列
-        if 'time' not in new_labels:
-            data['time'] = index
-            new_labels.append('time')
+        if 'time' not in df.columns:
+            df['time'] = df.index
 
-        return new_labels
 
-    def _df_datetime_format(self, df: pd.DataFrame, exclude_lowercase=None, drop_duplicates=False):
-        '''
-        格式化DataFrame，将所有列名转换为小写，排除exclude_lowercase中的列名。
-        如果有 date 列，就改名为 time 列。
-        如果没有 time 列，就用 index 作为 time 列。
-        :param df: 输入的DataFrame
-        :param exclude_lowercase:
-        :param set_interval: 是否设置时间间隔，若 _period_locked 为 True 则不生效
-        :return:
-        '''
-        df = df.copy()
-        df.columns = self._format_labels(df, df.columns, df.index, exclude_lowercase)
         if df['time'].dtype in (np.int64, np.float64):
             # 如果输入是 np.int64 或 np.float64，则直接认为是 秒级时间戳。
             pass
@@ -379,43 +387,71 @@ class SeriesCommon(Pane):
             # 转换为秒级时间戳，单位是秒，类型是int
             df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
 
-        # 确保时间值被锁定到最近的bar起点，单位是秒，类型是 np.int64
-        df['time'] = (self._interval * (df['time'] // self._interval)).astype(np.int64)
-        if drop_duplicates:
-            df = df.groupby('time', as_index=False).last()
         return df
 
-    def _series_datetime_format(self, series: pd.Series, exclude_lowercase=None):
-        series = series.copy()
-        series.index = self._format_labels(series, series.index, series.name, exclude_lowercase)
-        series['time'] = self._single_datetime_format(series['time'])
-        return series
+    def _time_to_bar_time(self, data: int | float | pd.Series | pd.DataFrame) -> int | float | pd.Series | pd.DataFrame:
+        """将时间戳转换为bar时间戳"""
+        if isinstance(data, pd.DataFrame):
+            data["time"] = (data["time"].array - self.offset) // self._interval * self._interval + self.offset
+            return data
+        else:
+            return (data-self.offset) // self._interval * self._interval + self.offset
+
+    def _merge_value_by_time(self, df: pd.DataFrame) -> pd.DataFrame:
+        """合并同样时间戳的bar"""
+
+        group_df = df.groupby('time')
+
+        new_df = pd.DataFrame({
+            'time': list(group_df.groups)
+        })
+
+        if 'open' in df.columns:
+            # 是 bar 数据
+            new_df['open'] = group_df['open'].first().array
+            new_df['high'] = group_df['high'].max().array
+            new_df['low'] = group_df['low'].min().array
+            new_df['close'] = group_df['close'].last().array
+
+        if 'volume' in df.columns:
+            new_df['volume'] = group_df['volume'].sum().array
+
+        if 'open_interest' in df.columns:
+            new_df['open_interest'] = group_df['open_interest'].last().array
+
+        # 其他名称的列，也只保留最后一个
+        for col in set(df.columns).difference({'time', 'open', 'high', 'low', 'close', 'volume', 'open_interest'}):
+            new_df[col] = group_df[col].last().array
+
+        return new_df
 
     def _single_datetime_format(self, arg) -> int:
         if not isinstance(arg, (int, np.int64, float, np.float64)):
-            arg = pd.to_datetime(arg, unit='s').tz_localize(None).timestamp()
-        # 把时间锁定到最近的bar起点，单位是秒
-        arg = int(self._interval * (arg // self._interval) + self.offset)
+            # 转换为时间戳，清除时区信息
+            arg = (pd.to_datetime(arg, unit='s').tz_localize(None) - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
+        arg = int(self._time_to_bar_time(arg))
         return arg
 
-    def set(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
+    def set(self, df: Optional[pd.DataFrame] = None):
         """
         设置或更新系列数据。
 
-        :param df: 包含时间序列数据的 DataFrame，必须包含 'time' 列。
+        :param df: 包含时间序列数据的 DataFrame，需要包含 'time' 列 或 'date' 列，否则使用 'index' 作为 ‘time’ 列。
             对于 Line 系列，还需要 'value' 列或与系列同名的列。
             对于 Candlestick 系列，需要 'open', 'high', 'low', 'close' 列。
             如果为 None 或空 DataFrame，则清空数据。
-        :param format_cols: 是否自动格式化列（包括日期时间转换），默认为 True
         """
+        # 重置系列
+        self.run_script(f"{self.id}.series.setData([])")
+        self.data = pd.DataFrame()
+
         if df is None or df.empty:
-            self.run_script(f'{self.id}.series.setData([])')
-            self.data = pd.DataFrame()
             return
 
-        if format_cols:
-            self._set_interval(df)
-            df = self._df_datetime_format(df, exclude_lowercase=self.name)
+        df = self._normal_df(df, exclude_lowercase=self.name)
+        self._set_interval(df)
+        df = self._time_to_bar_time(df)
+        df = self._merge_value_by_time(df)
 
         if self.name:
             if self.name not in df:
@@ -438,15 +474,7 @@ class SeriesCommon(Pane):
         """
         if self._last_bar is None:
             raise AssertionError("set() must be called first.")
-        series = self._series_datetime_format(series, exclude_lowercase=self.name)
-        if self.name in series.index:
-            series.rename({self.name: 'value'}, inplace=True)
-        if series['time'] == self._last_bar['time']:
-            self.data.iloc[-1] = series
-        else:
-            self.data = pd.concat([self.data, series.to_frame().T], ignore_index=True)
-        self._last_bar = self.data.iloc[-1]
-        self.run_script(f'{self.id}.series.update({js_data(series)});')
+        self.update_batch(series.to_frame().T)
 
     def _clean_update_batch(self, df: pd.DataFrame, exclude_lowercase=None):
         '''
@@ -457,7 +485,9 @@ class SeriesCommon(Pane):
             return df
 
         # 先直接清理格式
-        df = self._df_datetime_format(df, exclude_lowercase=exclude_lowercase)
+        df = self._normal_df(df, exclude_lowercase=exclude_lowercase)
+        df = self._time_to_bar_time(df)
+        df = self._merge_value_by_time(df)
 
         # 确保时间是单调递增
         if len(df) > 1:
@@ -491,7 +521,7 @@ class SeriesCommon(Pane):
             return
 
         # 先直接清理格式
-        df = self._df_datetime_format(df, exclude_lowercase=self.name)
+        df = self._clean_update_batch(df, exclude_lowercase=self.name)
         df.rename(columns={self.name: 'value'}, inplace=True)
         # 取出有效数据
         df = df[['time', 'value']]
@@ -539,7 +569,7 @@ class SeriesCommon(Pane):
         str_markers = json.dumps(list(self.markers.values()))
         self.run_script(f'{self.id}.seriesMarkers.setMarkers({str_markers})')
 
-    def marker_list(self, markers: list):
+    def marker_list(self, markers: list[dict]):
         """
         Creates multiple markers.\n
         :param markers: The list of markers to set. These should be in the format:\n
@@ -567,14 +597,11 @@ class SeriesCommon(Pane):
         self._update_markers()
         return marker_ids
 
-    def _clear_marker_list(self):
-        self.markers = {}
-
     def marker(self, time: Optional[datetime] = None, position: MARKER_POSITION = 'below',
                shape: MARKER_SHAPE = 'arrow_up', color: str = '#2196F3', text: str = ''
                ) -> str:
         """
-        Creates a new marker.\n
+        Creates a new marker.
         :param time: Time location of the marker. If no time is given, it will be placed at the last bar.
         :param position: The position of the marker.
         :param color: The color of the marker (rgb, rgba or hex).
@@ -582,10 +609,10 @@ class SeriesCommon(Pane):
         :param text: The text to be placed with the marker.
         :return: The id of the marker placed.
         """
-        try:
-            formatted_time = self._last_bar['time'] if not time else self._single_datetime_format(time)
-        except TypeError:
-            raise TypeError('Chart marker created before data was set.')
+        if self._last_bar is None:
+            raise ValueError('Chart marker created before data was set.')
+
+        formatted_time = self._last_bar['time'] if not time else self._single_datetime_format(time)
         marker_id = self.win._id_gen.generate('Marker_')
 
         marker_dict = {
@@ -601,7 +628,7 @@ class SeriesCommon(Pane):
 
     def remove_marker(self, marker_id: str):
         """
-        Removes the marker with the given id.\n
+        Removes the marker with the given id.
         """
         self.markers.pop(marker_id)
         self._update_markers()
@@ -695,12 +722,13 @@ class SeriesCommon(Pane):
         :param text: 标签文本"""
         return VerticalLine(*locals().values())
 
-    def clear_markers(self):
+    def clear_markers(self, _dont_update: bool = False):
         """
         Clears the markers displayed on the data.\n
         """
         self.markers.clear()
-        self._update_markers()
+        if not _dont_update:
+            self._update_markers()
 
     def create_price_line(self, price: float = 0.0, color: str = 'rgba(214, 237, 255, 0.6)',
             style: LINE_STYLE = 'large_dashed', width: int = 1, price_label: bool = False,
@@ -844,8 +872,7 @@ class Line(SeriesCommon):
                     """ if chart._scale_candles_only else ''}
                 }},
                 {pane_index}
-            )
-        null''')
+            )''')
 
     def delete(self):
         """
@@ -945,12 +972,19 @@ class Candlestick(SeriesCommon):
         :param df: columns: date/time, open, high, low, close, volume (if volume enabled), open_interest (if open_interest enabled).
         :param keep_drawings: keeps any drawings made through the toolbox. Otherwise, they will be deleted.
         """
+        self.clear_data()
+
         if df is None or df.empty:
-            self.clear_data()
             return
 
+        exclude_lowercase = []
+        if hasattr(self, '_lines'):
+            exclude_lowercase = [line.name for line in self._lines]
+
+        df = self._normal_df(df, exclude_lowercase=exclude_lowercase)
         self._set_interval(df)
-        df = self._df_datetime_format(df)
+        df = self._time_to_bar_time(df)
+        df = self._merge_value_by_time(df)
 
         self._has_volume = 'volume' in df
         self._has_open_interest = 'open_interest' in df
@@ -979,10 +1013,11 @@ class Candlestick(SeriesCommon):
             oi_js_data = js_data(oi_df)
             self.run_script(f'{self.id}.openInterestSeries.setData({oi_js_data})')
 
-        for line in self._lines:
-            if line.name not in df.columns:
-                continue
-            line.set(df[['time', line.name]], format_cols=False)
+        if hasattr(self, '_lines'):
+            # 如果输入DF里面还有其他列
+            for line in self._lines:
+                if line.name in df.columns:
+                    line.set(df[['time', line.name]])
 
         # set autoScale to true in case the user has dragged the price scale
         self.run_script(f'''
@@ -1017,35 +1052,10 @@ class Candlestick(SeriesCommon):
         :param series: labels: date/time, price, [volume, open_interest] .
         :param cumulative_volume: Adds the given volume onto the latest bar.
         """
-        series = self._series_datetime_format(series)
-        # 注意，series 的时间已经锁定到最近的bar起点，所以可安全地进行比较
-
         if self._last_bar is None:
             raise AssertionError('update_from_tick() must be called after set()')
 
-        if series['time'] < self._last_bar['time']:
-            raise ValueError(f'Trying to update tick of time "{pd.to_datetime(series["time"])}", which occurs before the last bar time of "{pd.to_datetime(self._last_bar["time"])}".')
-
-        bar = self._last_bar.copy()
-        if series['time'] == self._last_bar['time']:
-            bar['high'] = max(self._last_bar['high'], series['price'])
-            bar['low'] = min(self._last_bar['low'], series['price'])
-            bar['close'] = series['price']
-
-        else:
-            for key in ('open', 'high', 'low', 'close'):
-                bar[key] = series['price']
-            bar['time'] = series['time']
-
-        if self._has_volume:
-            if cumulative_volume:
-                bar['volume'] += series['volume']
-            else:
-                bar['volume'] = series['volume']
-        if self._has_open_interest:
-            bar['open_interest'] = series['open_interest']
-
-        self.update(bar)
+        self.update_from_ticks(series.to_frame().T, cumulative_volume=cumulative_volume)
 
     def update_bars(self, df: pd.DataFrame):
         """
@@ -1119,7 +1129,8 @@ class Candlestick(SeriesCommon):
         if self._last_bar is None:
             raise AssertionError('update_from_ticks() must be called after set()')
 
-        df = self._df_datetime_format(df)
+        df = self._normal_df(df)
+        df = self._time_to_bar_time(df)
 
         # 使用 pandas 聚合技巧，把 tick 变成 bar
         group_df = df.groupby('time')
@@ -1502,7 +1513,7 @@ class AbstractChart(Candlestick, Pane):
         """
         line = Line(self, name, color, style, width, price_line, price_label, price_scale_id, pane_index=pane_index)
         self._lines.append(line)
-        return self._lines[-1]
+        return line
 
     def create_histogram(
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
@@ -1889,7 +1900,7 @@ class AbstractChart(Candlestick, Pane):
         return b64decode(serial_data.split(',')[1])
 
     def create_subchart(self, position: Position = 111, width: float = 1.0, height: float = 1.0,
-                        sync: Optional[Union[str, bool]] = None, scale_candles_only: bool = False,
+                        sync_id: Optional[Union[str, bool]] = None, scale_candles_only: bool = False,
                         sync_crosshairs_only: bool = False,
                         toolbox: bool = False,
                         autosize: bool = True,
@@ -1899,7 +1910,7 @@ class AbstractChart(Candlestick, Pane):
         :param position: 子图位置（网格格式或字符串格式，如 111, (2,2,1), 'left'）
         :param width: 宽度比例（相对于网格单元，1.0=占满，<1.0=内缩对齐左上角，>1.0=侵占）
         :param height: 高度比例（相对于网格单元）
-        :param sync: 同步 ID 或 True（使用当前图表 ID）
+        :param sync_id: 同步 ID 或 True（使用当前图表 ID）
         :param scale_candles_only: 是否仅以 K 线范围缩放
         :param sync_crosshairs_only: 是否仅同步十字光标
         :param toolbox: 是否启用绘图工具箱
@@ -1907,9 +1918,10 @@ class AbstractChart(Candlestick, Pane):
         :param pane_index: 面板索引
         :param marker_auto_scale: 标记是否自动缩放
         :return: AbstractChart 子图实例"""
-        if sync is True:
-            sync = self.id
-        chart = self.win.create_subchart(position, width, height, sync, scale_candles_only,
+        if sync_id is True:
+            sync_id = self.id
+
+        chart = self.win.create_subchart(position, width, height, sync_id, scale_candles_only,
                                          sync_crosshairs_only, toolbox, autosize, pane_index,
                                          marker_auto_scale)
         self.subcharts.append(chart.id)

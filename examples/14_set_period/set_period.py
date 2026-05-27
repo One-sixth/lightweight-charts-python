@@ -76,6 +76,8 @@ if __name__ == '__main__':
     sleep(1)
 
     # ── Step 3: set() with 30min bars while locked to 1-hour ──
+    # Important: After set_period(), you must call chart.set(df) for the lock to take effect
+    #             Otherwise, markers and other elements may become misaligned
     print("\nStep 3: Setting 30-minute bars while locked to 1-hour...")
     df_30min = generate_bars(48, '30min', seed=43)
     chart.set(df_30min)

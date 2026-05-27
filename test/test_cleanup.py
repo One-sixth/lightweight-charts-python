@@ -65,6 +65,7 @@ def chart_section(chart, data):
     """
     Look up the handler section for a chart in TOML-parsed audit data.
     TOML keys are like 'Chart_1', while chart.id is 'window.Chart_1'.
+    JS audit() iterates Object.keys(window), so keys don't have 'window.' prefix.
     """
     sid = chart.id.replace('window.', '')
     return data.get(sid, {})
@@ -76,7 +77,7 @@ def test_resource_full_cleanup():
     print("  test_resource_full_cleanup")
     print(sep)
 
-    chart = Chart(toolbox=True)
+    chart = Chart(toolbox=True, position=211)
     bars = make_oi_data(50)
     errors = []
     all_clean = True
@@ -145,7 +146,7 @@ def test_resource_full_cleanup():
         pl = chart.create_price_line(price=102, title='PL', price_label=True)
         print("  2e. price_line [OK]")
 
-        sub = chart.create_subchart(position='bottom', width=1.0, height=0.3)
+        sub = chart.create_subchart(position=212, width=1.0, height=0.3)
         assert sub.id in chart.subcharts
         print("  2f. subchart [OK]")
 
