@@ -8,6 +8,18 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Deprecated
+
+---
+
+## [v2.4] - 2026-05-28
+
+### Added
+
 - **图表同步功能**: `create_subchart()` 新增 `sync` 参数，支持多图表同步时间轴和十字光标
 - **图表同步示例**: 新增示例 `31_chart_sync`，演示 `sync` 和 `sync_crosshairs_only` 参数的使用
 - **表格组件改进**: `create_table()` 支持 `height=None` 和 `width=None` 实现自动适应内容大小

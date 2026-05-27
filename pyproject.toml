@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lightweight-charts-python"
-version = "2.3.3"
+version = "2.4"
 authors = [
     { name = "louisnw" },
     { name = "onesixth" }
@@ -32,7 +32,7 @@ lightweight_charts = ["js/*"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-exclude = ["test*", "examples*", "docs*"]
+exclude = ["test*", "examples*", "docs*", 'images*']
 
 [project.urls]
 homepage = "https://github.com/One-sixth/lightweight-charts-python"
