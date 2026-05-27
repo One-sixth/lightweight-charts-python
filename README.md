@@ -118,6 +118,43 @@ python -m build
 
 ---
 
+
+## 核心 API 速查
+
+| 方法 | 说明 |
+|------|------|
+| `chart.set(df)` | 设置 K线数据 |
+| `chart.update(series)` | 更新最后一根 K线 |
+| `chart.update_from_tick(tick)` | 从逐笔成交更新 K线 |
+| `chart.marker(text, ...)` | 添加价格标记 |
+| `chart.marker_auto_scale(enable)` | 控制标记是否参与价格轴缩放 |
+| `chart.pop(count)` | 从末尾移除 N 个数据点 |
+| `chart.create_line(name, ...)` | 创建折线指标 |
+| `chart.create_histogram(name, ...)` | 创建柱状图指标 |
+| `chart.create_subchart(...)` | 创建子面板 |
+| `chart.create_price_line(price, ...)` | 创建价格线 |
+| `chart.horizontal_line(price, ...)` | 创建水平线 |
+| `chart.vertical_span(start, end, ...)` | 创建垂直高亮区间 |
+| `chart.get_position()` | 获取图表渲染位置 (x, y, width, height) 百分比（show 前后均可） |
+| `chart.set_position(x, y, width, height)` | 动态设置图表渲染位置（show 前后均可，传入 None 恢复默认） |
+| `chart.audit(use_js=False)` | 资源审计（Python 侧） |
+| `chart.audit(use_js=True)` | 资源审计（JS 侧，TOML 格式） |
+| `chart.reset()` | 重置图表到初始状态 |
+| `chart.screenshot(...)` | 截图（v5.2.0+ 增强：支持 add_top_layer 和 include_crosshair） |
+| `chart.clear_handlers()` | 清空所有事件处理器 |
+| `chart.set_price_format(type, base, precision)` | 设置价格轴格式，避免浮点精度问题（v5.2.0+） |
+
+
+---
+
+## 文档与支持
+
+---
+
+**免责声明：** 本包为独立开发，未经 TradingView 背书、赞助或批准。作者与 TradingView 无任何官方关系，本包不代表 TradingView 的观点或立场。
+
+---
+
 ## 示例
 
 ### 0. 多面板支持
@@ -327,6 +364,44 @@ app.add_page(index, on_load=ChartState.mount, title='Reflex + Lightweight Charts
 
 ---
 
+## 完整示例目录
+
+| 序号 | 示例名称 | 功能说明 |
+|------|----------|----------|
+| 1 | `1_setting_data` | 基础数据设置 |
+| 2 | `2_live_data` | 实时 K线更新 |
+| 3 | `3_tick_data` | Tick 数据更新 |
+| 4 | `4_line_indicators` | 折线指标 SMA |
+| 5 | `5_styling` | 样式定制 |
+| 6 | `6_callbacks` | 回调事件 |
+| 7 | `7_multi_pane` | 多面板图表 |
+| 8 | `8_volume_open_interest` | 成交量+持仓量 |
+| 9 | `9_multi_chart` | 多 Chart 实例 |
+| 10 | `10_persistent_legend` | 常驻图例 |
+| 11 | `11_vertical_span` | 垂直区间高亮 |
+| 12 | `12_audit` | 资源审计 |
+| 13 | `13_batch_update` | 批量更新 API |
+| 14 | `14_set_period` | 时间周期锁定 |
+| 15 | `15_pyside6_simple` | PySide6 集成 |
+| 16 | `16_pyside6_race` | PySide6 性能测试 |
+| 18 | `18_hovered_series_on_top` | 悬停系列置顶 |
+| 19 | `19_timescale_options` | 时间轴选项 |
+| 20 | `20_tick_mark_density` | 刻度密度控制 |
+| 21 | `21_marker_auto_scale` | 标记自动缩放 |
+| 22 | `22_pop` | 移除数据点 |
+| 23 | `23_crosshair_move` | 十字光标事件 |
+| 24 | `24_price_format` | 价格格式设置 |
+| 25 | `25_screenshot_enhanced` | 增强截图 |
+| 26 | `26_series_batch_update` | 序列批量更新 |
+| 27 | `27_reflex_chart` | Reflex 集成 |
+| 28 | `28_cross_process_chart` | 跨进程嵌入 Qt |
+| 29 | `29_grid_layout` | 网格布局系统 |
+| 30 | `30_table_component` | 表格组件（自选股/持仓管理） |
+| 31 | `31_chart_sync` | 图表同步功能（时间轴+十字光标） |
+
+---
+
+
 ## 示例截图展示
 
 > **以下为所有示例的截图位置，可根据实际效果替换图片**
@@ -344,7 +419,7 @@ if __name__ == '__main__':
     chart.show(block=True)
 ```
 
-![显示CSV数据](images/01_setting_data.png)
+![显示CSV数据](images/1_setting_data.png)
 
 ---
 
@@ -366,7 +441,7 @@ if __name__ == '__main__':
         sleep(0.1)
 ```
 
-![实时K线更新](images/02_live_data.png)
+![实时K线更新](images/2_live_data.gif)
 
 ---
 
@@ -386,7 +461,7 @@ if __name__ == '__main__':
         sleep(0.03)
 ```
 
-![Tick数据更新](images/03_tick_data.png)
+![Tick数据更新](images/3_tick_data.gif)
 
 ---
 
@@ -411,7 +486,7 @@ if __name__ == '__main__':
     chart.show(block=True)
 ```
 
-![折线指标](images/04_line_indicators.png)
+![折线指标](images/4_line_indicators.png)
 
 ---
 
@@ -431,7 +506,7 @@ if __name__ == '__main__':
     chart.show(block=True)
 ```
 
-![样式定制](images/05_styling.png)
+![样式定制](images/5_styling.png)
 
 ---
 
@@ -456,7 +531,7 @@ if __name__ == '__main__':
     chart.show(block=True)
 ```
 
-![回调事件](images/06_callbacks.png)
+![回调事件](images/6_callbacks.gif)
 
 ---
 
@@ -478,7 +553,7 @@ if __name__ == '__main__':
     demo()
 ```
 
-![多面板图表](images/07_multi_pane.png)
+![多面板图表](images/7_multi_pane.png)
 
 ---
 
@@ -495,7 +570,7 @@ if __name__ == '__main__':
     chart.show(block=True)
 ```
 
-![成交量持仓量](images/08_volume_open_interest.png)
+![成交量持仓量](images/8_volume_open_interest.png)
 
 ---
 
@@ -520,7 +595,7 @@ if __name__ == '__main__':
     t2.start()
 ```
 
-![多Chart实例](images/09_multi_chart.png)
+![多Chart实例](images/9_multi_chart.png)
 
 ---
 
@@ -954,74 +1029,3 @@ if __name__ == '__main__':
 ![图表同步](images/31_chart_sync.png)
 
 ---
-
-## 完整示例目录
-
-| 序号 | 示例名称 | 功能说明 |
-|------|----------|----------|
-| 1 | `1_setting_data` | 基础数据设置 |
-| 2 | `2_live_data` | 实时 K线更新 |
-| 3 | `3_tick_data` | Tick 数据更新 |
-| 4 | `4_line_indicators` | 折线指标 SMA |
-| 5 | `5_styling` | 样式定制 |
-| 6 | `6_callbacks` | 回调事件 |
-| 7 | `7_multi_pane` | 多面板图表 |
-| 8 | `8_volume_open_interest` | 成交量+持仓量 |
-| 9 | `9_multi_chart` | 多 Chart 实例 |
-| 10 | `10_persistent_legend` | 常驻图例 |
-| 11 | `11_vertical_span` | 垂直区间高亮 |
-| 12 | `12_audit` | 资源审计 |
-| 13 | `13_batch_update` | 批量更新 API |
-| 14 | `14_set_period` | 时间周期锁定 |
-| 15 | `15_pyside6_simple` | PySide6 集成 |
-| 16 | `16_pyside6_race` | PySide6 性能测试 |
-| 18 | `18_hovered_series_on_top` | 悬停系列置顶 |
-| 19 | `19_timescale_options` | 时间轴选项 |
-| 20 | `20_tick_mark_density` | 刻度密度控制 |
-| 21 | `21_marker_auto_scale` | 标记自动缩放 |
-| 22 | `22_pop` | 移除数据点 |
-| 23 | `23_crosshair_move` | 十字光标事件 |
-| 24 | `24_price_format` | 价格格式设置 |
-| 25 | `25_screenshot_enhanced` | 增强截图 |
-| 26 | `26_series_batch_update` | 序列批量更新 |
-| 27 | `27_reflex_chart` | Reflex 集成 |
-| 28 | `28_cross_process_chart` | 跨进程嵌入 Qt |
-| 29 | `29_grid_layout` | 网格布局系统 |
-| 30 | `30_table_component` | 表格组件（自选股/持仓管理） |
-| 31 | `31_chart_sync` | 图表同步功能（时间轴+十字光标） |
-
----
-
-## 核心 API 速查
-
-| 方法 | 说明 |
-|------|------|
-| `chart.set(df)` | 设置 K线数据 |
-| `chart.update(series)` | 更新最后一根 K线 |
-| `chart.update_from_tick(tick)` | 从逐笔成交更新 K线 |
-| `chart.marker(text, ...)` | 添加价格标记 |
-| `chart.marker_auto_scale(enable)` | 控制标记是否参与价格轴缩放 |
-| `chart.pop(count)` | 从末尾移除 N 个数据点 |
-| `chart.create_line(name, ...)` | 创建折线指标 |
-| `chart.create_histogram(name, ...)` | 创建柱状图指标 |
-| `chart.create_subchart(...)` | 创建子面板 |
-| `chart.create_price_line(price, ...)` | 创建价格线 |
-| `chart.horizontal_line(price, ...)` | 创建水平线 |
-| `chart.vertical_span(start, end, ...)` | 创建垂直高亮区间 |
-| `chart.get_position()` | 获取图表渲染位置 (x, y, width, height) 百分比（show 前后均可） |
-| `chart.set_position(x, y, width, height)` | 动态设置图表渲染位置（show 前后均可，传入 None 恢复默认） |
-| `chart.audit(use_js=False)` | 资源审计（Python 侧） |
-| `chart.audit(use_js=True)` | 资源审计（JS 侧，TOML 格式） |
-| `chart.reset()` | 重置图表到初始状态 |
-| `chart.screenshot(...)` | 截图（v5.2.0+ 增强：支持 add_top_layer 和 include_crosshair） |
-| `chart.clear_handlers()` | 清空所有事件处理器 |
-| `chart.set_price_format(type, base, precision)` | 设置价格轴格式，避免浮点精度问题（v5.2.0+） |
-
-
----
-
-## 文档与支持
-
----
-
-**免责声明：** 本包为独立开发，未经 TradingView 背书、赞助或批准。作者与 TradingView 无任何官方关系，本包不代表 TradingView 的观点或立场。

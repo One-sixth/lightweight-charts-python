@@ -50,6 +50,13 @@ def js_audit(chart, timeout=5):
     """
     Safely call JS Handler.audit(), with exception protection.
     Returns TOML-parsed dict, or None on failure.
+    
+    IMPORTANT: This function MUST succeed for the test to be valid.
+    If js_audit returns None (timeout or execution failure), it indicates a critical issue:
+    - JS runtime may be unresponsive
+    - Handler.audit() may not be properly defined
+    - The chart may have failed to initialize correctly
+    Tests should treat a None return as a test failure.
     """
     try:
         result = chart.win.run_script_and_get('Lib.Handler.audit()', timeout=timeout)
@@ -252,7 +259,8 @@ def test_resource_full_cleanup():
                 errors, "subchart_section_leak"
             )
         else:
-            print("      [WARN] cannot verify (JS audit unavailable)")
+            print("      [FAIL] cannot verify subchart removal (JS audit unavailable)")
+            errors.append("subchart_audit_failed")
 
         chart.legend(visible=False)
         tbl.delete()
@@ -302,7 +310,8 @@ def test_resource_full_cleanup():
                 len(leaked) == 0, "no window global leaks", errors, "window_global_leak"
             )
         else:
-            print("      [WARN] final JS audit unavailable, skip JS checks")
+            print("      [FAIL] final JS audit unavailable - cannot verify JS cleanup")
+            errors.append("final_audit_failed")
 
         # --- Python-side final state ---
         print("\n[6] Python-side final state ...")
@@ -416,7 +425,8 @@ def test_multi_chart_cleanup():
                 "chart2 JS still has series", errors, "mc2_js_series"
             )
         else:
-            print("      [WARN] chart2 JS audit unavailable")
+            print("      [FAIL] chart2 JS audit unavailable")
+            errors.append("chart2_audit_failed")
 
         # --- Clean up chart2 ---
         print("\n[6] Clean up chart2 ...")
