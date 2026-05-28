@@ -793,7 +793,7 @@ if __name__ == '__main__':
     # Create right subchart (fully synchronized timeline and crosshair)
     subchart_right = chart.create_subchart(
         position=(2, 2, 2),
-        sync=chart.id,           # Sync to main chart
+        sync_id=chart.id,           # Sync to main chart
         sync_crosshairs_only=False  # Full synchronization
     )
     
@@ -801,7 +801,7 @@ if __name__ == '__main__':
     subchart_bottom = chart.create_subchart(
         position=223,            # Equivalent to (2, 2, 3)
         width=2.0,               # Span two columns
-        sync=chart.id,
+        sync_id=chart.id,
         sync_crosshairs_only=True  # Crosshair sync only
     )
     
@@ -815,7 +815,7 @@ if __name__ == '__main__':
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `sync` | `bool` or `str` | `True` syncs to parent chart; string is the target chart's id |
+| `sync_id` | `bool` or `str` | `True` syncs to parent chart; string is the target chart's id |
 | `sync_crosshairs_only` | `bool` | `True` syncs only crosshair, timeline remains independent |
 
 ![Chart Synchronization](images/31_chart_sync.png)

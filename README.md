@@ -797,7 +797,7 @@ if __name__ == '__main__':
     # 创建右侧子图表（完全同步时间轴和十字光标）
     subchart_right = chart.create_subchart(
         position=(2, 2, 2),
-        sync=chart.id,           # 同步到主图表
+        sync_id=chart.id,           # 同步到主图表
         sync_crosshairs_only=False  # 完全同步
     )
     
@@ -805,7 +805,7 @@ if __name__ == '__main__':
     subchart_bottom = chart.create_subchart(
         position=223,            # 等同于 (2, 2, 3)
         width=2.0,               # 横跨两列
-        sync=chart.id,
+        sync_id=chart.id,
         sync_crosshairs_only=True  # 仅同步十字光标
     )
     
@@ -815,11 +815,11 @@ if __name__ == '__main__':
     chart.show(block=True)
 ```
 
-**sync 参数说明：**
+**sync_id 参数说明：**
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `sync` | `bool` 或 `str` | `True` 同步到父图表；字符串为目标图表的 id |
+| `sync_id` | `bool` 或 `str` | `True` 同步到父图表；字符串为目标图表的 id |
 | `sync_crosshairs_only` | `bool` | `True` 仅同步十字光标，时间轴独立 |
 
 ![图表同步](images/31_chart_sync.png)
