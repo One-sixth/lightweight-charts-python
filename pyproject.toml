@@ -3,13 +3,13 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lightweight-charts-python"
+name = "lightweight-charts-onesixth"
 version = "2.4"
 authors = [
     { name = "louisnw" },
     { name = "onesixth" }
 ]
-license = { file = "LICENSE" }
+license = "MIT"
 description = "Python framework for TradingView's Lightweight Charts JavaScript library."
 readme = "README.md"
 requires-python = ">=3.8"

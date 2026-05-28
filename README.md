@@ -1,6 +1,6 @@
 # lightweight-charts-python
 
-[MIT License](LICENSE)
+# [MIT License](LICENSE)
 
 ![cover1](images/29_grid_layout.png)
 ![cover2](images/12_audit.png)
@@ -13,60 +13,73 @@ English Version ReadMe: [README_EN.md](README_EN.md)
 
 # 尝试继续维护
 本人对 TypeScript 了解比较少，主要依赖 DeepSeek AI 辅助维护  
-比对了大量的K线绘制库，发现 lightweight-charts-python 唯一功能足够全，性能足够强，易于嵌入QtUI的库，并且存在刚需的功能，遂尝试继续维护。  
+比对了大量的K线绘制库，发现 lightweight-charts-python 唯一功能足够全，性能足够强，易于嵌入QtUI的库，并且存在刚需的功能，遂尝试继续维护  
 
 当前已基本排除完bug，examples 全部例子已在windows测试通过  
 lightweight-chart 主库已更新到 v5.2.0，并添加了一部分v5的新功能  
 
+我的主要使用环境为 windows + python 3.13 + PySide6 + WebView，其他环境上面可能有问题。  
+
 ---
 
-### 最近更新
+# 其他活跃的同类储存库，各有特别的新功能，值得尝试，我也参考了它们的代码
 
-**新增或变更功能:**
+https://github.com/gopalparashar421/lightweight-charts-python
+https://github.com/smalinin/bn_lightweight-charts-python
+https://github.com/EsIstJosh/lightweight-charts-python
+
+
+## 🤣如果要说我的项目有啥明显的优势，可能是为了长时间运行，而增加的精细资源回收，几乎不存在内存泄露。  
+对了，还有支持类似figure的 Grid布局，调整布局更加轻松精确。  
+还有批量更新API，支持一次性多个数据点，批量更新性能大幅提升。  
+
+同时也欢迎其他仓库按需取用代码。  
+
+# ⬇️下方有更多示例画廊
+
+---
+
+
+## 🤖 更新与增强
+
+以下是合并优化后的 Markdown 版本，保留了所有信息，并采用有序列表 + 表情符号，结构清晰易读：
+
 1. ✅ **序列批量更新 API** — `Line.update_batch()` / `Histogram.update_batch()` 一次性更新多个数据点，性能大幅提升
-2. ✅ **K 线批量更新** — `chart.update_bars()` / `chart.update_from_ticks()` 批量数据处理加速10x  
-3. ✅ **持仓量可视化** — Open Interest 独立 Y 轴缩放，与成交量叠加显示
-4. ✅ **Reflex 集成** — `ReflexChart(StaticLWC)` 在 [Reflex](https://reflex.dev) 应用中嵌入 K 线图；通过 postMessage 桥接实现增量实时更新；JS→Python 回调桥接将 crosshair_move 等事件自动转发到 State
-5. ✅ **初始化幂等性** — 解决 Reflex 编译/运行时模块双重导入导致的图表重复创建问题
-6. ✅ **示例 26** — Line 和 Histogram 的 batch update 性能对比演示
-7. ✅ **示例 27** — 完整 Reflex 示例（SMA 指标 + bar 推送 + crosshair 回调），附带 `clean.ps1` / `run.ps1` 脚本
-8. ✅ **跨进程嵌入 Qt** — `CrossProcessChart` 将 pywebview 图表窗口通过原生句柄嵌入到 PySide6/PyQt6 QWidget，支持无边框、窗口大小同步，类似 Chrome 多进程架构（Windows + Linux/X11）
-9. ✅ **示例 28** — CrossProcessChart 跨进程嵌入 PySide6 QWidget 完整演示
-10. ✅ **网格布局系统** — `position` 参数支持三种格式：整数（如 `111`）、元组（如 `(2,2,1)`）、字符串（已弃用），类似 matplotlib 的 subplot
-11. ✅ **运行时位置控制** — 新增 `get_position()` 和 `set_position()` 方法，支持动态调整图表位置
-12. ✅ **相对大小控制** — `width`/`height` 参数相对于网格单元，支持内缩（<1.0）和侵占（>1.0）
-13. ✅ **示例 29** — 网格布局完整演示
-14. ✅ **图表同步功能** — `create_subchart()` 新增 `sync` 参数（原 `sync_id`），支持多图表同步时间轴和十字光标
-15. ✅ **示例 31** — 图表同步功能完整演示
-16. ✅ **网格冲突检测** — 自动检测同一窗口中图表网格规格冲突，防止布局混乱
-17. ✅ **代码优化** — 重构 `parse_position()` 和 `_convert_string_to_grid()` 函数，提高代码可维护性
+2. 🚀 **K线批量更新** — `chart.update_bars()` / `chart.update_from_ticks()` 批量数据处理加速 10x
+3. 📊 **持仓量可视化** — Open Interest 独立 Y 轴缩放，与成交量叠加显示
+4. 🔄 **Reflex 集成** — `ReflexChart(StaticLWC)` 在 [Reflex](https://reflex.dev) 应用中嵌入 K线图；通过 postMessage 桥接实现增量实时更新；JS→Python 回调桥接将 crosshair_move 等事件自动转发到 State
+5. 🧩 **初始化幂等性** — 解决 Reflex 编译/运行时模块双重导入导致的图表重复创建问题
+6. 📚 **示例 26** — Line 和 Histogram 的 batch update 性能对比演示
+7. 📚 **示例 27** — 完整 Reflex 示例（SMA 指标 + bar 推送 + crosshair 回调），附带 `clean.ps1` / `run.ps1` 脚本
+8. 🖥️ **跨进程嵌入 Qt** — `CrossProcessChart` 将 pywebview 图表窗口通过原生句柄嵌入 PySide6/PyQt6 QWidget，支持无边框、窗口大小同步，类似 Chrome 多进程架构（Windows + Linux/X11）
+9. 📚 **示例 28** — CrossProcessChart 跨进程嵌入 PySide6 QWidget 完整演示
+10. 🎛️ **网格布局系统** — `position` 参数支持三种格式：整数（如 `111`）、元组（如 `(2,2,1)`）、字符串（已弃用），类似 matplotlib 的 subplot
+11. 🔧 **运行时位置控制** — 新增 `get_position()` 和 `set_position()` 方法，支持动态调整图表位置
+12. 📏 **相对大小控制** — `width`/`height` 参数相对于网格单元，支持内缩（<1.0）和侵占（>1.0）
+13. 📚 **示例 29** — 网格布局完整演示
+14. 🔗 **图表同步功能** — `create_subchart()` 支持多图表同步时间轴和十字光标
+15. 📚 **示例 31** — 图表同步功能完整演示
+16. ⚠️ **网格冲突检测** — 自动检测同一窗口中图表网格规格冲突，防止布局混乱
+17. 🧹 **代码优化** — 重构 `parse_position()` 和 `_convert_string_to_grid()` 函数，提高代码可维护性
+18. 🌊 **实时数据流式更新** — 支持直接从 tick 数据更新 K线
+19. 📈 **多面板图表** — 使用 `create_subchart()` 创建子图（与图表同步功能协同）
+20. ✏️ **工具箱** — 在图表上直接绘制趋势线、矩形、射线、水平线
+21. 🎯 **事件系统** — 时间周期选择器、搜索、快捷键等
+22. 📋 **表格组件** — 用于自选股、下单、持仓管理
+23. 🔌 **Polygon.io 集成** — 直接获取市场数据
+24. 🏷️ **常驻图例** — 鼠标移出图表时 OHLC 仍可见
+25. 🎨 **垂直区间高亮** — 半透明填充标记日期范围
+26. 🧹 **资源清理 API** — `reset()`、`clear_handlers()`、`audit()`、`delete()`
+27. 📐 **_PriceLine_ 对象** — `create_price_line().delete()`
+28. 🗑️ **Table.delete()** — 销毁表格并清理 JS 状态
+29. 🔤 **人类可读的 ID** — `window.Chart_1`、`window.Line_3` 等
+30. 📊 **资源审计** — `chart.audit(use_js=True)` 返回完整 TOML 格式的 JS 变量状态
+31. ✅ **全面的清理测试** — `test_cleanup.py` 验证所有资源类型的 Python + JS 无泄漏
+32. 🗂️ **多 Chart 实例** — 完全独立的图表对象  
 
 
----
+    🧰 **主要支持环境** — PySide6、PyQt6、wxPython
 
-新增和加强的功能
-
-1. **实时数据流式更新** — 支持直接从 tick 数据更新 K线。
-2. **多面板图表** — 使用 `create_subchart()` 创建子图。
-3. **工具箱** — 在图表上直接绘制趋势线、矩形、射线、水平线。
-4. **事件系统** — 时间周期选择器、搜索、快捷键等。
-5. **表格组件** — 用于自选股、下单、持仓管理。
-6. **Polygon.io 集成** — 直接获取市场数据。
-7. **成交量 + 持仓量叠加** — 独立 Y 轴缩放。
-8. **多 Chart 实例** — 完全独立的图表对象。
-9. **常驻图例** — 鼠标移出图表时 OHLC 仍可见。
-10. **垂直区间高亮** — 半透明填充标记日期范围。
-11. **资源清理 API** — `reset()`、`clear_handlers()`、`audit()`、`delete()`。
-12. **_PriceLine_ 对象** — `create_price_line().delete()`。
-13. **Table.delete()** — 销毁表格并清理 JS 状态。
-14. **人类可读的 ID** — `window.Chart_1`、`window.Line_3` 等。
-15. **资源审计** — `chart.audit(use_js=True)` 返回完整 TOML 格式的 JS 变量状态。
-16. **全面的清理测试** — test_cleanup.py 验证所有资源类型的 Python + JS 无泄漏。
-17. **序列批量更新 API** — `Line/Histogram.update_batch()` 高性能批量更新。
-18. **K 线批量更新** — `chart.update_bars()/update_from_ticks()`。
-19. **跨进程嵌入 Qt** — `CrossProcessChart` 通过原生窗口句柄将 pywebview 窗口嵌入 QWidget（Windows + Linux/X11）。
-
-**主要支持环境：** PySide6、PyQt6、wxPython、asyncio、Reflex。
 
 ---
 
@@ -138,218 +151,12 @@ python -m build
 
 ## 文档与支持
 
+建议通过 examples 例子来学习，ReadMe 下方有大量参考代码和画廊  
+若要了解全部功能，可以阅读 QUICK_REFERENCE.md 文件，我尽量让它包含了所有功能的详细说明和示例代码  
+
 ---
 
 **免责声明：** 本包为独立开发，未经 TradingView 背书、赞助或批准。作者与 TradingView 无任何官方关系，本包不代表 TradingView 的观点或立场。
-
----
-
-## 示例
-
-### 0. 多面板支持
-
-```python
-import pandas as pd
-import webbrowser
-from lightweight_charts import HTMLChart
-
-def demo():
-    chart = HTMLChart(width=1200, height=800, inner_height=-500, filename='charts.html')
-    df = pd.read_csv('./PDATA/4ohlcv.csv')
-    chart.set(df)
-
-    # 面板 0 — SMA7
-    line7 = chart.create_line('SMA 7', color='red')
-    sma7_data = df.set_index('date')['close'].rolling(7).mean().reset_index()
-    sma7_data.columns = ['time', 'SMA 7']
-    line7.set(sma7_data)
-
-    # 面板 1 — 柱状图
-    sma20_data = df[['date', 'close']].copy()
-    sma20_data['close'] = sma20_data['close'].rolling(20).mean()
-    line20 = chart.create_histogram('SMA 20', pane_index=1)
-    line20.set(sma20_data.rename(columns={'date': 'time', 'close': 'SMA 20'}))
-
-    chart.load()
-    webbrowser.open(chart.filename)
-
-if __name__ == '__main__':
-    demo()
-```
-
-### 1. 显示 CSV 数据
-
-```python
-import pandas as pd
-from lightweight_charts import Chart
-
-if __name__ == '__main__':
-    chart = Chart()
-    df = pd.read_csv('ohlcv.csv')
-    chart.set(df)
-    chart.show(block=True)
-```
-
-### 2. 实时更新 K线
-
-```python
-import pandas as pd
-from time import sleep
-from lightweight_charts import Chart
-
-if __name__ == '__main__':
-    chart = Chart()
-    df1 = pd.read_csv('ohlcv.csv')
-    df2 = pd.read_csv('next_ohlcv.csv')
-
-    chart.set(df1)
-    chart.show()
-
-    last_close = df1.iloc[-1]['close']
-    for _, bar in df2.iterrows():
-        chart.update(bar)
-        if bar['close'] > 20 and last_close < 20:
-            chart.marker(text='价格突破 $20！')
-        last_close = bar['close']
-        sleep(0.1)
-```
-
-### 3. 从 Tick 数据实时更新
-
-```python
-import pandas as pd
-from time import sleep
-from lightweight_charts import Chart
-
-if __name__ == '__main__':
-    chart = Chart()
-    chart.set(pd.read_csv('ohlc.csv'))
-    chart.show()
-
-    for _, tick in pd.read_csv('ticks.csv').iterrows():
-        chart.update_from_tick(tick)
-        sleep(0.03)
-```
-
-### 4. 折线指标（SMA）
-
-```python
-import pandas as pd
-from lightweight_charts import Chart
-
-def calculate_sma(df, period=50):
-    return pd.DataFrame({
-        'time': df['date'],
-        f'SMA {period}': df['close'].rolling(period).mean()
-    }).dropna()
-
-if __name__ == '__main__':
-    chart = Chart()
-    chart.legend(visible=True)
-
-    df = pd.read_csv('ohlcv.csv')
-    chart.set(df)
-
-    line = chart.create_line('SMA 50')
-    line.set(calculate_sma(df, 50))
-
-    chart.show(block=True)
-```
-
-### 5. 样式定制
-
-```python
-import pandas as pd
-from lightweight_charts import Chart
-
-if __name__ == '__main__':
-    chart = Chart()
-    df = pd.read_csv('ohlcv.csv')
-
-    chart.layout(background_color='#090008', text_color='#FFFFFF', font_size=16)
-    chart.candle_style(up_color='#00ff55', down_color='#ed4807')
-    chart.volume_config(up_color='#00ff55', down_color='ed4807')
-    chart.watermark('1D', color='rgba(180,180,240,0.7)')
-    chart.crosshair(mode='normal', vert_color='#FFFFFF', horz_color='#FFFFFF')
-    chart.legend(visible=True, font_size=14)
-
-    chart.set(df)
-    chart.show(block=True)
-```
-
-### 6. 回调事件
-
-```python
-import pandas as pd
-from lightweight_charts import Chart
-
-def on_search(chart, searched_string):
-    new_data = get_bar_data(searched_string, chart.topbar['timeframe'].value)
-    if not new_data.empty:
-        chart.topbar['symbol'].set(searched_string)
-        chart.set(new_data)
-
-def on_timeframe_selection(chart):
-    new_data = get_bar_data(chart.topbar['symbol'].value, chart.topbar['timeframe'].value)
-    if not new_data.empty:
-        chart.set(new_data, keep_drawings=True)
-
-if __name__ == '__main__':
-    chart = Chart(toolbox=True)
-    chart.events.search += on_search
-    chart.topbar.textbox('symbol', 'TSLA')
-    chart.topbar.switcher('timeframe', ('1min', '5min', '30min'), default='5min',
-                          func=on_timeframe_selection)
-    chart.set(get_bar_data('TSLA', '5min'))
-    chart.show(block=True)
-```
-
-### 7. Reflex 嵌入（含实时更新 + 回调）
-
-```python
-import reflex as rx
-import pandas as pd
-from lightweight_charts import ReflexChart
-
-chart = ReflexChart(width=1000, height=600, auto_flush=True)
-chart.set(pd.read_csv('ohlcv.csv'))
-chart.layout(background_color='#0c0d0f', text_color='#d8d9db')
-
-class ChartState(rx.State):
-    def tick(self):
-        chart.update(_next_bar())
-        return chart.flush()  # postMessage 增量更新，不会重复初始化
-
-    def mount(self):
-        # 安装 JS→Python 回调桥接
-        return rx.call_script("""
-if (!window.__LWC_BRIDGE) {
-    window.__LWC_BRIDGE = true;
-    window.addEventListener('message', function(e) {
-        if (e.data?.type === 'lwc-callback') {
-            var el = document.getElementById('cb-buffer');
-            if (el) {
-                var setter = Object.getOwnPropertyDescriptor(
-                    window.HTMLInputElement.prototype, 'value').set;
-                setter.call(el, e.data.payload);
-                el.dispatchEvent(new Event('input', {bubbles: true}));
-            }
-        }
-    });
-}""")
-
-def index() -> rx.Component:
-    return rx.vstack(
-        rx.button('+1 Bar', on_click=ChartState.tick),
-        chart.to_reflex(id='lwc-frame', width='100%'),
-        rx.input(id='cb-buffer', on_change=ChartState.on_crosshair,
-                 style={'opacity':0,'position':'absolute','width':0,'height':0}),
-        width='100%', height='100vh', align='stretch',
-    )
-
-app = rx.App()
-app.add_page(index, on_load=ChartState.mount, title='Reflex + Lightweight Charts')
-```
 
 ---
 
