@@ -84,7 +84,13 @@ Below is the consolidated and optimized Markdown version, retaining all informat
 
 ---
 
-# Installation
+# Installation with PYPI
+
+```bash
+pip install lightweight-charts-onesixth
+```
+
+# Installation with Source Code
 
 ```bash
 pip install https://github.com/One-sixth/lightweight-charts-python

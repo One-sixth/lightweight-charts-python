@@ -87,7 +87,13 @@ https://github.com/EsIstJosh/lightweight-charts-python
 
 ---
 
-# 安装
+# 使用PYPI安装
+
+```bash
+pip install lightweight-charts-onesixth
+```
+
+# 使用源码安装
 
 ```bash
 pip install https://github.com/One-sixth/lightweight-charts-python
