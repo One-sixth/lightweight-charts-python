@@ -48,7 +48,7 @@ def demo_chart_sync():
     # 创建右侧子图表（2行2列布局，第2个位置）
     subchart_right = chart.create_subchart(
         position=(2, 2, 2),  # 2行2列，第2个位置（右上角）
-        sync=chart.id,
+        sync_id=chart.id,
         sync_crosshairs_only=False  # 完全同步
     )
     df_right = generate_data(base_price=150)
@@ -60,7 +60,7 @@ def demo_chart_sync():
     subchart_bottom = chart.create_subchart(
         position=223,  # 等同于 (2, 2, 3)
         width=2.0,     # 跨两列显示
-        sync=chart.id,
+        sync_id=chart.id,
         sync_crosshairs_only=True  # 仅同步十字光标
     )
     df_bottom = generate_data(base_price=80)

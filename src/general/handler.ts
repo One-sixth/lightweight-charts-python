@@ -417,6 +417,9 @@ export class Handler {
             }
             return { x: 0, y: 0, width: 1.0, height: 1.0 }
         }
+
+        // 计算 topbar 高度偏移（与 reSize 保持一致）
+        let topBarOffset = this.scale.height !== 0 ? this._topBar?._div.offsetHeight || 0 : 0
         
         // 如果全部为 null，恢复默认网格位置并退出绝对定位模式
         if (x === null && y === null && width === null && height === null) {
@@ -440,7 +443,7 @@ export class Handler {
             
             // 调整图表大小
             const rect = this.wrapper.getBoundingClientRect()
-            this.chart.resize(rect.width, rect.height - this.resize_hdr_height)
+            this.chart.resize(rect.width, rect.height - topBarOffset - this.resize_hdr_height)
             return
         }
         
@@ -468,7 +471,7 @@ export class Handler {
         // 调整图表大小
         this.chart.resize(
             this.wrapper.offsetWidth,
-            this.wrapper.offsetHeight - this.resize_hdr_height
+            this.wrapper.offsetHeight - topBarOffset - this.resize_hdr_height
         )
     }
 
