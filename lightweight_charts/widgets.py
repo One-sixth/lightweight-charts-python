@@ -226,13 +226,19 @@ class HTMLChart(StaticLWC):
             file.write(html_code)
 
 
-class HTMLChart_BN(StaticLWC):
-    """专为回测系统设计的增强 HTML 图表，支持多策略切换、交易明细、绩效指标展示。"""
+class HtmlTabChart(StaticLWC):
+    """Tab 切换式多策略 HTML 图表，支持多策略切换、交易明细、绩效指标展示。
+    
+    改自 smalinin/bn_lightweight-charts-python 的 HtmlChart_BN:
+    https://github.com/smalinin/bn_lightweight-charts-python
+    
+    Original author: smalinin
+    """
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1,
-                scale_candles_only: bool = False, toolbox: bool = False, filename = "bn_charts.html"):
+                scale_candles_only: bool = False, toolbox: bool = False, filename = "tab_charts.html"):
         super().__init__(width=width, height=height, inner_width=inner_width, inner_height=inner_height,
                         scale_candles_only=scale_candles_only, toolbox=toolbox, autosize=True,
-                        template='index_bn.html')
+                        template='index_tab.html')
         self.js_win = []
         self.names = []
         self.trades = []
@@ -243,11 +249,12 @@ class HTMLChart_BN(StaticLWC):
 
     def _prepare_html(self):
         func_code = ""
-        for i in range(len(self.js_win)):
+        all_wins = self.js_win + [self._html]
+        for i, js in enumerate(all_wins):
             func_code += f'''
             if (id=={i}) {{
                 document.querySelector('#container').innerHTML = ''
-                {self.js_win[i]}
+                {js}
                 updateTrades(id);
                 updatePerformance(id);
                 updateParams(id);
@@ -375,7 +382,7 @@ class HTMLChart_BN(StaticLWC):
 
     def _load(self):
         html_code = self._prepare_html()
-        with open(self.filename, 'w') as file:
+        with open(self.filename, 'w', encoding='utf-8') as file:
             file.write(html_code)
 
     def new_window(self):

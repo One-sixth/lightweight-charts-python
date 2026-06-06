@@ -486,24 +486,49 @@ export class Handler {
           return
       }
       
-      // 网格模式下，只调整图表大小，不覆盖 wrapper 的 width/height
+      // 检测是否为 HtmlTabChart（通过检查专用标记）
+      const isHtmlTabChart = document.getElementById('html-tab-chart-marker') !== null
+      
+      // 网格模式下
       if (this.isGridLayout) {
-          const rect = this.wrapper.getBoundingClientRect()
-          this.chart.resize(rect.width, rect.height - topBarOffset - this.resize_hdr_height)
+          if (isHtmlTabChart) {
+              // HtmlTabChart: 动态获取导航栏高度
+              const navEl = document.querySelector('nav')
+              const navHeight = navEl ? navEl.offsetHeight : 45
+              const availableHeight = window.innerHeight - navHeight
+              this.chart.resize(window.innerWidth, availableHeight - topBarOffset - this.resize_hdr_height)
+              this.wrapper.style.height = `${availableHeight}px`
+          } else {
+              // 普通网格模式：使用原来的计算
+              const rect = this.wrapper.getBoundingClientRect()
+              this.chart.resize(rect.width, rect.height - topBarOffset - this.resize_hdr_height)
+          }
           return
       }
       
+      // 非网格模式
       if (this.scale.height >= 0) {
-            this.chart.resize(window.innerWidth * this.scale.width, (window.innerHeight * this.scale.height) - topBarOffset - this.resize_hdr_height)
-            this.wrapper.style.width = `${100 * this.scale.width}%`
-            this.wrapper.style.height = `${100 * this.scale.height}%`
-        }
-        else {
-            var chart_height: number = Math.ceil(Math.abs(this.scale.height));
-            this.chart.resize(window.containerDiv.offsetWidth * this.scale.width, chart_height - topBarOffset - this.resize_hdr_height)
-            this.wrapper.style.width = `${100 * this.scale.width}%`
-            this.wrapper.style.height = `${chart_height}px`
-        }
+          if (isHtmlTabChart) {
+              // HtmlTabChart: 动态获取导航栏高度
+              const navEl = document.querySelector('nav')
+              const navHeight = navEl ? navEl.offsetHeight : 45
+              const availableHeight = window.innerHeight - navHeight
+              this.chart.resize(window.innerWidth * this.scale.width, (availableHeight * this.scale.height) - topBarOffset - this.resize_hdr_height)
+              this.wrapper.style.width = `${100 * this.scale.width}%`
+              this.wrapper.style.height = `${100 * this.scale.height}%`
+          } else {
+              // 普通模式：使用原来的高度计算
+              this.chart.resize(window.innerWidth * this.scale.width, (window.innerHeight * this.scale.height) - topBarOffset - this.resize_hdr_height)
+              this.wrapper.style.width = `${100 * this.scale.width}%`
+              this.wrapper.style.height = `${100 * this.scale.height}%`
+          }
+      } else {
+          // 负高度模式：使用绝对像素值
+          var chart_height: number = Math.ceil(Math.abs(this.scale.height));
+          this.chart.resize(window.containerDiv.offsetWidth * this.scale.width, chart_height - topBarOffset - this.resize_hdr_height)
+          this.wrapper.style.width = `${100 * this.scale.width}%`
+          this.wrapper.style.height = `${chart_height}px`
+      }
 
         // Hide toolbox when chart has zero dimensions (e.g., hidden subchart)
         if (this.scale.height === 0 || this.scale.width === 0) {

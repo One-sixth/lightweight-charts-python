@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="" data-theme="dark">
 <head>
-    <title>bn_lightweight-charts-python</title>
+    <title>tab_lightweight-charts-python</title>
     <link rel="stylesheet" href="styles.css">
     <script src="./lightweight-charts.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
@@ -60,12 +60,47 @@
     body {
         margin: 0;
         padding: 0;
-        overflow-y: auto;
         font-family: var(--font);
         font-size: 14px;
         background: var(--bg);
         color: var(--text);
         line-height: 1.5;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    /* sidebar-backdrop: fixed 定位，不影响布局 */
+    #sidebar-backdrop {
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+    }
+
+    /* sidebar: fixed 定位，固定宽度和高度 */
+    #sidebar {
+        position: fixed;
+        width: 360px;
+        height: 100%;
+        top: 0;
+        left: -420px;
+    }
+
+    /* menu-btn: absolute 定位，固定尺寸 */
+    #menu-btn {
+        position: absolute;
+        width: 36px;
+        height: 36px;
+        top: 4px;
+        left: 10px;
+    }
+
+    /* nav: flex-shrink: 0 保持固定高度 */
+    nav {
+        flex-shrink: 0;
     }
 
     /* Clickable date cells */
@@ -99,7 +134,7 @@
         border-radius: var(--radius);
         font-family: var(--font);
         font-size: 14px;
-        overflow: hidden;
+        overflow: auto;
     }
 
     .tableview > tbody > tr:nth-child(even) { background: var(--surface2); }
@@ -190,7 +225,7 @@
         font-family: var(--font-mono);
         font-size: 12px;
         margin: 4px 0 6px;
-        overflow: hidden;
+        overflow: auto;
     }
 
     .tableview-dark { background: var(--sub-bg); }
@@ -391,8 +426,13 @@
     }
 
     /* ── Tab content ─────────────────────────────────────────── */
-    .tab-pane          { display: none; }
+    #nav-tabContent    {
+        flex: 1;
+        position: relative;
+    }
+    .tab-pane          { display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
     .tab-pane.active   { display: block; }
+    #container         { width: 100%; height: 100%; }
 
     .tab-content-inner {
         padding: 14px 20px 18px;
@@ -440,6 +480,9 @@
     </style>
 </head>
 <body>
+    <!-- HtmlTabChart 标记：用于 JavaScript 判断图表类型 -->
+    <div id="html-tab-chart-marker" data-type="html-tab-chart" style="display: none;"></div>
+
     <!-- Sidebar -->
     <div id="sidebar-backdrop" aria-hidden="true"></div>
     <div id="sidebar">
@@ -472,7 +515,7 @@
         <div class="tab-pane active" id="nav-chart" role="tabpanel" aria-labelledby="nav-home-tab" tabindex="0">
             <div id="container"></div>
         </div>
-        
+
         <div class="tab-pane" id="nav-trades" role="tabpanel" aria-labelledby="nav-trades-tab" tabindex="0">
             <div class="tab-content-inner">
                 <div class="tab-section-head">
@@ -690,5 +733,3 @@
     </script>
 </body>
 </html>
-
-
