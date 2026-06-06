@@ -121,6 +121,7 @@
     td.dt0:focus-visible,
     td.dt1:focus-visible,
     td.dt:focus-visible {
+        outline: none;
         box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 20%, transparent);
         border-radius: 4px;
     }
@@ -368,27 +369,22 @@
     /* ── Theme toggle button ───────────────────────────────────── */
     #theme-btn {
         margin-left: auto;
-        margin-bottom: 8px;
         background: none;
-        border: 1px solid var(--border2);
-        border-radius: var(--radius);
+        border: none;
+        border-bottom: 2px solid transparent;
         color: var(--text-muted);
         cursor: pointer;
         display: flex;
         align-items: center;
         gap: 5px;
-        padding: 3px 10px;
-        font-size: 12px;
-        font-family: var(--font);
+        padding: 0 14px 10px;
+        font-size: 14px;
         font-weight: 500;
-        transition: color .15s, border-color .15s, background .15s;
+        letter-spacing: .02em;
+        transition: color .15s;
         white-space: nowrap;
     }
-    #theme-btn:hover {
-        color: var(--text);
-        border-color: var(--text-muted);
-        background: var(--surface2);
-    }
+    #theme-btn:hover { color: var(--text); }
     #theme-btn svg { flex-shrink: 0; }
 
     /* ── Nav tabs ────────────────────────────────────────────── */
