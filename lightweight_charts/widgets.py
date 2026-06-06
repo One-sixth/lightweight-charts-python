@@ -176,16 +176,16 @@ class StaticLWC(abstract.AbstractChart):
                 )
             ''' + '\n'
 
-    def load(self):
+    def export(self):
         """完成 JS 脚本收集并渲染 HTML。"""
         if self.win.loaded:
             return
         self.win.loaded = True
         for script in self.win.final_scripts:
             self._html += '\n' + script + '\n'
-        self._load()
+        self._export()
 
-    def _load(self): pass
+    def _export(self): pass
 
 
 class StreamlitChart(StaticLWC):
@@ -193,7 +193,7 @@ class StreamlitChart(StaticLWC):
     def __init__(self, width=None, height=None, inner_width=1, inner_height=1, scale_candles_only: bool = False, toolbox: bool = False):
         super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox)
 
-    def _load(self):
+    def _export(self):
         if sthtml is None:
             raise ModuleNotFoundError('streamlit.components.v1.html was not found, and must be installed to use StreamlitChart.')
         sthtml(f'{self._html_init}  (async ()=> {{\n{self._html}\n}})();\n </script></body></html>', width=self.width, height=self.height)
@@ -205,7 +205,7 @@ class JupyterChart(StaticLWC):
         super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True)
 
 
-    def _load(self):
+    def _export(self):
         if HTML is None:
             raise ModuleNotFoundError('IPython.display.HTML was not found, and must be installed to use JupyterChart.')
         html_code = html.escape(f"{self._html_init}  (async ()=> {{\n{self._html}\n}})();\n </script></body></html>")
@@ -216,13 +216,12 @@ class JupyterChart(StaticLWC):
 class HTMLChart(StaticLWC):
     """导出为独立 HTML 文件的图表。"""
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1,
-                scale_candles_only: bool = False, toolbox: bool = False, filename = "charts.html"):
+                scale_candles_only: bool = False, toolbox: bool = False):
         super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True)
-        self.filename = filename
 
-    def _load(self):
+    def _export(self, filename: str = "charts.html"):
         html_code = f"{self._html_init}  (async ()=> {{\n {self._html}\n}})();\n </script></body></html>"
-        with open(self.filename, 'w', encoding='utf-8') as file:
+        with open(filename, 'w', encoding='utf-8') as file:
             file.write(html_code)
 
 
@@ -235,7 +234,7 @@ class HtmlTabChart(StaticLWC):
     Original author: smalinin
     """
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1,
-                scale_candles_only: bool = False, toolbox: bool = False, filename = "tab_charts.html"):
+                scale_candles_only: bool = False, toolbox: bool = False):
         super().__init__(width=width, height=height, inner_width=inner_width, inner_height=inner_height,
                         scale_candles_only=scale_candles_only, toolbox=toolbox, autosize=True,
                         template='index_tab.html')
@@ -245,9 +244,11 @@ class HtmlTabChart(StaticLWC):
         self.performance = []
         self.strat_titles = []
         self.strat_parameters = []
-        self.filename = filename
 
-    def _prepare_html(self):
+    def get_html(self) -> str:
+        """获取完整的 HTML 代码。
+        :return: 完整的 HTML 字符串
+        """
         func_code = ""
         all_wins = self.js_win + [self._html]
         for i, js in enumerate(all_wins):
@@ -380,9 +381,12 @@ class HtmlTabChart(StaticLWC):
         '''
         return html_code
 
-    def _load(self):
-        html_code = self._prepare_html()
-        with open(self.filename, 'w', encoding='utf-8') as file:
+    def export(self, filename: str):
+        """导出图表为 HTML 文件。
+        :param filename: 输出文件名
+        """
+        html_code = self.get_html()
+        with open(filename, 'w', encoding='utf-8') as file:
             file.write(html_code)
 
     def new_window(self):

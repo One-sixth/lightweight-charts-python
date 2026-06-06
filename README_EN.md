@@ -73,6 +73,8 @@ Below is the consolidated and optimized Markdown version, retaining all informat
 30. 📊 **Resource Audit** — `chart.audit(use_js=True)` returns complete TOML format JS variable state
 31. ✅ **Comprehensive Cleanup Tests** — `test_cleanup.py` verifies Python + JS leak-free for all resource types
 32. 🗂️ **Multiple Chart Instances** — Fully independent chart objects
+33. 📑 **HtmlTabChart** — Multi-strategy Tab switching chart, supports strategy switching, trade details, performance metrics (adapted from [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python)'s HtmlChart_BN)
+34. 📚 **Example 32** — HtmlTabChart multi-strategy Tab switching complete demo
 
 
     🧰 **Primary Supported Environments** — PySide6, PyQt6, wxPython
@@ -825,5 +827,48 @@ if __name__ == '__main__':
 | `sync_crosshairs_only` | `bool` | `True` syncs only crosshair, timeline remains independent |
 
 ![Chart Synchronization](images/31_chart_sync.png)
+
+---
+
+### Example 32: HtmlTabChart (Multi-Strategy Tab Switching)
+
+```python
+from lightweight_charts import HtmlTabChart
+
+chart = HtmlTabChart(width=1200, height=800)
+
+# Strategy 1: Moving Average Crossover
+chart.set_name('MA Crossover')
+chart.set(df1)
+chart.set_trades(trades1)
+chart.set_performance_metrics(perf1, 'MA Crossover')
+chart.set_parameters_list(params1)
+chart.new_window()  # Switch to next strategy
+
+# Strategy 2: Bollinger Bands
+chart.set_name('Bollinger Bands')
+chart.set(df2)
+chart.set_trades(trades2)
+chart.set_performance_metrics(perf2, 'Bollinger Bands')
+chart.set_parameters_list(params2)
+
+chart.export('multi_charts.html')
+```
+
+**HtmlTabChart Features:**
+
+| Feature | Description |
+|---------|-------------|
+| Multi-strategy switching | Switch between different strategies via sidebar |
+| Technical indicators | Support SMA, Bollinger Bands, etc. |
+| Trade markers | Open/Close position arrows |
+| Trade details | Table showing trade records, double-click to jump |
+| Performance metrics | Sharpe ratio, max drawdown, win rate, etc. |
+| Strategy parameters | Display configuration for each strategy |
+| Legend display | Show all indicator names in top-left corner |
+
+> Adapted from [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python)'s HtmlChart_BN
+
+![HtmlTabChart](images/32_html_tab_chart.png)
 
 ---

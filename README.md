@@ -76,6 +76,8 @@ https://github.com/EsIstJosh/lightweight-charts-python
 30. 📊 **资源审计** — `chart.audit(use_js=True)` 返回完整 TOML 格式的 JS 变量状态
 31. ✅ **全面的清理测试** — `test_cleanup.py` 验证所有资源类型的 Python + JS 无泄漏
 32. 🗂️ **多 Chart 实例** — 完全独立的图表对象  
+33. 📑 **HtmlTabChart** — 多策略 Tab 切换图表，支持多策略切换、交易明细、绩效指标展示（改自 [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python) 的 HtmlChart_BN）
+34. 📚 **示例 32** — HtmlTabChart 多策略 Tab 切换完整演示
 
 
     🧰 **主要支持环境** — PySide6、PyQt6、wxPython
@@ -829,5 +831,48 @@ if __name__ == '__main__':
 | `sync_crosshairs_only` | `bool` | `True` 仅同步十字光标，时间轴独立 |
 
 ![图表同步](images/31_chart_sync.png)
+
+---
+
+### 示例 32：HtmlTabChart（多策略 Tab 切换）
+
+```python
+from lightweight_charts import HtmlTabChart
+
+chart = HtmlTabChart(width=1200, height=800)
+
+# 策略1：均线交叉
+chart.set_name('均线交叉策略')
+chart.set(df1)
+chart.set_trades(trades1)
+chart.set_performance_metrics(perf1, '均线交叉策略')
+chart.set_parameters_list(params1)
+chart.new_window()  # 切换到下一个策略
+
+# 策略2：布林带
+chart.set_name('布林带策略')
+chart.set(df2)
+chart.set_trades(trades2)
+chart.set_performance_metrics(perf2, '布林带策略')
+chart.set_parameters_list(params2)
+
+chart.export('multi_charts.html')
+```
+
+**HtmlTabChart 功能：**
+
+| 功能 | 说明 |
+|------|------|
+| 多策略切换 | 左侧边栏切换不同策略的 K 线图 |
+| 技术指标 | 支持 SMA、布林带等指标叠加 |
+| 买卖标记 | 开仓/平仓箭头标记 |
+| 交易明细 | 表格展示交易记录，双击跳转 |
+| 绩效指标 | 夏普比率、最大回撤、胜率等 |
+| 策略参数 | 显示每个策略的配置参数 |
+| 图例显示 | 左上角显示所有指标名称 |
+
+> 改自 [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python) 的 HtmlChart_BN
+
+![HtmlTabChart](images/32_html_tab_chart.png)
 
 ---

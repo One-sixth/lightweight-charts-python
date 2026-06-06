@@ -54,7 +54,7 @@ class ReflexChart(StaticLWC):
 
     def get_html(self) -> str:
         """生成并返回完整的自包含 HTML 字符串（无需 reflex 包）。"""
-        self.load()
+        self.export()
         return self._build_html()
 
     def _build_html(self) -> str:
@@ -81,7 +81,7 @@ class ReflexChart(StaticLWC):
         return (f"{html_init}{messaging}  (async ()=> {{\n{self._html}\n}})();\n"
                 "</script></body></html>")
 
-    def _load(self):
+    def _export(self):
         """若指定了 output_file，写入文件。"""
         if self._output_file:
             with open(self._output_file, 'w', encoding='utf-8') as f:

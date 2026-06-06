@@ -8,10 +8,10 @@
 ```
 lightweight-charts-python/
 ├── lightweight_charts/         ← Python 后端 (核心包)
-│   ├── __init__.py             # 导出 Chart, JupyterChart, HTMLChart, PolygonChart
+│   ├── __init__.py             # 导出 Chart, JupyterChart, HTMLChart, HtmlTabChart, PolygonChart
 │   ├── abstract.py             # 核心类: Window, AbstractChart, Candlestick, Line, Histogram, SeriesCommon
 │   ├── chart.py                # Chart (pywebview 桌面窗口实现) + CrossProcessChart (跨进程嵌入 Qt)
-│   ├── widgets.py              # JupyterChart, HTMLChart, QtChart, WxChart, StreamlitChart
+│   ├── widgets.py              # JupyterChart, HTMLChart, HtmlTabChart, QtChart, WxChart, StreamlitChart
 │   ├── toolbox.py              # ToolBox (绘图的保存/加载/导入/导出)
 │   ├── topbar.py               # TopBar + Widget/Switcher/Menu/Button/TextWidget
 │   ├── table.py                # Table + Row + Section
@@ -154,15 +154,41 @@ from lightweight_charts import HTMLChart
 chart = HTMLChart(
     width=1200, height=800,
     inner_height=-500,              # 子面板高度偏移
-    filename='charts.html',         # 输出的 HTML 文件名
     toolbox=False
 )
 # ... 设置数据 ...
-chart.load()                        # 生成 HTML 文件
-# 然后用 webbrowser.open(chart.filename) 打开
+chart.export('charts.html')         # 导出 HTML 文件
+# 然后用 webbrowser.open('charts.html') 打开
 ```
 
-### 3.2.1 CrossProcessChart (跨进程嵌入 Qt)
+### 3.3 HtmlTabChart (多策略 Tab 切换)
+
+支持多策略切换、交易明细、绩效指标展示。改自 [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python) 的 HtmlChart_BN。
+
+```python
+from lightweight_charts import HtmlTabChart
+
+chart = HtmlTabChart(width=1200, height=800)
+
+# 策略1
+chart.set_name('均线交叉策略')
+chart.set(df1)
+chart.set_trades(trades1)
+chart.set_performance_metrics(perf1, '均线交叉策略')
+chart.set_parameters_list(params1)
+chart.new_window()  # 切换到下一个策略
+
+# 策略2
+chart.set_name('布林带策略')
+chart.set(df2)
+chart.set_trades(trades2)
+chart.set_performance_metrics(perf2, '布林带策略')
+chart.set_parameters_list(params2)
+
+chart.export('multi_charts.html')   # 导出 HTML 文件
+```
+
+### 3.4 CrossProcessChart (跨进程嵌入 Qt)
 
 支持 Windows 和 Linux/X11。图表运行在独立子进程中（pywebview），通过原生窗口句柄嵌入到 Qt 布局中，类似 Chrome 多进程窗口嵌入。不支持 Wayland 和 macOS。所有 AbstractChart 方法（set, update, marker, create_line 等）均可用。
 

@@ -8,11 +8,26 @@
 
 ### Added
 
+- **HtmlTabChart**: 新增多策略 Tab 切换图表，支持多策略切换、交易明细、绩效指标展示
+  - 改自 [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python) 的 HtmlChart_BN
+  - 新增示例 `32_html_tab_chart`
+  - 支持技术指标（SMA、布林带）、买卖标记、图例显示
+  - 使用专用标记 `html-tab-chart-marker` 实现自适应高度计算
+
 ### Changed
+
+- **API 重命名**: `StaticLWC.load()` → `export()`，`_load()` → `_export()`
+- **HTMLChart**: 移除 `filename` 构造参数，改为 `export(filename)` 方法
+- **HtmlTabChart**: 移除 `filename` 构造参数，改为 `export(filename)` 方法
+- **ReflexChart**: `load()` → `export()`，`_load()` → `_export()`
 
 ### Fixed
 
-### Deprecated
+- **HtmlTabChart 多策略代码丢失**: 修复 `_prepare_html()` 只遍历历史策略，遗漏当前策略的问题
+- **HtmlTabChart UTF-8 编码**: 修复 HTML 文件写入时的 `UnicodeEncodeError`
+- **marker API 参数格式**: 修复 `position` 和 `shape` 参数使用错误格式导致标记不显示的问题
+- **HtmlTabChart X 轴刻度被裁剪**: 修复图表高度计算错误导致 X 轴刻度不可见的问题
+- **HtmlTabChart 滚动条**: 修复页面出现滚动条的问题，改用 flexbox 布局
 
 ---
 

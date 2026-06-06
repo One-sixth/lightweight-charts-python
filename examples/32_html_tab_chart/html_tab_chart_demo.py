@@ -168,8 +168,7 @@ def demo():
     # 创建图表
     chart = HtmlTabChart(
         width=1200, 
-        height=800,
-        filename='html_tab_chart_demo.html'
+        height=800
     )
     
     # 启用图例
@@ -245,13 +244,14 @@ def demo():
     params2 = generate_parameters()
     chart.set_parameters_list(params2)
     
-    # ========== 生成 HTML 文件 ==========
-    print("💾 生成 HTML 文件...")
-    chart.load()
+    # ========== 导出 HTML 文件 ==========
+    print("💾 导出 HTML 文件...")
+    filename = 'html_tab_chart_demo.html'
+    chart.export(filename)
     
     print("=" * 50)
     print(f"✅ 演示完成！")
-    print(f"📁 文件已生成: {chart.filename}")
+    print(f"📁 文件已生成: {filename}")
     print(f"🌐 请在浏览器中打开文件查看效果")
     print()
     print("🔍 功能验证清单:")

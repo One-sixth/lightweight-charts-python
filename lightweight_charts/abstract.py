@@ -22,7 +22,7 @@ from .util import (
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(current_dir, 'js', 'index.html')
-INDEX_BN = os.path.join(current_dir, 'js', 'index_bn.html')
+INDEX_TAB = os.path.join(current_dir, 'js', 'index_tab.html')
 
 
 class Window:
