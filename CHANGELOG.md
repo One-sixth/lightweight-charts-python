@@ -4,6 +4,33 @@
 
 ---
 
+## [v2.5.0] - 2026-06-08
+
+### Added
+
+- **reset_sub()**: 新增子图内容重置功能，清除子图全部内容但保留布局，不影响其他子图，reset 后可重用
+  - 清除范围：K线数据、折线/柱状图系列、价格线、标记、绘图、表格、ToolBox、TopBar、Legend、Events、sync、handlers
+  - 新增示例 `33_reset_sub`，演示 4 子图网格 + 主图 reset + 独立子图 + 十字光标同步恢复
+  - 新增测试 `test_reset_sub.py`，自动化验证 Python + JS 双端资源清理
+- **Table div 归属修复**: Table 不再追加到全局容器，改为追加到所属图表的 div，修复多子图表格重叠问题
+- **syncChartsAll 回调存储**: crosshair 和 range 回调现在被正确存储到 `_syncCallbacks` 中，支持后续清理和重建
+
+### Changed
+
+- **syncChartsAll 保护检查**: `target.legend?.div` 检查仅保护 `legendHandler` 调用，不再阻断 `setCrosshairPosition`
+- **DrawingTool/ContextMenu 访问权限**: `_chart`、`_clickHandler`、`_moveHandler`、`_onRightClick`、`div` 改为 public，支持 ToolBox 清理
+- **ToolBox 构造函数**: 存储 `_contextMenu` 和 `_undoHandler` 引用，支持精确清理
+
+### Fixed
+
+- **syncChartsAll 回调未存储**: 匿名回调改为命名变量并存储到 `_syncCallbacks['__crosshairAll']`/`['__rangeAll']`，支持 unsubscribe
+- **_unsync_all 只处理部分回调**: 改为遍历所有 `_syncCallbacks` 条目统一清理，兼容 `syncCharts` 和 `syncChartsAll` 两种模式
+- **_rebuildSync 排除 reset 子图**: reset_sub 后改为调用 `syncChartsAll` 全量重建，不排除任何子图
+- **setCrosshairPosition 异常中断**: 用 try-catch 包裹，空数据图表异常不影响其他图表的十字光标同步
+- **Table div 追加到全局容器**: 移除 Table JS 构造函数中的 `window.containerDiv.appendChild`，由 Python 端控制追加位置
+
+---
+
 ## [v2.4.2] - 2026-06-07
 
 ### Added

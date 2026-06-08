@@ -41,22 +41,25 @@ export class ToolBox {
     private _handlerID: string;
 
     private _drawingTool: DrawingTool;
+    private _contextMenu: ContextMenu;
+    private _undoHandler: Function;
 
     constructor(handlerID: string, chart: IChartApi, series: ISeriesApi<SeriesType>, commandFunctions: Function[]) {
         this._handlerID = handlerID;
         this._commandFunctions = commandFunctions;
         this._drawingTool = new DrawingTool(chart, series, () => this.removeActiveAndSave());
         this.div = this._makeToolBox()
-        new ContextMenu(this.saveDrawings, this._drawingTool);
+        this._contextMenu = new ContextMenu(this.saveDrawings, this._drawingTool);
 
-        commandFunctions.push((event: KeyboardEvent) => {
+        this._undoHandler = (event: KeyboardEvent) => {
             if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ') {
                 const drawingToDelete = this._drawingTool.drawings.pop();
                 if (drawingToDelete) this._drawingTool.delete(drawingToDelete)
                 return true;
             }
             return false;
-        });
+        };
+        commandFunctions.push(this._undoHandler);
     }
 
     toJSON() {
@@ -183,5 +186,27 @@ export class ToolBox {
                     break;
             }
         })
+    }
+
+    /**
+     * 清理 ToolBox 的所有 JS 资源：DrawingTool 事件、ContextMenu、commandFunction、DOM。
+     * 用于 reset_sub() 时清理子图的绘图工具箱。
+     */
+    public _cleanup() {
+        // 取消 DrawingTool 的 chart 事件订阅
+        this._drawingTool._chart.unsubscribeClick(this._drawingTool._clickHandler);
+        this._drawingTool._chart.unsubscribeCrosshairMove(this._drawingTool._moveHandler);
+        // 清理 drawings
+        this.clearDrawings();
+        // 清理 ContextMenu
+        if (this._contextMenu) {
+            document.body.removeEventListener('contextmenu', this._contextMenu._onRightClick);
+            this._contextMenu.div.remove();
+        }
+        // 清理 commandFunctions
+        const idx = this._commandFunctions.indexOf(this._undoHandler);
+        if (idx >= 0) this._commandFunctions.splice(idx, 1);
+        // 移除 DOM
+        this.div.remove();
     }
 }

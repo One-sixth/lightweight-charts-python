@@ -84,7 +84,7 @@ export class Table {
         overflowWrapper.style.minHeight = '0'
         overflowWrapper.appendChild(this.table)
         this._div.appendChild(overflowWrapper)
-        window.containerDiv.appendChild(this._div)
+        // 不再自动追加到容器，由 Python 端负责追加到正确的图表 div
 
         if (!draggable) return
 

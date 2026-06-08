@@ -98,6 +98,16 @@ var Lib = (function (exports, lightweightCharts) {
         // makeSeriesRows(handler: Handler) {
         //     if (this.linesEnabled) handler._seriesList.forEach(s => this.makeSeriesRow(s))
         // }
+        /**
+         * 清理 legend 资源：取消 crosshair 订阅、移除 DOM、清空内部状态。
+         * 用于 reset_sub() 时清理子图的 legend。
+         */
+        cleanup() {
+            this.handler.chart.unsubscribeCrosshairMove(this.legendHandler);
+            this.div.remove();
+            this._lines = [];
+            this._lines_grp = {};
+        }
         makeSeriesRow(name, series, paneIndex) {
             const strokeColor = '#FFF';
             let openEye = `
@@ -1643,13 +1653,15 @@ var Lib = (function (exports, lightweightCharts) {
         _commandFunctions;
         _handlerID;
         _drawingTool;
+        _contextMenu;
+        _undoHandler;
         constructor(handlerID, chart, series, commandFunctions) {
             this._handlerID = handlerID;
             this._commandFunctions = commandFunctions;
             this._drawingTool = new DrawingTool(chart, series, () => this.removeActiveAndSave());
             this.div = this._makeToolBox();
-            new ContextMenu(this.saveDrawings, this._drawingTool);
-            commandFunctions.push((event) => {
+            this._contextMenu = new ContextMenu(this.saveDrawings, this._drawingTool);
+            this._undoHandler = (event) => {
                 if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ') {
                     const drawingToDelete = this._drawingTool.drawings.pop();
                     if (drawingToDelete)
@@ -1657,7 +1669,8 @@ var Lib = (function (exports, lightweightCharts) {
                     return true;
                 }
                 return false;
-            });
+            };
+            commandFunctions.push(this._undoHandler);
         }
         toJSON() {
             // Exclude the chart attribute from serialization
@@ -1767,6 +1780,28 @@ var Lib = (function (exports, lightweightCharts) {
                         break;
                 }
             });
+        }
+        /**
+         * 清理 ToolBox 的所有 JS 资源：DrawingTool 事件、ContextMenu、commandFunction、DOM。
+         * 用于 reset_sub() 时清理子图的绘图工具箱。
+         */
+        _cleanup() {
+            // 取消 DrawingTool 的 chart 事件订阅
+            this._drawingTool._chart.unsubscribeClick(this._drawingTool._clickHandler);
+            this._drawingTool._chart.unsubscribeCrosshairMove(this._drawingTool._moveHandler);
+            // 清理 drawings
+            this.clearDrawings();
+            // 清理 ContextMenu
+            if (this._contextMenu) {
+                document.body.removeEventListener('contextmenu', this._contextMenu._onRightClick);
+                this._contextMenu.div.remove();
+            }
+            // 清理 commandFunctions
+            const idx = this._commandFunctions.indexOf(this._undoHandler);
+            if (idx >= 0)
+                this._commandFunctions.splice(idx, 1);
+            // 移除 DOM
+            this.div.remove();
         }
     }
 
@@ -2181,6 +2216,9 @@ var Lib = (function (exports, lightweightCharts) {
         resize_hdr_height = 8;
         watermark;
         seriesMarkers;
+        // syncCharts 同步追踪
+        _syncedHandlers = [];
+        _syncCallbacks = {};
         gridPosition = null;
         gridDimensions = null;
         isGridLayout = false;
@@ -2547,42 +2585,60 @@ var Lib = (function (exports, lightweightCharts) {
             return serialized;
         }
         static syncChartsAll(handlers, crosshairOnly = false) {
+            // 新增：存储同步关系
+            handlers.forEach(h => {
+                h._syncedHandlers = handlers.map(t => t.id).filter(id => id !== h.id);
+            });
             // 1) Crosshair
             handlers.forEach((source) => {
-                source.chart.subscribeCrosshairMove((param) => {
+                const crosshairCb = (param) => {
                     handlers.forEach((target) => {
                         if (target === source)
                             return;
                         if (!param.time) {
-                            target.chart.clearCrosshairPosition();
+                            try {
+                                target.chart.clearCrosshairPosition();
+                            }
+                            catch (_) { }
                             return;
                         }
-                        // get the point from the source series (for legend update)
-                        const point = param.seriesData.get(source.series) || null;
-                        // set the crosshair on the target chart
-                        target.chart.setCrosshairPosition(0, param.time, target.series);
-                        // update the legend on the target
-                        if (point) {
-                            const event = {
-                                time: param.time,
-                                point: point,
-                            };
-                            target.legend.legendHandler(event, true);
+                        try {
+                            target.chart.setCrosshairPosition(0, param.time, target.series);
+                            const point = param.seriesData.get(source.series) || null;
+                            if (point && target.legend?.div) {
+                                const event = {
+                                    time: param.time,
+                                    point: point,
+                                };
+                                target.legend.legendHandler(event, true);
+                            }
                         }
+                        catch (_) { }
                     });
-                });
+                };
+                source.chart.subscribeCrosshairMove(crosshairCb);
+                // 存储回调引用（source 自己的回调订阅在自己 chart 上）
+                source._syncCallbacks['__crosshairAll'] = {
+                    crosshair: crosshairCb,
+                    crosshairSource: source,
+                };
             });
             if (crosshairOnly)
                 return;
             // 2) Visible range synchronization
             handlers.forEach((source) => {
-                source.chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+                const rangeCb = (range) => {
                     handlers.forEach((target) => {
                         if (target === source || !range)
                             return;
                         target.chart.timeScale().setVisibleLogicalRange(range);
                     });
-                });
+                };
+                source.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeCb);
+                source._syncCallbacks['__rangeAll'] = {
+                    range: rangeCb,
+                    rangeSource: source,
+                };
             });
         }
         static syncCharts(childChart, parentChart, crosshairOnly = false) {
@@ -2618,10 +2674,110 @@ var Lib = (function (exports, lightweightCharts) {
             };
             parentChart.chart.subscribeCrosshairMove(setChildCrosshair);
             childChart.chart.subscribeCrosshairMove(setParentCrosshair);
+            // 存储回调引用 + 记录订阅源
+            parentChart._syncCallbacks[childChart.id] = {
+                crosshair: setChildCrosshair,
+                crosshairSource: parentChart
+            };
+            childChart._syncCallbacks[parentChart.id] = {
+                crosshair: setParentCrosshair,
+                crosshairSource: childChart
+            };
+            parentChart._syncedHandlers.push(childChart.id);
+            childChart._syncedHandlers.push(parentChart.id);
             if (crosshairOnly)
                 return;
             childChart.chart.timeScale().subscribeVisibleLogicalRangeChange(setParentRange);
             parentChart.chart.timeScale().subscribeVisibleLogicalRangeChange(setChildRange);
+            // 存储 range 回调引用
+            parentChart._syncCallbacks[childChart.id].range = setChildRange;
+            parentChart._syncCallbacks[childChart.id].rangeSource = parentChart;
+            childChart._syncCallbacks[parentChart.id].range = setParentRange;
+            childChart._syncCallbacks[parentChart.id].rangeSource = childChart;
+        }
+        /**
+         * 双向解除与指定 handler 的 sync 关联。
+         * 从本图取消订阅其他图上的回调，清理同步列表。
+         */
+        unsyncChart(handlerId) {
+            const cb = this._syncCallbacks[handlerId];
+            if (cb) {
+                if (cb.crosshair && cb.crosshairSource) {
+                    cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
+                }
+                if (cb.range && cb.rangeSource) {
+                    cb.rangeSource.chart.timeScale().unsubscribeVisibleLogicalRangeChange(cb.range);
+                }
+                delete this._syncCallbacks[handlerId];
+            }
+            this._syncedHandlers = this._syncedHandlers.filter(id => id !== handlerId);
+            // 从其他图的同步列表中移除本图
+            Handler._all.forEach(h => {
+                if (h._syncedHandlers && h._syncedHandlers.includes(this.id)) {
+                    h._syncedHandlers = h._syncedHandlers.filter(id => id !== this.id);
+                }
+            });
+        }
+        /**
+         * 重建指定 chart 的 sync 订阅（排除已删除的 handler）。
+         * 取消旧回调，为剩余 targets 创建新回调并重新订阅。
+         */
+        static _rebuildSync(chart, excludedId) {
+            // 取消本图所有旧的 sync 回调
+            for (const [, cb] of Object.entries(chart._syncCallbacks)) {
+                if (cb.crosshair && cb.crosshairSource) {
+                    cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
+                }
+                if (cb.range && cb.rangeSource) {
+                    cb.rangeSource.chart.timeScale().unsubscribeVisibleLogicalRangeChange(cb.range);
+                }
+            }
+            chart._syncCallbacks = {};
+            // 收集剩余的 targets
+            const targets = chart._syncedHandlers
+                .filter(id => id !== excludedId)
+                .map(id => Handler._all.find(h => h.id === id))
+                .filter(Boolean);
+            if (targets.length === 0)
+                return;
+            // 重建 crosshair 同步
+            const crosshairCb = (param) => {
+                targets.forEach(target => {
+                    if (!target.legend?.div)
+                        return;
+                    if (!param.time) {
+                        target.chart.clearCrosshairPosition();
+                        return;
+                    }
+                    const point = param.seriesData.get(chart.series) || null;
+                    target.chart.setCrosshairPosition(0, param.time, target.series);
+                    if (point) {
+                        target.legend.legendHandler({ time: param.time, point }, true);
+                    }
+                });
+            };
+            chart.chart.subscribeCrosshairMove(crosshairCb);
+            // 存储新的回调引用
+            targets.forEach(target => {
+                chart._syncCallbacks[target.id] = {
+                    crosshair: crosshairCb,
+                    crosshairSource: chart
+                };
+            });
+            // 重建 range 同步
+            const rangeCb = (range) => {
+                targets.forEach(target => {
+                    if (range)
+                        target.chart.timeScale().setVisibleLogicalRange(range);
+                });
+            };
+            chart.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeCb);
+            targets.forEach(target => {
+                if (chart._syncCallbacks[target.id]) {
+                    chart._syncCallbacks[target.id].range = rangeCb;
+                    chart._syncCallbacks[target.id].rangeSource = chart;
+                }
+            });
         }
         static makeSearchBox(chart) {
             const searchWindow = document.createElement('div');
@@ -2784,7 +2940,7 @@ var Lib = (function (exports, lightweightCharts) {
             overflowWrapper.style.minHeight = '0';
             overflowWrapper.appendChild(this.table);
             this._div.appendChild(overflowWrapper);
-            window.containerDiv.appendChild(this._div);
+            // 不再自动追加到容器，由 Python 端负责追加到正确的图表 div
             if (!draggable)
                 return;
             let offsetX, offsetY;

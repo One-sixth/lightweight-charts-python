@@ -10,7 +10,7 @@ import { HorizontalLine } from '../horizontal-line/horizontal-line';
 
 
 export class DrawingTool {
-    private _chart: IChartApi;
+    public _chart: IChartApi;
     private _series: ISeriesApi<SeriesType>;
     private _finishDrawingCallback: Function | null = null;
 
@@ -28,8 +28,8 @@ export class DrawingTool {
         this._chart.subscribeCrosshairMove(this._moveHandler);
     }
 
-    private _clickHandler = (param: MouseEventParams) => this._onClick(param);
-    private _moveHandler = (param: MouseEventParams) => this._onMouseMove(param);
+    public _clickHandler = (param: MouseEventParams) => this._onClick(param);
+    public _moveHandler = (param: MouseEventParams) => this._onMouseMove(param);
 
     beginDrawing(DrawingType: new (...args: any[]) => Drawing) {
         this._drawingType = DrawingType;

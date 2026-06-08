@@ -28,7 +28,7 @@ declare const window: GlobalParams;
 
 
 export class ContextMenu {
-    private div: HTMLDivElement
+    public div: HTMLDivElement
     private hoverItem: Item | null;
     private items: HTMLElement[] = []
 
@@ -54,7 +54,7 @@ export class ContextMenu {
         }
     }
 
-    private _onRightClick(ev: MouseEvent) {
+    public _onRightClick(ev: MouseEvent) {
         if (!Drawing.hoveredObject) return;
 
         for (const item of this.items) {

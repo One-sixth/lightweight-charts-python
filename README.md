@@ -78,6 +78,8 @@ https://github.com/EsIstJosh/lightweight-charts-python
 32. 🗂️ **多 Chart 实例** — 完全独立的图表对象  
 33. 📑 **HtmlTabChart** — 多策略 Tab 切换图表，支持多策略切换、交易明细、绩效指标展示（改自 [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python) 的 HtmlChart_BN）
 34. 📚 **示例 32** — HtmlTabChart 多策略 Tab 切换完整演示
+35. 🔄 **子图内容重置** — `reset_sub()` 清除子图全部内容（数据/线条/标记/绘图/表格/ToolBox/TopBar/Legend/Events/sync/handlers），保留布局，不影响其他子图，reset 后可重用
+36. 📚 **示例 33** — reset_sub 子图内容重置完整演示（4 子图网格 + 主图 reset + 独立子图 + 十字光标同步恢复）
 
 
     🧰 **主要支持环境** — PySide6、PyQt6、wxPython
@@ -202,6 +204,8 @@ python -m build
 | 29 | `29_grid_layout` | 网格布局系统 |
 | 30 | `30_table_component` | 表格组件（自选股/持仓管理） |
 | 31 | `31_chart_sync` | 图表同步功能（时间轴+十字光标） |
+| 32 | `32_html_tab_chart` | HtmlTabChart 多策略 Tab 切换 |
+| 33 | `33_reset_sub` | reset_sub 子图内容重置 |
 
 ---
 
@@ -874,5 +878,52 @@ chart.export('multi_charts.html')
 > 改自 [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python) 的 HtmlChart_BN
 
 ![HtmlTabChart](images/32_html_tab_chart.png)
+
+---
+
+### 示例 33：reset_sub（子图内容重置）
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart(width=1400, height=900, position=(2,2,1), toolbox=True)
+sub_a = chart.create_subchart(position=(2,2,2), toolbox=True, sync_id=chart.id)
+sub_b = chart.create_subchart(position=(2,2,3), sync_id=chart.id)
+sub_c = chart.create_subchart(position=(2,2,4), toolbox=True)  # 不同步
+
+# 填充数据
+chart.set(bars_main); sub_a.set(bars_a); sub_b.set(bars_b); sub_c.set(bars_c)
+
+# reset sub_b → 清除全部内容，保留布局
+sub_b.reset_sub()
+
+# 重新填充 → 子图可重用
+sub_b.set(new_bars)
+
+# reset 主图 → 也不影响其他子图
+chart.reset_sub()
+chart.set(new_bars)
+```
+
+**reset_sub 功能：**
+
+| 清除范围 | 说明 |
+|---------|------|
+| K线/成交量/持仓量数据 | `clear_data()` |
+| 折线/柱状图系列 | `Line.delete()` / `Histogram.delete()` |
+| 价格线 | `PriceLine.delete()` |
+| 标记 | `clear_markers()` |
+| 绘图 | `Drawing.delete()` |
+| 表格 | `Table.delete()` |
+| ToolBox | DrawingTool 事件 + ContextMenu + commandFunction + DOM |
+| TopBar | Widget 回调 + DOM |
+| Legend | crosshair 订阅 + DOM |
+| Events | JSEmitter 事件订阅 |
+| syncCharts | 双向解关联 + 重建 |
+| handlers | 按 salt 匹配清理 |
+
+> reset 后子图可重新填充使用，十字光标和时间轴同步自动恢复
+
+![reset_sub](images/33_reset_sub.gif)
 
 ---

@@ -80,6 +80,17 @@ export class Legend {
     //     if (this.linesEnabled) handler._seriesList.forEach(s => this.makeSeriesRow(s))
     // }
 
+    /**
+     * 清理 legend 资源：取消 crosshair 订阅、移除 DOM、清空内部状态。
+     * 用于 reset_sub() 时清理子图的 legend。
+     */
+    public cleanup() {
+        this.handler.chart.unsubscribeCrosshairMove(this.legendHandler);
+        this.div.remove();
+        this._lines = [];
+        this._lines_grp = {};
+    }
+
     makeSeriesRow(name: string, series: ISeriesApi<SeriesType>, paneIndex: number) {
         const strokeColor = '#FFF';
         let openEye = `

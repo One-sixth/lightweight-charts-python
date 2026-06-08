@@ -1399,6 +1399,135 @@ class AbstractChart(Candlestick, Pane):
             delete {subchart_id};
         ''')
 
+    def reset_sub(self):
+        """
+        清除子图全部内容，保留布局，不影响其他子图。
+
+        清除范围：
+        1. K线/成交量/持仓量数据
+        2. 所有 Line/Histogram 系列
+        3. 所有 PriceLine
+        4. 所有标记
+        5. 所有绘图（Drawings）
+        6. 所有表格（Tables）
+        7. ToolBox（DrawingTool 事件、ContextMenu、commandFunction、DOM）
+        8. TopBar（Widget 回调、DOM）
+        9. Legend（crosshair 订阅、DOM）
+        10. Events（JSEmitter 事件订阅）
+        11. syncCharts 双向解关联 + 重建
+        12. handlers 清理
+        """
+        # 1. K线/成交量/持仓量数据
+        self.clear_data()
+
+        # 2. Line/Histogram 系列
+        for line in list(self._lines):
+            line.delete()
+
+        # 3. PriceLine
+        for pl in list(self._price_lines):
+            pl.delete()
+
+        # 4. 标记
+        self.clear_markers()
+
+        # 5. 绘图
+        for d in list(self._drawings):
+            d.delete()
+
+        # 6. 表格
+        for t in list(self._tables):
+            t.delete()
+
+        # 7. ToolBox 清理
+        if hasattr(self, 'toolbox'):
+            self.toolbox._cleanup()
+            self.win.handlers.pop(f'save_drawings{self.id}', None)
+
+        # 8. TopBar 清理
+        if hasattr(self, 'topbar') and self.topbar._created:
+            for widget in list(self.topbar._widgets.values()):
+                self.win.handlers.pop(widget.id, None)
+            self.topbar._widgets.clear()
+            self.run_script(f'{self.id}._topBar?._div.remove()')
+
+        # 9. Legend 清理
+        self.run_script(f'{self.id}.legend.cleanup()')
+
+        # 10. Events 清理（JSEmitter）
+        self._cleanup_events()
+
+        # 11. syncCharts 双向解关联 + 重建
+        self._unsync_all()
+
+        # 12. handlers 清理（salt 匹配）
+        self._remove_my_handlers()
+
+    def _cleanup_events(self):
+        """清理 JSEmitter 事件订阅。"""
+        salt = '_' + self.id[self.id.index('.') + 1:]
+        event_keys = [
+            f'range_change{salt}',
+            f'subscribe_click{salt}',
+            f'crosshair_move{salt}',
+        ]
+        for key in event_keys:
+            self.win.handlers.pop(key, None)
+
+    def _unsync_all(self):
+        """双向解除所有 syncCharts/syncChartsAll 关联，并重建同步。"""
+        my_id = self.id
+        self.run_script(f'''
+            (() => {{
+                const myId = "{my_id}";
+                const me = Lib.Handler._all.find(h => h.id === myId);
+                if (!me) return;
+
+                // 对所有关联图：取消所有 sync 回调
+                Lib.Handler._all.forEach(h => {{
+                    if (h.id === myId) return;
+                    if (!h._syncedHandlers || !h._syncedHandlers.includes(myId)) return;
+
+                    // 遍历所有 _syncCallbacks，取消 crosshair 和 range 回调
+                    for (const [key, cb] of Object.entries(h._syncCallbacks)) {{
+                        if (cb.crosshair && cb.crosshairSource) {{
+                            cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
+                        }}
+                        if (cb.range && cb.rangeSource) {{
+                            cb.rangeSource.chart.timeScale().unsubscribeVisibleLogicalRangeChange(cb.range);
+                        }}
+                    }}
+                    h._syncCallbacks = {{}};
+                    h._syncedHandlers = h._syncedHandlers.filter(id => id !== myId);
+                }});
+
+                // 清理本图所有 sync 回调
+                for (const [key, cb] of Object.entries(me._syncCallbacks)) {{
+                    if (cb.crosshair && cb.crosshairSource) {{
+                        cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
+                    }}
+                    if (cb.range && cb.rangeSource) {{
+                        cb.rangeSource.chart.timeScale().unsubscribeVisibleLogicalRangeChange(cb.range);
+                    }}
+                }}
+                me._syncCallbacks = {{}};
+                me._syncedHandlers = me._syncedHandlers.filter(id => id !== myId);
+
+                // 重建所有图的同步（reset_sub 不排除任何子图）
+                const allHandlers = Lib.Handler._all.filter(h => h._syncedHandlers && h._syncedHandlers.length > 0);
+                if (allHandlers.length > 1) {{
+                    Lib.Handler.syncChartsAll(allHandlers);
+                }}
+            }})()
+        ''')
+
+    def _remove_my_handlers(self):
+        """从共享 handlers 字典中移除属于本子图的条目。"""
+        salt = '_' + self.id[self.id.index('.') + 1:]
+        to_remove = [k for k in self.win.handlers if salt in str(k)]
+        for k in to_remove:
+            del self.win.handlers[k]
+
     def audit(self, use_js: bool = False):
         """
         审计当前 chart 的资源状态。
@@ -1881,6 +2010,8 @@ class AbstractChart(Candlestick, Pane):
         tbl = self.win.create_table(*args.values())
         tbl._chart = self
         self._tables.append(tbl)
+        # 将表格 div 追加到当前图表的 div 中
+        self.run_script(f'{self.id}.div.appendChild({tbl.id}._div)')
         return tbl
 
     def screenshot(self, add_top_layer: bool = False, include_crosshair: bool = False) -> bytes:

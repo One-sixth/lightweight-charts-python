@@ -43,3 +43,12 @@ class ToolBox:
         if not self._save_under:
             return
         self.drawings[self._save_under.value] = json.loads(drawings)
+
+    def _cleanup(self):
+        """清理 ToolBox 的 JS 和 Python 资源。"""
+        self.run_script(f'''
+            if ({self.id}.toolBox) {{
+                {self.id}.toolBox._cleanup();
+            }}
+        ''')
+        self.drawings.clear()

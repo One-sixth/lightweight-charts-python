@@ -75,6 +75,8 @@ Below is the consolidated and optimized Markdown version, retaining all informat
 32. 🗂️ **Multiple Chart Instances** — Fully independent chart objects
 33. 📑 **HtmlTabChart** — Multi-strategy Tab switching chart, supports strategy switching, trade details, performance metrics (adapted from [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python)'s HtmlChart_BN)
 34. 📚 **Example 32** — HtmlTabChart multi-strategy Tab switching complete demo
+35. 🔄 **Subchart Content Reset** — `reset_sub()` clears all subchart content (data/lines/markers/drawings/tables/ToolBox/TopBar/Legend/Events/sync/handlers), preserves layout, does not affect other subcharts, reusable after reset
+36. 📚 **Example 33** — reset_sub subchart content reset complete demo (4-subchart grid + main chart reset + independent subchart + crosshair sync recovery)
 
 
     🧰 **Primary Supported Environments** — PySide6, PyQt6, wxPython
@@ -198,6 +200,8 @@ Learning through examples is recommended. There is extensive reference code and 
 | 29 | `29_grid_layout` | Grid layout system |
 | 30 | `30_table_component` | Table component (watchlist/position management) |
 | 31 | `31_chart_sync` | Chart synchronization (timeline + crosshair) |
+| 32 | `32_html_tab_chart` | HtmlTabChart multi-strategy Tab switching |
+| 33 | `33_reset_sub` | reset_sub subchart content reset |
 
 ---
 
@@ -870,5 +874,52 @@ chart.export('multi_charts.html')
 > Adapted from [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python)'s HtmlChart_BN
 
 ![HtmlTabChart](images/32_html_tab_chart.png)
+
+---
+
+### Example 33: reset_sub (Subchart Content Reset)
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart(width=1400, height=900, position=(2,2,1), toolbox=True)
+sub_a = chart.create_subchart(position=(2,2,2), toolbox=True, sync_id=chart.id)
+sub_b = chart.create_subchart(position=(2,2,3), sync_id=chart.id)
+sub_c = chart.create_subchart(position=(2,2,4), toolbox=True)  # Independent
+
+# Populate data
+chart.set(bars_main); sub_a.set(bars_a); sub_b.set(bars_b); sub_c.set(bars_c)
+
+# reset sub_b → clears all content, preserves layout
+sub_b.reset_sub()
+
+# Re-populate → subchart is reusable
+sub_b.set(new_bars)
+
+# reset main chart → other subcharts unaffected
+chart.reset_sub()
+chart.set(new_bars)
+```
+
+**reset_sub Scope:**
+
+| Resource | Cleanup Method |
+|----------|---------------|
+| OHLCV data | `clear_data()` |
+| Line/Histogram series | `Line.delete()` / `Histogram.delete()` |
+| Price lines | `PriceLine.delete()` |
+| Markers | `clear_markers()` |
+| Drawings | `Drawing.delete()` |
+| Tables | `Table.delete()` |
+| ToolBox | DrawingTool events + ContextMenu + commandFunction + DOM |
+| TopBar | Widget callbacks + DOM |
+| Legend | crosshair subscription + DOM |
+| Events | JSEmitter subscriptions |
+| syncCharts | Bidirectional disassociation + rebuild |
+| handlers | Salt-matched cleanup |
+
+> After reset, subchart can be re-populated. Crosshair and timeline sync auto-recover.
+
+![reset_sub](images/33_reset_sub.gif)
 
 ---
