@@ -188,6 +188,39 @@ chart.set_parameters_list(params2)
 chart.export('multi_charts.html')   # 导出 HTML 文件
 ```
 
+#### HtmlTabChart iframe 嵌入
+
+HtmlTabChart 生成的 HTML 文件可以通过 `<iframe>` 嵌入到其他网页中。
+采用**双文件方案**：外壳 HTML + 图表内容 HTML，通过 `<iframe src="...">` 引用。
+
+> **为什么不能用单文件方案？**
+> 曾尝试 `srcdoc`、`data:base64`、`blob:`、Shadow DOM、`innerHTML` 等多种单文件方案，
+> 均因浏览器安全策略或模板依赖 (`:root`/`html[data-theme]`/`document.documentElement`) 而无法正常工作。
+> 只有 `<iframe src="file.html">` 引用外部文件的方式完全可靠。
+
+```python
+from lightweight_charts import HtmlTabChart
+
+chart = HtmlTabChart(width=1200, height=800)
+chart.set_name('策略1')
+chart.set(df)
+
+# 1. 导出图表内容文件
+with open('chart_content.html', 'w', encoding='utf-8') as f:
+    f.write(chart.get_html())
+
+# 2. 创建外壳页面（通过 src 引用内容文件）
+outer = '''<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Embed</title></head>
+<body style="margin:0">
+<iframe src="chart_content.html" style="width:100%;height:100%;border:none"></iframe>
+</body></html>'''
+with open('chart_embed.html', 'w', encoding='utf-8') as f:
+    f.write(outer)
+```
+
+两个文件放在同一目录，打开 `chart_embed.html` 即可。
+
 ### 3.4 CrossProcessChart (跨进程嵌入 Qt)
 
 支持 Windows 和 Linux/X11。图表运行在独立子进程中（pywebview），通过原生窗口句柄嵌入到 Qt 布局中，类似 Chrome 多进程窗口嵌入。不支持 Wayland 和 macOS。所有 AbstractChart 方法（set, update, marker, create_line 等）均可用。

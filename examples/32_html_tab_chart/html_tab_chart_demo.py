@@ -248,11 +248,77 @@ def demo():
     print("💾 导出 HTML 文件...")
     filename = 'html_tab_chart_demo.html'
     chart.export(filename)
-    
+
+    # ========== 导出 iframe 嵌入测试页面（双文件方案） ==========
+    #
+    # 为什么需要两个文件？
+    # 曾尝试过多种单文件方案，均存在无法解决的问题：
+    #   - srcdoc：将 500K+ HTML 作为属性值内嵌，浏览器渲染时产生异常嵌套/重复层
+    #   - data:base64 URI：null origin 导致 addEventListener 对 tab 切换失效
+    #   - blob: URI：同 data URI，null origin 限制
+    #   - Shadow DOM：模板使用 :root / html[data-theme] / document.documentElement，
+    #     Shadow DOM 内不存在这些元素，CSS 变量和主题切换全部失效
+    #   - innerHTML 直接插入：浏览器不执行 innerHTML 中的 <script> 标签
+    #
+    # 最终方案：外壳 HTML 文件 + 图表内容 HTML 文件，通过 <iframe src="..."> 引用。
+    # 两个文件放在同一目录即可。
+    #
+    print("💾 导出 iframe 嵌入测试页面...")
+
+    # 1. 图表内容文件
+    chart_content_filename = 'html_tab_chart_iframe_content.html'
+    with open(chart_content_filename, 'w', encoding='utf-8') as f:
+        f.write(chart.get_html())
+
+    # 2. 外壳文件，通过 src 引用图表内容
+    iframe_html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Iframe Embed Test</title>
+    <style>
+        body {{
+            margin: 0; padding: 20px 30px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #f0f2f5; color: #333;
+        }}
+        h1 {{ color: #1a73e8; margin-bottom: 8px; }}
+        .desc {{
+            color: #666; margin-bottom: 20px; line-height: 1.6;
+        }}
+        .desc code {{
+            background: #e8eaed; padding: 2px 6px; border-radius: 3px;
+            color: #c7254e; font-size: 13px;
+        }}
+        .chart-frame {{
+            width: 100%; max-width: 1200px; height: 800px;
+            border: 2px solid #ccc; border-radius: 8px; overflow: hidden;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }}
+    </style>
+</head>
+<body>
+    <h1>Iframe Embed Test</h1>
+    <p class="desc">
+        The chart below is loaded via
+        <code>&lt;iframe src="{chart_content_filename}"&gt;</code>.<br>
+        Both files must be placed in the same directory.
+    </p>
+    <div class="chart-frame">
+        <iframe src="{chart_content_filename}" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>
+    </div>
+</body>
+</html>'''
+    iframe_filename = 'html_tab_chart_iframe_demo.html'
+    with open(iframe_filename, 'w', encoding='utf-8') as f:
+        f.write(iframe_html)
+
     print("=" * 50)
     print(f"✅ 演示完成！")
-    print(f"📁 文件已生成: {filename}")
-    print(f"🌐 请在浏览器中打开文件查看效果")
+    print(f"📁 独立文件: {filename}")
+    print(f"📁 iframe外壳: {iframe_filename}")
+    print(f"📁 iframe内容: {chart_content_filename}")
+    print(f"🌐 请在浏览器中打开 iframe 外壳文件查看效果")
     print()
     print("🔍 功能验证清单:")
     print("  1. 左侧策略切换 - 点击切换不同策略的K线图")
@@ -263,6 +329,7 @@ def demo():
     print("  6. 策略参数面板 - 显示策略配置参数")
     print("  7. 双击跳转 - 双击交易记录中的日期跳转到K线位置")
     print("  8. 图例显示 - 左上角显示所有指标名称")
+    print("  9. iframe嵌入 - 打开 iframe 测试文件验证嵌入渲染")
 
 
 if __name__ == '__main__':

@@ -8,6 +8,9 @@
 
 ### Added
 
+- **HtmlTabChart iframe 嵌入示例**: 新增示例 `32_html_tab_chart` 中的 iframe 嵌入演示，展示如何将 HtmlTabChart 嵌入其他 HTML 页面
+  - 采用双文件方案：外壳 HTML + 图表内容 HTML，通过 `<iframe src="...">` 引用
+  - 记录了多种单文件方案（srcdoc/data:base64/blob/Shadow DOM/innerHTML）的失败原因
 - **reset_sub()**: 新增子图内容重置功能，清除子图全部内容但保留布局，不影响其他子图，reset 后可重用
   - 清除范围：K线数据、折线/柱状图系列、价格线、标记、绘图、表格、ToolBox、TopBar、Legend、Events、sync、handlers
   - 新增示例 `33_reset_sub`，演示 4 子图网格 + 主图 reset + 独立子图 + 十字光标同步恢复
