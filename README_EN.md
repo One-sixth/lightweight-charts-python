@@ -1,4 +1,4 @@
-# lightweight-charts-python
+# 📊lightweight-charts-python
 
 # [MIT License](LICENSE)
 
@@ -11,7 +11,7 @@
 
 ---
 
-# Attempting to Continue Maintenance
+# 🛠️Attempting to Continue Maintenance
 I have relatively limited knowledge of TypeScript and mainly rely on DeepSeek AI for maintenance assistance. After comparing numerous K-line charting libraries, I found lightweight-charts-python to be the only one with sufficient features, strong performance, and easy embedding into Qt UI, with essential features that have real demand. Thus, I'm attempting to continue its maintenance.
 
 Currently, bugs have been mostly eliminated, and all examples have been tested successfully on Windows. The lightweight-charts main library has been updated to v5.2.0, and some v5 new features have been added.
@@ -20,11 +20,11 @@ My primary usage environment is Windows + Python 3.13 + PySide6 + WebView. Other
 
 ---
 
-# Other Active Similar Repositories with Unique New Features Worth Trying (I also referenced their code)
+# 🫡Other Active Similar Repositories with Unique New Features Worth Trying (I also referenced their code)
 
-https://github.com/gopalparashar421/lightweight-charts-python
-https://github.com/smalinin/bn_lightweight-charts-python
-https://github.com/EsIstJosh/lightweight-charts-python
+https://github.com/gopalparashar421/lightweight-charts-python  
+https://github.com/smalinin/bn_lightweight-charts-python  
+https://github.com/EsIstJosh/lightweight-charts-python  
 
 
 ## 🤣 If I were to mention the obvious advantages of my project, it would be the fine-grained resource reclamation added for long-running scenarios, with virtually no memory leaks.
@@ -37,7 +37,7 @@ Other repositories are also welcome to use the code as needed.
 ---
 
 
-## 🤖 Updates and Enhancements
+## 📓 Updates and Enhancements
 
 Below is the consolidated and optimized Markdown version, retaining all information with ordered lists and emojis for a clear, readable structure:
 
@@ -84,7 +84,7 @@ Below is the consolidated and optimized Markdown version, retaining all informat
 
 ---
 
-# Suggestion: Let AI Programming Assistants Read QUICK_REFERENCE.md First for Quick Project Overview
+# 🤖Suggestion: Let AI Programming Assistants Read QUICK_REFERENCE.md First for Quick Project Overview
 
 ---
 
