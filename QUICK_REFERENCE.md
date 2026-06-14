@@ -154,7 +154,10 @@ from lightweight_charts import HTMLChart
 chart = HTMLChart(
     width=1200, height=800,
     inner_height=-500,              # 子面板高度偏移
-    toolbox=False
+    toolbox=False,
+    position=111,                   # 图表位置 (网格格式)
+    pane_index=0,                   # 面板索引
+    marker_auto_scale=True          # 标记是否自动缩放
 )
 # ... 设置数据 ...
 chart.export('charts.html')         # 导出 HTML 文件
@@ -168,7 +171,12 @@ chart.export('charts.html')         # 导出 HTML 文件
 ```python
 from lightweight_charts import HtmlTabChart
 
-chart = HtmlTabChart(width=1200, height=800)
+chart = HtmlTabChart(
+    width=1200, height=800,
+    position=111,                   # 图表位置 (网格格式)
+    pane_index=0,                   # 面板索引
+    marker_auto_scale=True          # 标记是否自动缩放
+)
 
 # 策略1
 chart.set_name('均线交叉策略')

@@ -346,7 +346,12 @@ import pandas as pd
 from lightweight_charts import HTMLChart
 
 def demo():
-    chart = HTMLChart(width=1200, height=800)
+    chart = HTMLChart(
+        width=1200, height=800,
+        position=111,                   # Chart position (grid format)
+        pane_index=0,                   # Panel index
+        marker_auto_scale=True          # Whether markers auto-scale
+    )
     df = pd.read_csv('ohlcv.csv')
     chart.set(df)
     line7 = chart.create_line('SMA 7', color='red')

@@ -168,7 +168,10 @@ def demo():
     # 创建图表
     chart = HtmlTabChart(
         width=1200, 
-        height=800
+        height=800,
+        position=111,                   # 图表位置 (网格格式)
+        pane_index=0,                   # 面板索引
+        marker_auto_scale=True          # 标记是否自动缩放
     )
     
     # 启用图例

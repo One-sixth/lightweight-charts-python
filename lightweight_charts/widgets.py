@@ -137,7 +137,8 @@ class QtChart(abstract.AbstractChart):
 class StaticLWC(abstract.AbstractChart):
     """静态 HTML/JS 图表基类，将 JS bundle 内联到 HTML 中，用于 Jupyter / Streamlit / 文件导出。"""
     def __init__(self, width=None, height=None, inner_width=1, inner_height=1,
-                scale_candles_only: bool = False, toolbox=False, autosize=True, template='index.html'):
+                scale_candles_only: bool = False, toolbox=False, autosize=True, template='index.html',
+                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
 
         INDEX = os.path.join(current_dir, 'js', template)
         with open(INDEX.replace(template, 'styles.css'), 'r', encoding='utf-8') as f:
@@ -155,7 +156,7 @@ class StaticLWC(abstract.AbstractChart):
                 .replace('</body>\n</html>', '<script>\n')
         self._html = ''
         super().__init__(abstract.Window(run_script=self.run_script), inner_width, inner_height,
-                        scale_candles_only, toolbox, autosize)
+                        scale_candles_only, toolbox, autosize, position, pane_index, marker_auto_scale)
         self.width = width
         self.height = height
 
@@ -190,8 +191,9 @@ class StaticLWC(abstract.AbstractChart):
 
 class StreamlitChart(StaticLWC):
     """基于 Streamlit 的图表组件（使用 st.components.v1.html）。"""
-    def __init__(self, width=None, height=None, inner_width=1, inner_height=1, scale_candles_only: bool = False, toolbox: bool = False):
-        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox)
+    def __init__(self, width=None, height=None, inner_width=1, inner_height=1, scale_candles_only: bool = False, toolbox: bool = False,
+                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
+        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale)
 
     def _export(self):
         if sthtml is None:
@@ -201,8 +203,9 @@ class StreamlitChart(StaticLWC):
 
 class JupyterChart(StaticLWC):
     """基于 Jupyter Notebook 的图表（使用 IPython.display.HTML + iframe）。"""
-    def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1, scale_candles_only: bool = False, toolbox: bool = False):
-        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True)
+    def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1, scale_candles_only: bool = False, toolbox: bool = False,
+                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
+        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True, position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale)
 
 
     def _export(self):
@@ -216,8 +219,9 @@ class JupyterChart(StaticLWC):
 class HTMLChart(StaticLWC):
     """导出为独立 HTML 文件的图表。"""
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1,
-                scale_candles_only: bool = False, toolbox: bool = False):
-        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True)
+                scale_candles_only: bool = False, toolbox: bool = False,
+                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
+        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True, position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale)
 
     def _export(self, filename: str = "charts.html"):
         html_code = f"{self._html_init}  (async ()=> {{\n {self._html}\n}})();\n </script></body></html>"
@@ -234,10 +238,11 @@ class HtmlTabChart(StaticLWC):
     Original author: smalinin
     """
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1,
-                scale_candles_only: bool = False, toolbox: bool = False):
+                scale_candles_only: bool = False, toolbox: bool = False,
+                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
         super().__init__(width=width, height=height, inner_width=inner_width, inner_height=inner_height,
                         scale_candles_only=scale_candles_only, toolbox=toolbox, autosize=True,
-                        template='index_tab.html')
+                        template='index_tab.html', position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale)
         self.js_win = []
         self.names = []
         self.trades = []

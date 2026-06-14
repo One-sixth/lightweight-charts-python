@@ -4,6 +4,22 @@
 
 ---
 
+## [v2.5.2] - 2026-06-15
+
+### Added
+
+- **StaticLWC 及其子类新参数支持**: 为 `StaticLWC`、`StreamlitChart`、`JupyterChart`、`HTMLChart`、`HtmlTabChart` 添加 `AbstractChart` 的新参数支持
+  - 新增参数: `position`（网格位置）、`pane_index`（面板索引）、`marker_auto_scale`（标记自动缩放）
+  - 确保参数完整传递链: 子类 → `StaticLWC` → `AbstractChart`
+  - 更新示例 `32_html_tab_chart` 展示新参数使用
+
+### Changed
+
+- **QUICK_REFERENCE.md 文档更新**: 更新 `HTMLChart` 和 `HtmlTabChart` 示例，展示新参数使用
+- **示例代码更新**: `examples/32_html_tab_chart/html_tab_chart_demo.py` 添加新参数示例
+
+---
+
 ## [v2.5.1] - 2026-06-10
 
 ### Added
