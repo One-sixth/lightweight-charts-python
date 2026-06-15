@@ -223,7 +223,15 @@ class HTMLChart(StaticLWC):
                 position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
         super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True, position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale)
 
-    def _export(self, filename: str = "charts.html"):
+    def export(self, filename: str = "charts.html"):
+        """完成 JS 脚本收集并导出 HTML 文件。
+        :param filename: 输出文件名，默认 charts.html
+        """
+        if self.win.loaded:
+            return
+        self.win.loaded = True
+        for script in self.win.final_scripts:
+            self._html += '\n' + script + '\n'
         html_code = f"{self._html_init}  (async ()=> {{\n {self._html}\n}})();\n </script></body></html>"
         with open(filename, 'w', encoding='utf-8') as file:
             file.write(html_code)

@@ -354,7 +354,7 @@ export class Handler {
         if (!container.style.display || container.style.display !== 'grid') {
             container.style.display = 'grid'
             container.style.width = '100%'
-            container.style.height = '100vh'
+            container.style.height = '100%'
         }
         // 只有当新模板与现有模板兼容时才更新
         const newCols = `repeat(${ncols}, 1fr)`
@@ -500,18 +500,9 @@ export class Handler {
       
       // 网格模式下
       if (this.isGridLayout) {
-          if (isHtmlTabChart) {
-              // HtmlTabChart: 动态获取导航栏高度
-              const navEl = document.querySelector('nav')
-              const navHeight = navEl ? navEl.offsetHeight : 45
-              const availableHeight = window.innerHeight - navHeight
-              this.chart.resize(window.innerWidth, availableHeight - topBarOffset - this.resize_hdr_height)
-              this.wrapper.style.height = `${availableHeight}px`
-          } else {
-              // 普通网格模式：使用原来的计算
-              const rect = this.wrapper.getBoundingClientRect()
-              this.chart.resize(rect.width, rect.height - topBarOffset - this.resize_hdr_height)
-          }
+          // 统一使用 wrapper 实际尺寸，由 CSS Grid 管理行高
+          const rect = this.wrapper.getBoundingClientRect()
+          this.chart.resize(rect.width, rect.height - topBarOffset - this.resize_hdr_height)
           return
       }
       
@@ -555,9 +546,17 @@ export class Handler {
     }
 
     private _createChart() {
+        let chartHeight: number
+        if (this.scale.height < 0) {
+            chartHeight = Math.ceil(Math.abs(this.scale.height))
+        } else {
+            const navEl = document.querySelector('nav')
+            const navHeight = navEl ? navEl.offsetHeight : 0
+            chartHeight = (window.innerHeight - navHeight) * this.scale.height
+        }
         return createChart(this.div, {
       width: window.containerDiv.offsetWidth * this.scale.width,
-      height: this.scale.height<0 ? Math.ceil(Math.abs(this.scale.height)) : window.innerHeight * this.scale.height,
+      height: chartHeight,
       layout: {
         textColor: window.pane.color,
         background: {
