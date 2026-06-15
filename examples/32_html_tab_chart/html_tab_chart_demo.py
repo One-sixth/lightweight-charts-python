@@ -1,32 +1,30 @@
 """
-HtmlTabChart 功能演示 - Tab 切换式多策略回测结果展示
+HtmlTabChart Demo - 4-row layout: 2 subcharts x 2 panes each
 
-功能展示：
-1. 多策略切换（侧边栏）
-2. 交易明细展示（双击跳转）
-3. 绩效指标展示
-4. 策略参数展示
-5. 技术指标（均线、布林带）
-6. 买卖标记
+Layout per strategy tab (top to bottom):
+  Row 1: Subchart 1 K-line (SMA or BB)
+  Row 2: Subchart 1 Volume
+  Row 3: Subchart 2 K-line
+  Row 4: Subchart 2 Volume
+
+Demonstrates:
+- create_subchart() for independent chart instances
+- pane_index for vertical splitting within each subchart
 """
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 from lightweight_charts import HtmlTabChart
 
 
 def generate_ohlcv_data(days=100):
-    """生成模拟 OHLCV 数据"""
+    """Generate simulated OHLCV data"""
     dates = pd.date_range(start='2024-01-01', periods=days, freq='D')
-    
-    # 模拟价格走势
     np.random.seed(42)
     base_price = 100.0
     returns = np.random.normal(0.001, 0.02, days)
     prices = base_price * np.cumprod(1 + returns)
-    
-    # 生成 OHLCV
+
     data = []
     for i, date in enumerate(dates):
         open_price = prices[i] * (1 + np.random.uniform(-0.01, 0.01))
@@ -34,7 +32,7 @@ def generate_ohlcv_data(days=100):
         low_price = min(open_price, prices[i]) * (1 - np.random.uniform(0, 0.02))
         close_price = prices[i]
         volume = np.random.randint(1000, 10000)
-        
+
         data.append({
             'time': date.strftime('%Y-%m-%d'),
             'open': round(open_price, 2),
@@ -43,12 +41,11 @@ def generate_ohlcv_data(days=100):
             'close': round(close_price, 2),
             'volume': volume
         })
-    
     return pd.DataFrame(data)
 
 
 def calculate_sma(df, period=20):
-    """计算简单移动平均线"""
+    """Simple Moving Average"""
     return pd.DataFrame({
         'time': df['time'],
         f'SMA {period}': df['close'].rolling(window=period).mean()
@@ -56,10 +53,9 @@ def calculate_sma(df, period=20):
 
 
 def calculate_bollinger_bands(df, period=20, std_dev=2):
-    """计算布林带"""
+    """Bollinger Bands"""
     sma = df['close'].rolling(window=period).mean()
     std = df['close'].rolling(window=period).std()
-    
     return pd.DataFrame({
         'time': df['time'],
         'BB Middle': sma,
@@ -69,30 +65,26 @@ def calculate_bollinger_bands(df, period=20, std_dev=2):
 
 
 def generate_trades(df, strategy_name):
-    """生成模拟交易记录"""
+    """Generate simulated trade records"""
     trades = []
     num_trades = np.random.randint(5, 15)
-    
+
     for i in range(num_trades):
-        # 随机选择开仓和平仓时间
         open_idx = np.random.randint(0, len(df) - 10)
         close_idx = np.random.randint(open_idx + 1, min(open_idx + 10, len(df)))
-        
-        # 随机方向
         is_long = np.random.random() > 0.5
         size = np.random.choice([1, 2, 5, 10]) * (1 if is_long else -1)
-        
+
         open_price = df.iloc[open_idx]['open'] * (1 + np.random.uniform(-0.005, 0.005))
         close_price = df.iloc[close_idx]['close'] * (1 + np.random.uniform(-0.005, 0.005))
-        
-        # 计算盈亏
+
         pnl = (close_price - open_price) * size
         commission = abs(size) * 0.1
         pnlcomm = pnl - commission
         return_pct = pnlcomm / (abs(size) * open_price) * 100
-        
+
         trades.append({
-            'type': 0,  # 0=成交，1=订单
+            'type': 0,
             'ref': f'{strategy_name}_{i+1:03d}',
             'size': int(size),
             'tradeid': f'T{i+1:04d}',
@@ -105,211 +97,200 @@ def generate_trades(df, strategy_name):
             'commission': round(float(commission), 2),
             'barlen': int(close_idx - open_idx)
         })
-    
+
     return trades
 
 
 def add_trade_markers(chart, trades):
-    """根据交易记录添加买卖标记"""
+    """Add buy/sell markers from trade records"""
     for trade in trades:
-        # 开仓标记
         chart.marker(
             time=trade['dateopen'],
             position='below' if trade['size'] > 0 else 'above',
             color='red' if trade['size'] > 0 else 'green',
             shape='arrow_up' if trade['size'] > 0 else 'arrow_down',
-            text=f"开仓 {trade['size']}手"
+            text=f"Open {trade['size']}"
         )
-        
-        # 平仓标记
         chart.marker(
             time=trade['dateclose'],
             position='above' if trade['size'] > 0 else 'below',
             color='green' if trade['size'] > 0 else 'red',
             shape='arrow_down' if trade['size'] > 0 else 'arrow_up',
-            text=f"平仓 {trade['pnlcomm']:.1f}"
+            text=f"Close {trade['pnlcomm']:.1f}"
         )
 
 
 def generate_performance_metrics():
-    """生成模拟绩效指标"""
+    """Generate simulated performance metrics"""
     return pd.Series({
-        '总收益率': f'{np.random.uniform(-10, 30):.2f}%',
-        '年化收益率': f'{np.random.uniform(-5, 20):.2f}%',
-        '最大回撤': f'{np.random.uniform(-15, -5):.2f}%',
-        '夏普比率': f'{np.random.uniform(-0.5, 2.0):.2f}',
-        '胜率': f'{np.random.uniform(40, 65):.1f}%',
-        '盈亏比': f'{np.random.uniform(0.8, 2.5):.2f}',
-        '交易次数': f'{np.random.randint(10, 50)}',
-        '平均持仓天数': f'{np.random.uniform(1, 10):.1f}'
+        'Return': f'{np.random.uniform(-10, 30):.2f}%',
+        'Annual': f'{np.random.uniform(-5, 20):.2f}%',
+        'MaxDD': f'{np.random.uniform(-15, -5):.2f}%',
+        'Sharpe': f'{np.random.uniform(-0.5, 2.0):.2f}',
+        'WinRate': f'{np.random.uniform(40, 65):.1f}%',
+        'PnL Ratio': f'{np.random.uniform(0.8, 2.5):.2f}',
+        'Trades': f'{np.random.randint(10, 50)}',
+        'AvgDays': f'{np.random.uniform(1, 10):.1f}'
     })
 
 
 def generate_parameters():
-    """生成模拟策略参数"""
+    """Generate simulated strategy parameters"""
     return pd.Series({
-        '均线周期': np.random.choice([5, 10, 20, 50]),
-        '止损比例': f'{np.random.uniform(1, 5):.1f}%',
-        '止盈比例': f'{np.random.uniform(3, 10):.1f}%',
-        '仓位大小': np.random.choice([1, 2, 5, 10]),
-        '最大持仓': np.random.choice([1, 3, 5])
+        'SMA Period': np.random.choice([5, 10, 20, 50]),
+        'Stop Loss': f'{np.random.uniform(1, 5):.1f}%',
+        'Take Profit': f'{np.random.uniform(3, 10):.1f}%',
+        'Size': np.random.choice([1, 2, 5, 10]),
+        'Max Pos': np.random.choice([1, 3, 5])
     })
 
 
 def demo():
-    """演示 HtmlTabChart 功能"""
-    print("🎯 HtmlTabChart 功能演示")
+    """HtmlTabChart demo: 4-row layout"""
+    print("HtmlTabChart Demo - 4-row layout")
     print("=" * 50)
-    
-    # 生成模拟数据
-    print("📊 生成模拟数据...")
+
+    print("Generating data...")
     df = generate_ohlcv_data(100)
-    
-    # 创建图表
+    vol_df = df[['time', 'volume']].rename(columns={'volume': 'Volume'})
+
+    # ================================================================
+    # Main chart: 2x1 grid, position=211 (left cell)
+    # ================================================================
     chart = HtmlTabChart(
-        width=1200, 
-        height=800,
-        position=111,                   # 图表位置 (网格格式)
-        pane_index=0,                   # 面板索引
-        marker_auto_scale=True          # 标记是否自动缩放
+        width=1200,
+        height=1200,
+        position=211,
+        marker_auto_scale=True
     )
-    
-    # 启用图例
+
+    # ================================================================
+    # Strategy 1: SMA
+    # ================================================================
+    print("  [1/2] SMA strategy (2 subcharts x 2 panes)")
+    chart.set_name('SMA Strategy')
     chart.legend(visible=True)
-    
-    # ========== 策略1: 均线交叉策略 ==========
-    print("📈 添加策略1: 均线交叉策略")
-    chart.set_name('均线交叉策略')
     chart.set(df)
-    
-    # 添加均线指标
+
+    # Subchart 1 K-line: pane 0 (already set above)
     sma10 = calculate_sma(df, period=10)
     sma20 = calculate_sma(df, period=20)
+    chart.create_line('SMA 10', color='blue', price_line=False, price_label=False).set(sma10)
+    chart.create_line('SMA 20', color='red', price_line=False, price_label=False).set(sma20)
+
+    # Subchart 1 Volume: pane 1
+    chart.create_histogram('Volume', color='#26a69a', price_line=False, price_label=False, pane_index=1).set(vol_df)
+
+    # Subchart 2: create_subchart at position 212 (right cell)
+    sub2 = chart.create_subchart(position=212)
+    sub2.legend(visible=True)
+    sub2.set(df)
+
+    # Subchart 2 K-line: pane 0 (already set)
     sma50 = calculate_sma(df, period=50)
-    
-    line_sma10 = chart.create_line('SMA 10', color='blue', price_line=False, price_label=False)
-    line_sma10.set(sma10)
-    
-    line_sma20 = chart.create_line('SMA 20', color='red', price_line=False, price_label=False)
-    line_sma20.set(sma20)
-    
-    line_sma50 = chart.create_line('SMA 50', color='green', price_line=False, price_label=False)
-    line_sma50.set(sma50)
-    
-    # 添加交易记录
-    trades1 = generate_trades(df, 'MA_Cross')
+    sub2.create_line('SMA 50', color='green', price_line=False, price_label=False).set(sma50)
+
+    # Subchart 2 Volume: pane 1
+    sub2.create_histogram('Volume', color='#ff9800', price_line=False, price_label=False, pane_index=1).set(vol_df)
+
+    # Trades + markers
+    trades1 = generate_trades(df, 'SMA')
     chart.set_trades(trades1)
-    
-    # 添加买卖标记
     add_trade_markers(chart, trades1)
-    
-    # 添加绩效指标
-    perf1 = generate_performance_metrics()
-    chart.set_performance_metrics(perf1, '均线交叉策略')
-    
-    # 添加策略参数
-    params1 = generate_parameters()
-    chart.set_parameters_list(params1)
-    
-    # 开始新策略窗口
+    chart.set_performance_metrics(generate_performance_metrics(), 'SMA Strategy')
+    chart.set_parameters_list(generate_parameters())
+
+    # ================================================================
+    # Strategy 2: Bollinger Band
+    # ================================================================
     chart.new_window()
-    
-    # ========== 策略2: 布林带策略 ==========
-    print("📈 添加策略2: 布林带策略")
-    chart.set_name('布林带策略')
-    chart.legend(visible=True)  # 新窗口需要重新设置图例
+
+    print("  [2/2] BB strategy (2 subcharts x 2 panes)")
+    chart.set_name('BB Strategy')
+    chart.legend(visible=True)
     chart.set(df)
-    
-    # 添加布林带指标
+
+    # Subchart 1 K-line: pane 0
     bb = calculate_bollinger_bands(df, period=20, std_dev=2)
-    
-    line_bb_middle = chart.create_line('BB Middle', color='orange', price_line=False, price_label=False)
-    line_bb_middle.set(bb[['time', 'BB Middle']])
-    
-    line_bb_upper = chart.create_line('BB Upper', color='red', price_line=False, price_label=False)
-    line_bb_upper.set(bb[['time', 'BB Upper']])
-    
-    line_bb_lower = chart.create_line('BB Lower', color='green', price_line=False, price_label=False)
-    line_bb_lower.set(bb[['time', 'BB Lower']])
-    
-    # 添加交易记录
-    trades2 = generate_trades(df, 'Bollinger')
+    chart.create_line('BB Middle', color='orange', price_line=False, price_label=False).set(bb[['time', 'BB Middle']])
+    chart.create_line('BB Upper', color='red', price_line=False, price_label=False).set(bb[['time', 'BB Upper']])
+    chart.create_line('BB Lower', color='green', price_line=False, price_label=False).set(bb[['time', 'BB Lower']])
+
+    # Subchart 1 Volume: pane 1
+    chart.create_histogram('Volume', color='#26a69a', price_line=False, price_label=False, pane_index=1).set(vol_df)
+
+    # Subchart 2: create_subchart
+    sub2 = chart.create_subchart(position=212)
+    sub2.legend(visible=True)
+    sub2.set(df)
+
+    # Subchart 2 K-line: pane 0 (just K-line, no extra indicators)
+    # Subchart 2 Volume: pane 1
+    sub2.create_histogram('Volume', color='#ff9800', price_line=False, price_label=False, pane_index=1).set(vol_df)
+
+    # Trades + markers
+    trades2 = generate_trades(df, 'BB')
     chart.set_trades(trades2)
-    
-    # 添加买卖标记
     add_trade_markers(chart, trades2)
-    
-    # 添加绩效指标
-    perf2 = generate_performance_metrics()
-    chart.set_performance_metrics(perf2, '布林带策略')
-    
-    # 添加策略参数
-    params2 = generate_parameters()
-    chart.set_parameters_list(params2)
-    
-    # ========== 导出 HTML 文件 ==========
-    print("💾 导出 HTML 文件...")
+    chart.set_performance_metrics(generate_performance_metrics(), 'BB Strategy')
+    chart.set_parameters_list(generate_parameters())
+
+    # ================================================================
+    # Strategy 3: Absolute position (set_position)
+    # ================================================================
+    chart.new_window()
+
+    print("  [3/3] Absolute position (set_position)")
+    chart.set_name('Absolute Pos')
+    chart.legend(visible=True)
+    chart.set(df)
+
+    # Absolute position: top-left quarter (0, 0, 0.5, 0.5)
+    chart.set_position(x=0, y=0, width=0.5, height=0.5)
+
+    # SMA on the main chart
+    sma10 = calculate_sma(df, period=10)
+    chart.create_line('SMA 10', color='blue', price_line=False, price_label=False).set(sma10)
+
+    # Subchart 2: bottom-right quarter (0.5, 0.5, 0.5, 0.5)
+    sub2 = chart.create_subchart(position=212)
+    sub2.legend(visible=True)
+    sub2.set(df)
+    sub2.set_position(x=0.5, y=0.5, width=0.5, height=0.5)
+
+    # Trades + markers
+    trades3 = generate_trades(df, 'AbsPos')
+    chart.set_trades(trades3)
+    add_trade_markers(chart, trades3)
+    chart.set_performance_metrics(generate_performance_metrics(), 'Absolute Pos')
+    chart.set_parameters_list(generate_parameters())
+
+    # ================================================================
+    # Export
+    # ================================================================
+    print("Exporting...")
     filename = 'html_tab_chart_demo.html'
     chart.export(filename)
 
-    # ========== 导出 iframe 嵌入测试页面（双文件方案） ==========
-    #
-    # 为什么需要两个文件？
-    # 曾尝试过多种单文件方案，均存在无法解决的问题：
-    #   - srcdoc：将 500K+ HTML 作为属性值内嵌，浏览器渲染时产生异常嵌套/重复层
-    #   - data:base64 URI：null origin 导致 addEventListener 对 tab 切换失效
-    #   - blob: URI：同 data URI，null origin 限制
-    #   - Shadow DOM：模板使用 :root / html[data-theme] / document.documentElement，
-    #     Shadow DOM 内不存在这些元素，CSS 变量和主题切换全部失效
-    #   - innerHTML 直接插入：浏览器不执行 innerHTML 中的 <script> 标签
-    #
-    # 最终方案：外壳 HTML 文件 + 图表内容 HTML 文件，通过 <iframe src="..."> 引用。
-    # 两个文件放在同一目录即可。
-    #
-    print("💾 导出 iframe 嵌入测试页面...")
-
-    # 1. 图表内容文件
+    # iframe embed
     chart_content_filename = 'html_tab_chart_iframe_content.html'
     with open(chart_content_filename, 'w', encoding='utf-8') as f:
         f.write(chart.get_html())
 
-    # 2. 外壳文件，通过 src 引用图表内容
     iframe_html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <title>Iframe Embed Test</title>
     <style>
-        body {{
-            margin: 0; padding: 20px 30px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background: #f0f2f5; color: #333;
-        }}
-        h1 {{ color: #1a73e8; margin-bottom: 8px; }}
-        .desc {{
-            color: #666; margin-bottom: 20px; line-height: 1.6;
-        }}
-        .desc code {{
-            background: #e8eaed; padding: 2px 6px; border-radius: 3px;
-            color: #c7254e; font-size: 13px;
-        }}
-        .chart-frame {{
-            width: 100%; max-width: 1200px; height: 800px;
-            border: 2px solid #ccc; border-radius: 8px; overflow: hidden;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-        }}
+        body {{ margin: 0; padding: 20px; font-family: Arial, sans-serif; }}
+        h2 {{ color: #333; }}
+        iframe {{ border: 1px solid #ccc; width: 100%; height: 80vh; }}
     </style>
 </head>
 <body>
-    <h1>Iframe Embed Test</h1>
-    <p class="desc">
-        The chart below is loaded via
-        <code>&lt;iframe src="{chart_content_filename}"&gt;</code>.<br>
-        Both files must be placed in the same directory.
-    </p>
-    <div class="chart-frame">
-        <iframe src="{chart_content_filename}" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>
-    </div>
+    <h2>HtmlTabChart Iframe Embed Test</h2>
+    <iframe src="{chart_content_filename}"></iframe>
 </body>
 </html>'''
     iframe_filename = 'html_tab_chart_iframe_demo.html'
@@ -317,22 +298,25 @@ def demo():
         f.write(iframe_html)
 
     print("=" * 50)
-    print(f"✅ 演示完成！")
-    print(f"📁 独立文件: {filename}")
-    print(f"📁 iframe外壳: {iframe_filename}")
-    print(f"📁 iframe内容: {chart_content_filename}")
-    print(f"🌐 请在浏览器中打开 iframe 外壳文件查看效果")
+    print("Done!")
+    print(f"  Standalone : {filename}")
+    print(f"  iframe page: {iframe_filename}")
+    print(f"  iframe data: {chart_content_filename}")
     print()
-    print("🔍 功能验证清单:")
-    print("  1. 左侧策略切换 - 点击切换不同策略的K线图")
-    print("  2. 技术指标 - 均线(SMA)和布林带(BB)")
-    print("  3. 买卖标记 - 红色箭头做多，绿色箭头做空")
-    print("  4. 交易记录表格 - 显示开仓/平仓详情")
-    print("  5. 绩效指标面板 - 显示夏普比率、最大回撤等")
-    print("  6. 策略参数面板 - 显示策略配置参数")
-    print("  7. 双击跳转 - 双击交易记录中的日期跳转到K线位置")
-    print("  8. 图例显示 - 左上角显示所有指标名称")
-    print("  9. iframe嵌入 - 打开 iframe 测试文件验证嵌入渲染")
+    print("Layout per strategy tab:")
+    print("  Strategy 1 (Subcharts T/B):")
+    print("    [Subchart 1] K-line + SMA       (position=211, pane 0)")
+    print("    [Subchart 1] Volume              (position=211, pane 1)")
+    print("    [Subchart 2] K-line              (position=212, pane 0)")
+    print("    [Subchart 2] Volume              (position=212, pane 1)")
+    print("  Strategy 2 (Panes T/B):")
+    print("    [Subchart 1] K-line + BB         (position=211, pane 0)")
+    print("    [Subchart 1] Volume              (position=211, pane 1)")
+    print("    [Subchart 2] K-line              (position=212, pane 0)")
+    print("    [Subchart 2] Volume              (position=212, pane 1)")
+    print("  Strategy 3 (Absolute Position):")
+    print("    [Chart] K-line + SMA             (set_position 0,0,50%,50%)")
+    print("    [Subchart] K-line                (set_position 50%,50%,50%,50%)")
 
 
 if __name__ == '__main__':

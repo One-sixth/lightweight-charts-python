@@ -4,6 +4,25 @@
 
 ---
 
+## [v2.5.3] - 2026-06-15
+
+### Fixed
+
+- **HtmlTabChart 多子图布局溢出修复**: 修复 `create_subchart()` 在 HtmlTabChart 中布局溢出的问题
+  - `setupGridLayout`: 容器高度 `100vh` → `100%`，跟随父元素而非视口
+  - `reSize()` grid 模式: 去掉 HtmlTabChart 特殊分支，统一用 `wrapper.getBoundingClientRect()` 获取实际尺寸
+  - `_createChart()`: 初始高度减去 nav 栏高度，避免首次渲染溢出
+
+### Changed
+
+- **`HTMLChart.export(filename)`**: 重写 `export()` 方法，直接接受 `filename` 参数，不再需要调用内部 `_export()`
+- **示例 32 全面重写**:
+  - `html_chart_example.py`: 2 subcharts × 2 panes 布局（K线+Volume × 2）
+  - `html_tab_chart_demo.py`: 3 个策略 tab（Subcharts T/B + Panes T/B + Absolute Position）
+  - 演示 `create_subchart()` + `pane_index` + `set_position()` 三种布局方式
+
+---
+
 ## [v2.5.2] - 2026-06-15
 
 ### Added

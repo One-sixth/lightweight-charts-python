@@ -37,5 +37,5 @@
 | 29 | `29_grid_layout` | 网格布局：position 参数三种格式 + get_position/set_position | ✅ 已实现  |
 | 30 | `30_table_component` | 表格组件：自选股列表 + 持仓管理 + 动态更新 + 多表格布局 | ✅ 已实现  |
 | 31 | `31_chart_sync` | 图表同步：`sync_id` 参数实现多图表时间轴和十字光标同步 | ✅ 已实现  |
-| 32 | `32_html_tab_chart` | HtmlTabChart 功能演示：Tab切换多策略、交易明细、绩效指标 | ✅ 已实现  |
+| 32 | `32_html_tab_chart` | HtmlTabChart + HTMLChart 演示：2 subcharts × 2 panes 布局、Tab 切换、绝对定位 | ✅ 已实现  |
 | 33 | `33_reset_sub` | reset_sub 子图内容重置：清空+重填+同步恢复+独立子图 | ✅ 已实现  |
