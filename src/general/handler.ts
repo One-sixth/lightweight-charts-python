@@ -259,6 +259,7 @@ export class Handler {
     private gridDimensions: { nrows: number; ncols: number } | null = null;
     private isGridLayout: boolean = false;
     private customPosition: { x: number; y: number; width: number; height: number } | null = null;
+    private _originalHeight: string | null = null;
 
     constructor(
         chartId: string,
@@ -312,10 +313,25 @@ export class Handler {
         handle.addEventListener('mousedown', (e) => {
           // prevent selecting text, etc.
           e.preventDefault();
+          // 首次拖拽时备份原始 height 值
+          if (this._originalHeight === null) {
+            this._originalHeight = this.wrapper.style.height || '';
+          }
           startY = e.clientY;
           startHeight = this.wrapper.getBoundingClientRect().height;
           document.addEventListener('mousemove', onMouseMove);
           document.addEventListener('mouseup', onMouseUp);
+        });
+
+        // 双击操作柄：从备份恢复原始高度
+        handle.addEventListener('dblclick', () => {
+          if (this._originalHeight !== null) {
+            // 恢复备份的原始高度，然后清除备份
+            this.wrapper.style.height = this._originalHeight;
+            this._originalHeight = null;
+          }
+          // 等浏览器重排后，按实际尺寸 resize chart
+          requestAnimationFrame(() => this.reSize());
         });
 
         this.chart = this._createChart();

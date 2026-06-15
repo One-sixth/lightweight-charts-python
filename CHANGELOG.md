@@ -13,6 +13,11 @@
   - `reSize()` grid 模式: 去掉 HtmlTabChart 特殊分支，统一用 `wrapper.getBoundingClientRect()` 获取实际尺寸
   - `_createChart()`: 初始高度减去 nav 栏高度，避免首次渲染溢出
 
+- **操作柄双击重置修复**: 修复绝对定位模式下操作柄双击重置后图表尺寸异常的问题
+  - 根因：拖拽操作柄写入 px 高度，双击时混合使用百分比恢复导致尺寸错乱
+  - 修复：首次拖拽时备份 `wrapper.style.height` 原始值，双击时从备份恢复
+  - 涉及 `handler.ts` 三处修改：新增 `_originalHeight` 属性、`mousedown` 时备份、`dblclick` 时恢复
+
 ### Changed
 
 - **`HTMLChart.export(filename)`**: 重写 `export()` 方法，直接接受 `filename` 参数，不再需要调用内部 `_export()`
