@@ -1475,7 +1475,23 @@ class AbstractChart(Candlestick, Pane):
             self.win.handlers.pop(key, None)
 
     def _unsync_all(self):
-        """双向解除所有 syncCharts/syncChartsAll 关联，并重建同步。"""
+        """双向解除所有 syncCharts/syncChartsAll 关联，并重建同步。
+
+        设计思路：
+          由于多图同步关系可能形成复杂网络（如 A<->B, B<->C, A<->C），
+          逐一拆解 pair sync 容易遗漏或出错。因此采用"先全部清空，再统一重建"策略。
+
+        自动恢复机制：
+          reset_sub 后调用 set() 重新填充数据，同步关系会自动恢复。
+          原因是 _syncedHandlers 的 filter(id !== myId) 只移除自身 ID（不在列表中），
+          所以本图的 _syncedHandlers 保留了原始同步伙伴列表，
+          重建时 syncChartsAll 会将其重新纳入同步组。
+
+        防重复回调机制（Step 3）：
+          重建前必须清理所有 handler 的旧 sync 回调。否则 syncChartsAll 用
+          '__crosshairAll' 作为 key 创建新回调，而旧 pair sync 用 handler ID 作为 key，
+          两个 key 不同，导致新旧回调并存，同一事件被触发两次。
+        """
         my_id = self.id
         self.run_script(f'''
             (() => {{
@@ -1483,12 +1499,13 @@ class AbstractChart(Candlestick, Pane):
                 const me = Lib.Handler._all.find(h => h.id === myId);
                 if (!me) return;
 
-                // 对所有关联图：取消所有 sync 回调
+                // ── Step 1: 清理与本图直接关联的 handler ──
+                // 找出 _syncedHandlers 包含 myId 的 handler，取消其所有 sync 回调，
+                // 并从其 _syncedHandlers 中移除 myId。
                 Lib.Handler._all.forEach(h => {{
                     if (h.id === myId) return;
                     if (!h._syncedHandlers || !h._syncedHandlers.includes(myId)) return;
 
-                    // 遍历所有 _syncCallbacks，取消 crosshair 和 range 回调
                     for (const [key, cb] of Object.entries(h._syncCallbacks)) {{
                         if (cb.crosshair && cb.crosshairSource) {{
                             cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
@@ -1501,7 +1518,9 @@ class AbstractChart(Candlestick, Pane):
                     h._syncedHandlers = h._syncedHandlers.filter(id => id !== myId);
                 }});
 
-                // 清理本图所有 sync 回调
+                // ── Step 2: 清理本图自身的 sync 回调 ──
+                // 注意：_syncedHandlers 仅 filter 掉 myId（自身 ID 不在列表中，实际无变化），
+                // 这是有意为之——保留原始同步伙伴列表，供 Step 4 重建时使用。
                 for (const [key, cb] of Object.entries(me._syncCallbacks)) {{
                     if (cb.crosshair && cb.crosshairSource) {{
                         cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
@@ -1513,7 +1532,26 @@ class AbstractChart(Candlestick, Pane):
                 me._syncCallbacks = {{}};
                 me._syncedHandlers = me._syncedHandlers.filter(id => id !== myId);
 
-                // 重建所有图的同步（reset_sub 不排除任何子图）
+                // ── Step 3: 清理所有剩余 handler 的旧 sync 回调 ──
+                // 必须在重建前执行。否则 syncChartsAll 用 '__crosshairAll' 作 key 创建新回调，
+                // 而旧 pair sync 用 handler ID 作 key，两个 key 不同会导致新旧并存、重复触发。
+                Lib.Handler._all.forEach(h => {{
+                    if (h.id === myId) return;
+                    for (const [key, cb] of Object.entries(h._syncCallbacks)) {{
+                        if (cb.crosshair && cb.crosshairSource) {{
+                            cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
+                        }}
+                        if (cb.range && cb.rangeSource) {{
+                            cb.rangeSource.chart.timeScale().unsubscribeVisibleLogicalRangeChange(cb.range);
+                        }}
+                    }}
+                    h._syncCallbacks = {{}};
+                }});
+
+                // ── Step 4: 重建所有图的同步 ──
+                // 找出 _syncedHandlers 非空的 handler，用 syncChartsAll 统一重建。
+                // 本图的 _syncedHandlers 保留了原始伙伴（Step 2 未清空），
+                // 因此会被纳入重建，实现 reset 后同步自动恢复。
                 const allHandlers = Lib.Handler._all.filter(h => h._syncedHandlers && h._syncedHandlers.length > 0);
                 if (allHandlers.length > 1) {{
                     Lib.Handler.syncChartsAll(allHandlers);
