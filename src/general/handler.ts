@@ -306,8 +306,9 @@ export class Handler {
           const delta = e.clientY - startY;
           const newH = Math.max(50, startHeight + delta); // min height 50px
           this.wrapper.style.height = `${newH}px`;
-          // Resize the chart canvas accordingly:
-          this.chart.resize(this.wrapper.offsetWidth, newH-this.resize_hdr_height);
+          // Resize the chart canvas accordingly (subtract topbar height like reSize does):
+          const topBarOffset = this._topBar?._div.offsetHeight || 0;
+          this.chart.resize(this.wrapper.offsetWidth, newH - topBarOffset - this.resize_hdr_height);
         };
         const onMouseUp = () => {
           document.removeEventListener('mousemove', onMouseMove);
