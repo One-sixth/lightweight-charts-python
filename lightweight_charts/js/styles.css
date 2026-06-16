@@ -113,6 +113,12 @@ body {
 	border-bottom: 2px solid var(--border-color);
 	display: flex;
 	align-items: center;
+	max-width: 100%;
+	min-width: 0;
+	overflow: hidden;
+	box-sizing: border-box;
+	flex-shrink: 0;
+	white-space: nowrap;
 }
 
 .topbar-container {
@@ -129,6 +135,12 @@ body {
 	border-radius: 4px;
 	color: var(--color);
 	background-color: transparent;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	box-sizing: border-box;
+	width: fit-content;
+	max-width: calc(100% - 6px);
 }
 .topbar-button:hover {
 	background-color: var(--hover-bg-color)
@@ -156,12 +168,18 @@ body {
 	margin: 0px 18px;
 	font-size: 16px;
 	color: var(--color);
+	box-sizing: border-box;
+	width: fit-content;
+	max-width: calc(100% - 6px);
 }
 
 .topbar-textbox-input {
 	background-color: var(--bg-color);
 	color: var(--color);
 	border: 1px solid var(--color);
+	box-sizing: border-box;
+	width: fit-content;
+	max-width: calc(100% - 6px);
 }
 
 .topbar-menu {

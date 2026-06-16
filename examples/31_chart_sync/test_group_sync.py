@@ -33,7 +33,7 @@ def main():
 
     # ── 场景 1+2: 基本组同步 + reset 恢复 ──
     # 3 图水平排列，A 是 main，B 和 C 加入 "group1"
-    chart_a = Chart(width=1400, height=350, title='A (main, no sync)', position=(2, 3, 1))
+    chart_a = Chart(width=1400, height=900, title='A (main, no sync)', position=(2, 3, 1))
     chart_a.legend(visible=True)
 
     chart_b = chart_a.create_subchart(
@@ -55,7 +55,8 @@ def main():
         chart_b.legend(visible=True)
         print('[Reset B] Done - test B<->C sync')
     chart_a.topbar.textbox('info', 'Click Reset B, then test B<->C sync', align='left')
-    # chart_a.topbar.button('reset_b', 'Reset B', func=on_reset_b)
+    # chart_a.topbar.textbox('info', 'C', align='left')
+    chart_a.topbar.button('reset_b', 'Reset B', func=on_reset_b)
 
     # ── 场景 3: 混合 sync_crosshairs_only ──
     # D 和 E 加入 "group2"，D=full sync, E=crosshair only

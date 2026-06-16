@@ -2222,6 +2222,11 @@ var Lib = (function (exports, lightweightCharts) {
         // 组同步：sync_id 作为组名
         _syncGroup = '';
         _syncCrosshairOnly = false;
+        // 重入守卫：防止 crosshair 同步回调级联触发
+        _inSync = false;
+        // range 同步守卫：防止 range 回调级联 + 冗余更新
+        _inRangeSync = false;
+        _lastSyncedRange = '';
         gridPosition = null;
         gridDimensions = null;
         isGridLayout = false;
@@ -2610,29 +2615,38 @@ var Lib = (function (exports, lightweightCharts) {
             // 1) Crosshair
             handlers.forEach((source) => {
                 const crosshairCb = (param) => {
-                    handlers.forEach((target) => {
-                        if (target === source)
-                            return;
-                        if (!param.time) {
+                    // 重入守卫：防止 crosshair 同步级联触发
+                    if (source._inSync)
+                        return;
+                    source._inSync = true;
+                    try {
+                        handlers.forEach((target) => {
+                            if (target === source)
+                                return;
+                            if (!param.time) {
+                                try {
+                                    target.chart.clearCrosshairPosition();
+                                }
+                                catch (_) { }
+                                return;
+                            }
                             try {
-                                target.chart.clearCrosshairPosition();
+                                target.chart.setCrosshairPosition(0, param.time, target.series);
+                                const point = param.seriesData.get(source.series) || null;
+                                if (point && target.legend?.div) {
+                                    const event = {
+                                        time: param.time,
+                                        point: point,
+                                    };
+                                    target.legend.legendHandler(event, true);
+                                }
                             }
                             catch (_) { }
-                            return;
-                        }
-                        try {
-                            target.chart.setCrosshairPosition(0, param.time, target.series);
-                            const point = param.seriesData.get(source.series) || null;
-                            if (point && target.legend?.div) {
-                                const event = {
-                                    time: param.time,
-                                    point: point,
-                                };
-                                target.legend.legendHandler(event, true);
-                            }
-                        }
-                        catch (_) { }
-                    });
+                        });
+                    }
+                    finally {
+                        source._inSync = false;
+                    }
                 };
                 source.chart.subscribeCrosshairMove(crosshairCb);
                 // 存储回调引用（source 自己的回调订阅在自己 chart 上）
@@ -2646,11 +2660,27 @@ var Lib = (function (exports, lightweightCharts) {
             // 2) Visible range synchronization
             handlers.forEach((source) => {
                 const rangeCb = (range) => {
-                    handlers.forEach((target) => {
-                        if (target === source || !range)
+                    // 重入守卫：防止 range 回调级联触发
+                    if (source._inRangeSync)
+                        return;
+                    source._inRangeSync = true;
+                    try {
+                        const rangeKey = range ? `${range.from.toFixed(6)}_${range.to.toFixed(6)}` : '';
+                        if (rangeKey === source._lastSyncedRange)
                             return;
-                        target.chart.timeScale().setVisibleLogicalRange(range);
-                    });
+                        source._lastSyncedRange = rangeKey;
+                        handlers.forEach((target) => {
+                            if (target === source || !range)
+                                return;
+                            try {
+                                target.chart.timeScale().setVisibleLogicalRange(range);
+                            }
+                            catch (_) { }
+                        });
+                    }
+                    finally {
+                        source._inRangeSync = false;
+                    }
                 };
                 source.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeCb);
                 source._syncCallbacks['__rangeAll'] = {
@@ -2712,26 +2742,36 @@ var Lib = (function (exports, lightweightCharts) {
             // 1) Crosshair sync — 所有 handler 互相同步
             handlers.forEach((source) => {
                 const crosshairCb = (param) => {
-                    handlers.forEach((target) => {
-                        if (target === source)
-                            return;
-                        if (!param.time) {
+                    // 重入守卫：setCrosshairPosition 会触发目标图表的 crosshairMove，
+                    // 导致回调级联（N² 更新风暴）。检测到重入时直接跳过。
+                    if (source._inSync)
+                        return;
+                    source._inSync = true;
+                    try {
+                        handlers.forEach((target) => {
+                            if (target === source)
+                                return;
+                            if (!param.time) {
+                                try {
+                                    target.chart.clearCrosshairPosition();
+                                }
+                                catch (_) { }
+                                return;
+                            }
                             try {
-                                target.chart.clearCrosshairPosition();
+                                target.chart.setCrosshairPosition(0, param.time, target.series);
+                                const point = param.seriesData.get(source.series) || null;
+                                if (point && target.legend?.div) {
+                                    const event = { time: param.time, point: point };
+                                    target.legend.legendHandler(event, true);
+                                }
                             }
                             catch (_) { }
-                            return;
-                        }
-                        try {
-                            target.chart.setCrosshairPosition(0, param.time, target.series);
-                            const point = param.seriesData.get(source.series) || null;
-                            if (point && target.legend?.div) {
-                                const event = { time: param.time, point: point };
-                                target.legend.legendHandler(event, true);
-                            }
-                        }
-                        catch (_) { }
-                    });
+                        });
+                    }
+                    finally {
+                        source._inSync = false;
+                    }
                 };
                 source.chart.subscribeCrosshairMove(crosshairCb);
                 source._syncCallbacks['__crosshairAll'] = {
@@ -2744,11 +2784,28 @@ var Lib = (function (exports, lightweightCharts) {
             if (rangeHandlers.length > 1) {
                 rangeHandlers.forEach((source) => {
                     const rangeCb = (range) => {
-                        rangeHandlers.forEach((target) => {
-                            if (target === source || !range)
+                        // 重入守卫：setVisibleLogicalRange 会触发目标图表的
+                        // visibleLogicalRangeChange，导致 range 回调级联（N² 更新风暴）
+                        if (source._inRangeSync)
+                            return;
+                        source._inRangeSync = true;
+                        try {
+                            const rangeKey = range ? `${range.from.toFixed(6)}_${range.to.toFixed(6)}` : '';
+                            if (rangeKey === source._lastSyncedRange)
                                 return;
-                            target.chart.timeScale().setVisibleLogicalRange(range);
-                        });
+                            source._lastSyncedRange = rangeKey;
+                            rangeHandlers.forEach((target) => {
+                                if (target === source || !range)
+                                    return;
+                                try {
+                                    target.chart.timeScale().setVisibleLogicalRange(range);
+                                }
+                                catch (_) { }
+                            });
+                        }
+                        finally {
+                            source._inRangeSync = false;
+                        }
                     };
                     source.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeCb);
                     source._syncCallbacks['__rangeAll'] = {
@@ -2776,12 +2833,28 @@ var Lib = (function (exports, lightweightCharts) {
             const childTimeScale = childChart.chart.timeScale();
             const parentTimeScale = parentChart.chart.timeScale();
             const setChildRange = (timeRange) => {
-                if (timeRange)
-                    childTimeScale.setVisibleLogicalRange(timeRange);
+                if (childChart._inRangeSync)
+                    return;
+                childChart._inRangeSync = true;
+                try {
+                    if (timeRange)
+                        childTimeScale.setVisibleLogicalRange(timeRange);
+                }
+                finally {
+                    childChart._inRangeSync = false;
+                }
             };
             const setParentRange = (timeRange) => {
-                if (timeRange)
-                    parentTimeScale.setVisibleLogicalRange(timeRange);
+                if (parentChart._inRangeSync)
+                    return;
+                parentChart._inRangeSync = true;
+                try {
+                    if (timeRange)
+                        parentTimeScale.setVisibleLogicalRange(timeRange);
+                }
+                finally {
+                    parentChart._inRangeSync = false;
+                }
             };
             const setParentCrosshair = (param) => {
                 crosshairHandler(parentChart, getPoint(childChart.series, param), param);
@@ -2859,19 +2932,28 @@ var Lib = (function (exports, lightweightCharts) {
                 return;
             // 重建 crosshair 同步
             const crosshairCb = (param) => {
-                targets.forEach(target => {
-                    if (!target.legend?.div)
-                        return;
-                    if (!param.time) {
-                        target.chart.clearCrosshairPosition();
-                        return;
-                    }
-                    const point = param.seriesData.get(chart.series) || null;
-                    target.chart.setCrosshairPosition(0, param.time, target.series);
-                    if (point) {
-                        target.legend.legendHandler({ time: param.time, point }, true);
-                    }
-                });
+                // 重入守卫：防止 crosshair 同步级联触发
+                if (chart._inSync)
+                    return;
+                chart._inSync = true;
+                try {
+                    targets.forEach(target => {
+                        if (!target.legend?.div)
+                            return;
+                        if (!param.time) {
+                            target.chart.clearCrosshairPosition();
+                            return;
+                        }
+                        const point = param.seriesData.get(chart.series) || null;
+                        target.chart.setCrosshairPosition(0, param.time, target.series);
+                        if (point) {
+                            target.legend.legendHandler({ time: param.time, point }, true);
+                        }
+                    });
+                }
+                finally {
+                    chart._inSync = false;
+                }
             };
             chart.chart.subscribeCrosshairMove(crosshairCb);
             // 存储新的回调引用
@@ -2883,10 +2965,27 @@ var Lib = (function (exports, lightweightCharts) {
             });
             // 重建 range 同步
             const rangeCb = (range) => {
-                targets.forEach(target => {
-                    if (range)
-                        target.chart.timeScale().setVisibleLogicalRange(range);
-                });
+                // 重入守卫：防止 range 回调级联触发
+                if (chart._inRangeSync)
+                    return;
+                chart._inRangeSync = true;
+                try {
+                    const rangeKey = range ? `${range.from.toFixed(6)}_${range.to.toFixed(6)}` : '';
+                    if (rangeKey === chart._lastSyncedRange)
+                        return;
+                    chart._lastSyncedRange = rangeKey;
+                    targets.forEach(target => {
+                        if (range) {
+                            try {
+                                target.chart.timeScale().setVisibleLogicalRange(range);
+                            }
+                            catch (_) { }
+                        }
+                    });
+                }
+                finally {
+                    chart._inRangeSync = false;
+                }
             };
             chart.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeCb);
             targets.forEach(target => {
