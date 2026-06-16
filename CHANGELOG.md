@@ -4,6 +4,46 @@
 
 ---
 
+## [v2.6.0] - 2026-06-16
+
+### Added
+
+- **`sync_id` 组同步 API**: 全新的基于组名的图表同步机制，替代旧的 `sync=chart.id` 配对同步
+  - 所有 `AbstractChart` 子类（`Chart`、`HtmlTabChart`、`HTMLChart`、`StreamlitChart`、`JupyterChart`、`WxChart`、`QtChart`）统一支持 `sync_id` 和 `sync_crosshairs_only` 参数
+  - `Chart.__init__` 新增 `sync_id` 参数，主图表可直接加入同步组
+  - `join_sync_group()` 方法：任意图表可运行时动态加入同步组
+  - `_normalize_sync_id()` 静态方法：统一校验 `sync_id` 输入（仅允许 `str`/`None`/`True`/`False`）
+  - 同步组规则：同组所有图表互相同步十字光标；时间范围仅在 `sync_crosshairs_only=False` 的图表间同步
+  - `reset_sub()` 后同步自动恢复（`_syncGroup` 属性保留组名）
+
+### Breaking Changes
+
+- **`sync` 参数重命名为 `sync_id`，语义从"链式传递 chart.id"改为"组名字符串"**:
+  - **旧 API（v2.5.x 及更早）**: `create_subchart(sync=chart.id)` — 传入目标图表的 ID（如 `window.Chart_1`），建立 A↔B 两点之间的配对同步关系
+  - **新 API（v2.6.0）**: `create_subchart(sync_id='main')` — 传入任意组名字符串，所有使用相同组名的图表自动互相同步，无需知道彼此的 ID
+  - 主图表加入同步组: `Chart(sync_id='main')` 或 `chart.join_sync_group('main')`
+  - `True` 会被转为字符串 `'True'` 作为组名，`False`/`None` 表示不同步
+  - 传入非 `str`/`None`/`True`/`False` 类型会抛出 `TypeError`
+  - **迁移示例**:
+    ```python
+    # 旧写法（v2.5.x）
+    chart = Chart(...)
+    sub = chart.create_subchart(sync=chart.id)  # 传入 chart.id
+
+    # 新写法（v2.6.0）
+    chart = Chart(..., sync_id='main')  # 主图表加入 'main' 组
+    sub = chart.create_subchart(sync_id='main')  # 子图加入同一组
+    ```
+- **`syncChartsAll` 不再直接使用**: 内部同步重建改用 `syncGroup` 按 `_syncGroup` 分组重建
+
+### Changed
+
+- **JS 端 `joinSyncGroup` 简化**: 移除 `startsWith('window.')` 兼容处理和 `window[id]` fallback，直接通过 `Handler._all.find()` 匹配
+- **`_unsync_all` 重写**: 从复杂的 4 步配对拆解简化为 2 步（清空所有回调 → 按 `_syncGroup` 分组重建）
+- **QUICK_REFERENCE.md 更新**: 同步部分全面替换为新的 `sync_id` 组同步 API 文档
+
+---
+
 ## [v2.5.3] - 2026-06-15
 
 ### Fixed

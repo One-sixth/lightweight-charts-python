@@ -114,37 +114,40 @@ chart = Chart(
 
 **图表同步功能：**
 
-通过 `sync` 参数实现多图表同步：
+通过 `sync_id` 组名实现多图表同步。同名组内的所有图表自动同步十字光标和/或时间范围：
 
 ```python
-# 创建主图表
-chart = Chart()
+# 主图表加入同步组
+chart = Chart(width=1200, height=800, position=(2, 2, 1), sync_id='main')
 chart.set(df_main)
 
-# 创建同步子图表（完全同步：时间轴 + 十字光标）
-subchart = chart.create_subchart(
-    position=(2, 1, 2),      # 右侧位置
-    sync=chart.id,            # 同步到主图表
-    sync_crosshairs_only=False  # 完全同步
-)
-subchart.set(df_sub)
+# 子图加入同一组 → 自动与主图同步
+sub_right = chart.create_subchart(position=(2, 2, 2), sync_id='main')
+sub_right.set(df_right)
 
-# 创建仅同步十字光标的子图表
-subchart2 = chart.create_subchart(
-    position=211,             # 底部位置
-    sync=chart.id,            # 同步到主图表
-    sync_crosshairs_only=True   # 仅同步十字光标
-)
-subchart2.set(df_indicator)
+# 另一个子图也加入同一组 → 三个图表互相同步
+sub_bottom = chart.create_subchart(position=(2, 2, 3), sync_id='main', sync_crosshairs_only=True)
+sub_bottom.set(df_bottom)
+
+# 不同组名 → 独立同步
+sub_independent = chart.create_subchart(position=(2, 2, 4), sync_id='group2')
+sub_independent.set(df_ind)
 ```
 
 **同步选项：**
 
-| 参数 | 说明 |
-|------|------|
-| `sync` | 目标图表 ID 或 `True`（使用当前图表 ID），子图表将与此图表同步 |
-| `sync_crosshairs_only=False` | 完全同步（时间轴缩放 + 十字光标移动） |
-| `sync_crosshairs_only=True` | 仅同步十字光标，时间轴独立 |
+| 参数 | 适用位置 | 说明 |
+|------|---------|------|
+| `Chart(sync_id=...)` | 主图表 | 主图表加入指定同步组 |
+| `create_subchart(sync_id=...)` | 子图 | 子图加入指定同步组 |
+| `create_subchart(sync_crosshairs_only=True)` | 子图 | 仅同步十字光标，不同步时间范围 |
+| `join_sync_group(name, crosshair_only)` | 任意图表 | 运行时动态加入同步组 |
+
+**组同步规则：**
+- 同组内所有图表互相同步十字光标
+- 时间范围同步仅在 `sync_crosshairs_only=False` 的图表之间生效
+- 不同组名互不干扰
+- `reset_sub()` 后同步自动恢复（组名保留在 `_syncGroup` 属性中）
 
 ### 3.2 HTMLChart (浏览器)
 

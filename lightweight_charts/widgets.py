@@ -70,7 +70,8 @@ class WxChart(abstract.AbstractChart):
     def __init__(self, parent, inner_width: float = 1.0, inner_height: float = 1.0,
                  scale_candles_only: bool = False, toolbox: bool = False,
                  autosize: bool = True, position: Position = 111,
-                 pane_index: int = 0, marker_auto_scale: bool = True):
+                 pane_index: int = 0, marker_auto_scale: bool = True,
+                 sync_id: Optional[str] = None, sync_crosshairs_only: bool = False):
         if wx is None:
             raise ModuleNotFoundError('wx.html2 was not found, and must be installed to use WxChart.')
         self.webview: wx.html2.WebView = wx.html2.WebView.New(parent)
@@ -85,6 +86,9 @@ class WxChart(abstract.AbstractChart):
 
         self.webview.LoadURL("file://"+abstract.INDEX)
 
+        if sync_id:
+            self.join_sync_group(sync_id, sync_crosshairs_only)
+
     def get_webview(self):
         """返回底层的 wx.html2.WebView 实例。"""
         return self.webview
@@ -95,7 +99,8 @@ class QtChart(abstract.AbstractChart):
     def __init__(self, widget=None, inner_width: float = 1.0, inner_height: float = 1.0,
                  scale_candles_only: bool = False, toolbox: bool = False,
                  autosize: bool = True, position: Position = 111,
-                 pane_index: int = 0, marker_auto_scale: bool = True):
+                 pane_index: int = 0, marker_auto_scale: bool = True,
+                 sync_id: Optional[str] = None, sync_crosshairs_only: bool = False):
         if QWebEngineView is None:
             raise ModuleNotFoundError('QWebEngineView was not found, and must be installed to use QtChart.')
         self.webview = QWebEngineView(widget)
@@ -128,6 +133,9 @@ class QtChart(abstract.AbstractChart):
         self.webview.load(QUrl.fromLocalFile(abstract.INDEX))
         self.subcharts.append(self.id)
 
+        if sync_id:
+            self.join_sync_group(sync_id, sync_crosshairs_only)
+
 
     def get_webview(self):
         """返回底层的 QWebEngineView 实例。"""
@@ -138,7 +146,8 @@ class StaticLWC(abstract.AbstractChart):
     """静态 HTML/JS 图表基类，将 JS bundle 内联到 HTML 中，用于 Jupyter / Streamlit / 文件导出。"""
     def __init__(self, width=None, height=None, inner_width=1, inner_height=1,
                 scale_candles_only: bool = False, toolbox=False, autosize=True, template='index.html',
-                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
+                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True,
+                sync_id: Optional[str] = None, sync_crosshairs_only: bool = False):
 
         INDEX = os.path.join(current_dir, 'js', template)
         with open(INDEX.replace(template, 'styles.css'), 'r', encoding='utf-8') as f:
@@ -159,6 +168,10 @@ class StaticLWC(abstract.AbstractChart):
                         scale_candles_only, toolbox, autosize, position, pane_index, marker_auto_scale)
         self.width = width
         self.height = height
+
+        # 如果指定了 sync_id，加入同步组
+        if sync_id:
+            self.join_sync_group(sync_id, sync_crosshairs_only)
 
     def run_script(self, script, run_last=False):
         """将 JS 脚本缓存到内部 HTML 缓冲区。"""
@@ -192,8 +205,11 @@ class StaticLWC(abstract.AbstractChart):
 class StreamlitChart(StaticLWC):
     """基于 Streamlit 的图表组件（使用 st.components.v1.html）。"""
     def __init__(self, width=None, height=None, inner_width=1, inner_height=1, scale_candles_only: bool = False, toolbox: bool = False,
-                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
-        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale)
+                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True,
+                sync_id: Optional[str] = None, sync_crosshairs_only: bool = False):
+        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox,
+                        position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale,
+                        sync_id=sync_id, sync_crosshairs_only=sync_crosshairs_only)
 
     def _export(self):
         if sthtml is None:
@@ -204,8 +220,11 @@ class StreamlitChart(StaticLWC):
 class JupyterChart(StaticLWC):
     """基于 Jupyter Notebook 的图表（使用 IPython.display.HTML + iframe）。"""
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1, scale_candles_only: bool = False, toolbox: bool = False,
-                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
-        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True, position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale)
+                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True,
+                sync_id: Optional[str] = None, sync_crosshairs_only: bool = False):
+        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True,
+                        position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale,
+                        sync_id=sync_id, sync_crosshairs_only=sync_crosshairs_only)
 
 
     def _export(self):
@@ -220,8 +239,11 @@ class HTMLChart(StaticLWC):
     """导出为独立 HTML 文件的图表。"""
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1,
                 scale_candles_only: bool = False, toolbox: bool = False,
-                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
-        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True, position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale)
+                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True,
+                sync_id: Optional[str] = None, sync_crosshairs_only: bool = False):
+        super().__init__(width, height, inner_width, inner_height, scale_candles_only, toolbox, True,
+                        position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale,
+                        sync_id=sync_id, sync_crosshairs_only=sync_crosshairs_only)
 
     def export(self, filename: str = "charts.html"):
         """完成 JS 脚本收集并导出 HTML 文件。
@@ -247,10 +269,13 @@ class HtmlTabChart(StaticLWC):
     """
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1,
                 scale_candles_only: bool = False, toolbox: bool = False,
-                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True):
+                position: Position = 111, pane_index: int = 0, marker_auto_scale: bool = True,
+                sync_id: Optional[str] = None, sync_crosshairs_only: bool = False):
         super().__init__(width=width, height=height, inner_width=inner_width, inner_height=inner_height,
                         scale_candles_only=scale_candles_only, toolbox=toolbox, autosize=True,
-                        template='index_tab.html', position=position, pane_index=pane_index, marker_auto_scale=marker_auto_scale)
+                        template='index_tab.html', position=position, pane_index=pane_index,
+                        marker_auto_scale=marker_auto_scale,
+                        sync_id=sync_id, sync_crosshairs_only=sync_crosshairs_only)
         self.js_win = []
         self.names = []
         self.trades = []

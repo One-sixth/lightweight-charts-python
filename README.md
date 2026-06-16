@@ -80,9 +80,37 @@ https://github.com/EsIstJosh/lightweight-charts-python
 34. 📚 **示例 32** — HtmlTabChart 多策略 Tab 切换完整演示
 35. 🔄 **子图内容重置** — `reset_sub()` 清除子图全部内容（数据/线条/标记/绘图/表格/ToolBox/TopBar/Legend/Events/sync/handlers），保留布局，不影响其他子图，reset 后可重用
 36. 📚 **示例 33** — reset_sub 子图内容重置完整演示（4 子图网格 + 主图 reset + 独立子图 + 十字光标同步恢复）
-
+37. 🔗 **`sync_id` 组同步 API（v2.6.0）** — 全新的基于组名的图表同步机制，所有 `AbstractChart` 子类统一支持 `sync_id` 和 `sync_crosshairs_only` 参数
 
     🧰 **主要支持环境** — PySide6、PyQt6、wxPython
+
+---
+
+## ⚠️ v2.6.0 破坏性更改：图表同步 API 重写
+
+**旧 API（v2.5.x 及更早）**：`create_subchart(sync=chart.id)` — 传入目标图表的 ID（如 `window.Chart_1`），建立 A↔B 两点之间的**配对同步**关系。主图表无法直接参与同步（没有 `sync_id` 参数）。
+
+**新 API（v2.6.0）**：`create_subchart(sync_id='main')` — 传入任意**组名字符串**，所有使用相同组名的图表自动互相同步，无需知道彼此的 ID。主图表通过 `Chart(sync_id='main')` 直接加入组。
+
+```python
+# ❌ 旧写法（v2.5.x）— 链式传递 chart.id，配对同步
+chart = Chart(...)
+sub = chart.create_subchart(sync=chart.id)      # 传入 chart.id
+sub2 = chart.create_subchart(sync=chart.id)     # 每个子图都要传
+
+# ✅ 新写法（v2.6.0）— 组名同步，主图也参与
+chart = Chart(..., sync_id='main')              # 主图表加入 'main' 组
+sub = chart.create_subchart(sync_id='main')     # 子图加入同一组
+sub2 = chart.create_subchart(sync_id='main')    # 自动互相同步
+```
+
+**`sync_id` 参数规则**：
+| 输入 | 结果 |
+|------|------|
+| `'main'`（字符串） | 加入名为 `'main'` 的同步组 |
+| `True` | 转为字符串 `'True'` 作为组名 |
+| `False` / `None` | 不同步 |
+| `123` / `[...]` 等 | 抛出 `TypeError` |
 
 
 ---

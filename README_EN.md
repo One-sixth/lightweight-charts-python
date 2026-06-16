@@ -77,9 +77,37 @@ Below is the consolidated and optimized Markdown version, retaining all informat
 34. 📚 **Example 32** — HtmlTabChart multi-strategy Tab switching complete demo
 35. 🔄 **Subchart Content Reset** — `reset_sub()` clears all subchart content (data/lines/markers/drawings/tables/ToolBox/TopBar/Legend/Events/sync/handlers), preserves layout, does not affect other subcharts, reusable after reset
 36. 📚 **Example 33** — reset_sub subchart content reset complete demo (4-subchart grid + main chart reset + independent subchart + crosshair sync recovery)
-
+37. 🔗 **`sync_id` Group Sync API (v2.6.0)** — New group-name-based chart synchronization. All `AbstractChart` subclasses uniformly support `sync_id` and `sync_crosshairs_only` parameters
 
     🧰 **Primary Supported Environments** — PySide6, PyQt6, wxPython
+
+---
+
+## ⚠️ v2.6.0 Breaking Change: Chart Sync API Rewrite
+
+**Old API (v2.5.x and earlier)**: `create_subchart(sync=chart.id)` — Pass the target chart's ID (e.g. `window.Chart_1`) to establish **pair sync** between A↔B. The main chart could not participate in sync (no `sync_id` parameter).
+
+**New API (v2.6.0)**: `create_subchart(sync_id='main')` — Pass any **group name string**. All charts using the same group name automatically sync with each other, no need to know each other's IDs. The main chart joins via `Chart(sync_id='main')`.
+
+```python
+# ❌ Old way (v2.5.x) — chain pass chart.id, pair sync
+chart = Chart(...)
+sub = chart.create_subchart(sync=chart.id)      # pass chart.id
+sub2 = chart.create_subchart(sync=chart.id)     # every subchart needs it
+
+# ✅ New way (v2.6.0) — group sync, main chart participates
+chart = Chart(..., sync_id='main')              # main chart joins 'main' group
+sub = chart.create_subchart(sync_id='main')     # subchart joins same group
+sub2 = chart.create_subchart(sync_id='main')    # auto mutual sync
+```
+
+**`sync_id` parameter rules**:
+| Input | Result |
+|-------|--------|
+| `'main'` (string) | Join sync group named `'main'` |
+| `True` | Converted to string `'True'` as group name |
+| `False` / `None` | No sync |
+| `123` / `[...]` etc. | Raises `TypeError` |
 
 
 ---

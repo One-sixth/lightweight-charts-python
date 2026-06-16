@@ -186,7 +186,8 @@ class Window:
         :param position: 子图位置（网格格式或字符串格式，如 111, (2,2,1), 'left'）
         :param width: 宽度比例（相对于网格单元，1.0=占满，<1.0=内缩对齐左上角，>1.0=侵占）
         :param height: 高度比例（相对于网格单元）
-        :param sync_id: 可选的同步目标图表 ID，用于将此子图与指定图表同步时间轴和十字光标
+        :param sync_id: 同步组名。所有使用相同 sync_id 的子图会自动同步十字光标和时间轴。
+            例如 sync_id="main" 会将子图加入 "main" 同步组。组内不同子图可独立设置 sync_crosshairs_only。
         :param scale_candles_only: 是否仅以 K 线范围缩放
         :param sync_crosshairs_only: 是否仅同步十字光标（不同步时间轴），默认为 False
         :param toolbox: 是否启用绘图工具箱
@@ -221,12 +222,12 @@ class Window:
             autosize=autosize, position=position, pane_index=pane_index,
             marker_auto_scale=marker_auto_scale
         )
-        # 如果指定了 sync_id，执行图表同步
+        # 如果指定了 sync_id，加入同步组
         if sync_id:
             self.run_script(f'''
-                Lib.Handler.syncCharts(
+                Lib.Handler.joinSyncGroup(
                     {subchart.id},
-                    {sync_id},
+                    "{sync_id}",
                     {'true' if sync_crosshairs_only else 'false'}
                 )
             ''')
@@ -1345,6 +1346,43 @@ class AbstractChart(Candlestick, Pane):
         """
         self.run_script(f'{self.id}.chart.timeScale().fitContent()')
 
+    @staticmethod
+    def _normalize_sync_id(sync_id):
+        """规范化 sync_id 参数。
+
+        :param sync_id: str | None | bool
+        :return: str | None（组名字符串或 None）
+        :raises TypeError: 如果输入类型不合法
+        """
+        if sync_id is None or sync_id is False:
+            return None
+        if sync_id is True:
+            return 'True'
+        if isinstance(sync_id, str):
+            return sync_id
+        raise TypeError(
+            f"sync_id 只能是 str、None、True 或 False，收到 {type(sync_id).__name__}"
+        )
+
+    def join_sync_group(self, group_name, sync_crosshairs_only: bool = False):
+        """
+        将当前图表加入指定同步组。同组内所有图表自动同步十字光标和/或时间范围。
+        可在任意时刻调用，包括主图表和已创建的子图。
+
+        :param group_name: 同步组名（字符串、True 或 None），同名图表自动同步
+        :param sync_crosshairs_only: True 则仅同步十字光标，不同步时间范围
+        """
+        group_name = self._normalize_sync_id(group_name)
+        if group_name is None:
+            return
+        self.win.run_script(f'''
+            Lib.Handler.joinSyncGroup(
+                {self.id},
+                "{group_name}",
+                {'true' if sync_crosshairs_only else 'false'}
+            )
+        ''')
+
     def clear_handlers(self):
         """
         Clears all registered event/message handlers in the Window.
@@ -1475,38 +1513,29 @@ class AbstractChart(Candlestick, Pane):
             self.win.handlers.pop(key, None)
 
     def _unsync_all(self):
-        """双向解除所有 syncCharts/syncChartsAll 关联，并重建同步。
+        """双向解除所有同步关联，并按 _syncGroup 重建。
 
         设计思路：
-          由于多图同步关系可能形成复杂网络（如 A<->B, B<->C, A<->C），
-          逐一拆解 pair sync 容易遗漏或出错。因此采用"先全部清空，再统一重建"策略。
+          采用"先全部清空，再按组重建"策略，避免逐一拆解 pair sync 的复杂性。
 
         自动恢复机制：
           reset_sub 后调用 set() 重新填充数据，同步关系会自动恢复。
-          原因是 _syncedHandlers 的 filter(id !== myId) 只移除自身 ID（不在列表中），
-          所以本图的 _syncedHandlers 保留了原始同步伙伴列表，
-          重建时 syncChartsAll 会将其重新纳入同步组。
+          因为本图的 _syncGroup 保留了组名，重建时会被纳入同组的 syncGroup 调用。
 
-        防重复回调机制（Step 3）：
-          重建前必须清理所有 handler 的旧 sync 回调。否则 syncChartsAll 用
-          '__crosshairAll' 作为 key 创建新回调，而旧 pair sync 用 handler ID 作为 key，
-          两个 key 不同，导致新旧回调并存，同一事件被触发两次。
+        执行流程：
+          Step 1: 清理所有 handler 的旧 sync 回调
+          Step 2: 按 _syncGroup 分组，每组调用 syncGroup 重建
         """
         my_id = self.id
         self.run_script(f'''
             (() => {{
                 const myId = "{my_id}";
-                const me = Lib.Handler._all.find(h => h.id === myId);
-                if (!me) return;
 
-                // ── Step 1: 清理与本图直接关联的 handler ──
-                // 找出 _syncedHandlers 包含 myId 的 handler，取消其所有 sync 回调，
-                // 并从其 _syncedHandlers 中移除 myId。
+                // ── Step 1: 清理所有 handler 的旧 sync 回调 ──
+                // 逐一拆解 pair sync 容易遗漏（如链式同步中非直接关联的 handler），
+                // 因此直接清理全部，然后按组统一重建。
                 Lib.Handler._all.forEach(h => {{
-                    if (h.id === myId) return;
-                    if (!h._syncedHandlers || !h._syncedHandlers.includes(myId)) return;
-
-                    for (const [key, cb] of Object.entries(h._syncCallbacks)) {{
+                    for (const [, cb] of Object.entries(h._syncCallbacks)) {{
                         if (cb.crosshair && cb.crosshairSource) {{
                             cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
                         }}
@@ -1515,46 +1544,24 @@ class AbstractChart(Candlestick, Pane):
                         }}
                     }}
                     h._syncCallbacks = {{}};
-                    h._syncedHandlers = h._syncedHandlers.filter(id => id !== myId);
+                    h._syncedHandlers = [];
                 }});
 
-                // ── Step 2: 清理本图自身的 sync 回调 ──
-                // 注意：_syncedHandlers 仅 filter 掉 myId（自身 ID 不在列表中，实际无变化），
-                // 这是有意为之——保留原始同步伙伴列表，供 Step 4 重建时使用。
-                for (const [key, cb] of Object.entries(me._syncCallbacks)) {{
-                    if (cb.crosshair && cb.crosshairSource) {{
-                        cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
-                    }}
-                    if (cb.range && cb.rangeSource) {{
-                        cb.rangeSource.chart.timeScale().unsubscribeVisibleLogicalRangeChange(cb.range);
-                    }}
-                }}
-                me._syncCallbacks = {{}};
-                me._syncedHandlers = me._syncedHandlers.filter(id => id !== myId);
-
-                // ── Step 3: 清理所有剩余 handler 的旧 sync 回调 ──
-                // 必须在重建前执行。否则 syncChartsAll 用 '__crosshairAll' 作 key 创建新回调，
-                // 而旧 pair sync 用 handler ID 作 key，两个 key 不同会导致新旧并存、重复触发。
-                Lib.Handler._all.forEach(h => {{
-                    if (h.id === myId) return;
-                    for (const [key, cb] of Object.entries(h._syncCallbacks)) {{
-                        if (cb.crosshair && cb.crosshairSource) {{
-                            cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
-                        }}
-                        if (cb.range && cb.rangeSource) {{
-                            cb.rangeSource.chart.timeScale().unsubscribeVisibleLogicalRangeChange(cb.range);
-                        }}
-                    }}
-                    h._syncCallbacks = {{}};
-                }});
-
-                // ── Step 4: 重建所有图的同步 ──
-                // 找出 _syncedHandlers 非空的 handler，用 syncChartsAll 统一重建。
-                // 本图的 _syncedHandlers 保留了原始伙伴（Step 2 未清空），
+                // ── Step 2: 按 _syncGroup 分组重建 ──
+                // 所有 _syncGroup 非空的 handler，按组名分组后调用 syncGroup 重建。
+                // 本图的 _syncGroup 保留了组名（Step 1 只清 _syncCallbacks，不清 _syncGroup），
                 // 因此会被纳入重建，实现 reset 后同步自动恢复。
-                const allHandlers = Lib.Handler._all.filter(h => h._syncedHandlers && h._syncedHandlers.length > 0);
-                if (allHandlers.length > 1) {{
-                    Lib.Handler.syncChartsAll(allHandlers);
+                const groups = {{}};
+                Lib.Handler._all.forEach(h => {{
+                    if (h._syncGroup) {{
+                        if (!groups[h._syncGroup]) groups[h._syncGroup] = [];
+                        groups[h._syncGroup].push(h);
+                    }}
+                }});
+                for (const [, groupHandlers] of Object.entries(groups)) {{
+                    if (groupHandlers.length > 1) {{
+                        Lib.Handler.syncGroup(groupHandlers);
+                    }}
                 }}
             }})()
         ''')
@@ -2079,7 +2086,7 @@ class AbstractChart(Candlestick, Pane):
         :param position: 子图位置（网格格式或字符串格式，如 111, (2,2,1), 'left'）
         :param width: 宽度比例（相对于网格单元，1.0=占满，<1.0=内缩对齐左上角，>1.0=侵占）
         :param height: 高度比例（相对于网格单元）
-        :param sync_id: 同步 ID 或 True（使用当前图表 ID）
+        :param sync_id: 同步组名（str/True/False/None），同名组内的图表自动同步
         :param scale_candles_only: 是否仅以 K 线范围缩放
         :param sync_crosshairs_only: 是否仅同步十字光标
         :param toolbox: 是否启用绘图工具箱
@@ -2087,8 +2094,7 @@ class AbstractChart(Candlestick, Pane):
         :param pane_index: 面板索引
         :param marker_auto_scale: 标记是否自动缩放
         :return: AbstractChart 子图实例"""
-        if sync_id is True:
-            sync_id = self.id
+        sync_id = self._normalize_sync_id(sync_id)
 
         chart = self.win.create_subchart(position, width, height, sync_id, scale_candles_only,
                                          sync_crosshairs_only, toolbox, autosize, pane_index,

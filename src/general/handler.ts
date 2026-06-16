@@ -255,6 +255,9 @@ export class Handler {
         crosshairSource?: Handler,
         rangeSource?: Handler,
     }> = {};
+    // 组同步：sync_id 作为组名
+    public _syncGroup: string = '';
+    public _syncCrosshairOnly: boolean = false;
     private gridPosition: { row: number; col: number } | null = null;
     private gridDimensions: { nrows: number; ncols: number } | null = null;
     private isGridLayout: boolean = false;
@@ -764,6 +767,106 @@ export class Handler {
                 rangeSource: source,
             };
         });
+    }
+
+    /**
+     * 加入同步组。sync_id 作为组名，同组内所有 handler 自动同步。
+     * 支持混合 crosshairOnly：组内任意 handler 设为 true 则该对仅同步十字光标。
+     */
+    public static joinSyncGroup(chartOrId: Handler | string, groupName: string, crosshairOnly: boolean = false) {
+        // 如果传入字符串ID，查找对应的Handler对象
+        let chart: Handler | undefined;
+        if (typeof chartOrId === 'string') {
+            chart = Handler._all.find(h => h.id === chartOrId);
+            if (!chart) {
+                console.error(`Handler not found for id: ${chartOrId}`);
+                return;
+            }
+        } else {
+            chart = chartOrId;
+        }
+        
+        chart._syncGroup = groupName;
+        chart._syncCrosshairOnly = crosshairOnly;
+
+        // 找出同组所有 handler
+        const groupHandlers = Handler._all.filter(h => h._syncGroup === groupName);
+
+        // 清理同组所有旧 sync 回调
+        groupHandlers.forEach(h => {
+            for (const [, cb] of Object.entries(h._syncCallbacks)) {
+                if (cb.crosshair && cb.crosshairSource) {
+                    cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
+                }
+                if (cb.range && cb.rangeSource) {
+                    cb.rangeSource.chart.timeScale().unsubscribeVisibleLogicalRangeChange(cb.range);
+                }
+            }
+            h._syncCallbacks = {};
+            h._syncedHandlers = [];
+        });
+
+        // 重建同组同步
+        if (groupHandlers.length > 1) {
+            Handler.syncGroup(groupHandlers);
+        }
+    }
+
+    /**
+     * 组同步：根据每个 handler 的 _syncCrosshairOnly 设置，
+     * 决定 crosshair 和 range 的同步范围。
+     * - crosshair：所有同组 handler 互相同步
+     * - range：仅 _syncCrosshairOnly=false 的 handler 之间同步
+     */
+    public static syncGroup(handlers: Handler[]) {
+        // 更新 _syncedHandlers
+        handlers.forEach(h => {
+            h._syncedHandlers = handlers.map(t => t.id).filter(id => id !== h.id);
+        });
+
+        // 1) Crosshair sync — 所有 handler 互相同步
+        handlers.forEach((source) => {
+            const crosshairCb = (param: MouseEventParams) => {
+                handlers.forEach((target) => {
+                    if (target === source) return;
+                    if (!param.time) {
+                        try { target.chart.clearCrosshairPosition(); } catch (_) {}
+                        return;
+                    }
+                    try {
+                        target.chart.setCrosshairPosition(0, param.time, target.series);
+                        const point = param.seriesData.get(source.series) || null;
+                        if (point && target.legend?.div) {
+                            const event = { time: param.time, point: point } as any;
+                            target.legend.legendHandler(event, true);
+                        }
+                    } catch (_) {}
+                });
+            };
+            source.chart.subscribeCrosshairMove(crosshairCb);
+            source._syncCallbacks['__crosshairAll'] = {
+                crosshair: crosshairCb,
+                crosshairSource: source,
+            };
+        });
+
+        // 2) Range sync — 仅 _syncCrosshairOnly=false 的 handler 之间同步
+        const rangeHandlers = handlers.filter(h => !h._syncCrosshairOnly);
+        if (rangeHandlers.length > 1) {
+            rangeHandlers.forEach((source) => {
+                const rangeCb = (range: LogicalRange | null) => {
+                    rangeHandlers.forEach((target) => {
+                        if (target === source || !range) return;
+                        target.chart.timeScale().setVisibleLogicalRange(range);
+                    });
+                };
+                source.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeCb);
+                source._syncCallbacks['__rangeAll'] = {
+                    range: rangeCb,
+                    rangeSource: source,
+                };
+            });
+        }
     }
 
     public static syncCharts(childChart:Handler, parentChart: Handler, crosshairOnly = false) {

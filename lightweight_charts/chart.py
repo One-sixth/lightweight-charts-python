@@ -6,6 +6,7 @@ import os
 import sys
 from queue import Empty
 import typing
+from typing import Optional, Union
 from pprint import pp
 
 import webview
@@ -301,7 +302,9 @@ class Chart(abstract.AbstractChart):
         scale_candles_only: bool = False,
         position: Position = 111,
         marker_auto_scale: bool = True,
-        frameless: bool = False
+        frameless: bool = False,
+        sync_id: Optional[Union[str, bool]] = None,
+        sync_crosshairs_only: bool = False,
     ):
         """
         :param width: 窗口宽度（像素），默认 800
@@ -323,6 +326,8 @@ class Chart(abstract.AbstractChart):
                         - 字符串：'left', 'right', 'top', 'bottom'（已弃用）
         :param marker_auto_scale: 标记是否参与价格轴自动缩放，默认 True
         :param frameless: 是否无边框窗口，默认 False
+        :param sync_id: 同步组名（str/True/False/None），同名组内的图表自动同步。None 或 False 表示不同步，True 转为字符串 'True' 作为组名
+        :param sync_crosshairs_only: True 则仅同步十字光标，不同步时间范围（需配合 sync_id 使用）
         """
         self.wv = WebviewHandler()
         self.wv.debug = debug
@@ -341,6 +346,10 @@ class Chart(abstract.AbstractChart):
         self.is_alive = True
 
         super().__init__(window, inner_width, inner_height, scale_candles_only, toolbox, position=position, marker_auto_scale=marker_auto_scale)
+
+        # 如果指定了 sync_id，加入同步组
+        if sync_id:
+            self.join_sync_group(sync_id, sync_crosshairs_only)
 
     def show(self, block: bool = False):
         """

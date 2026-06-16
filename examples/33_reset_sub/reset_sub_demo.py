@@ -79,17 +79,18 @@ def main():
     print("  示例 33: reset_sub — 子图内容重置")
     print("=" * 60)
 
-    # 创建 2x2 网格布局
+    # 创建 2x2 网格布局，主图加入同步组
     chart = Chart(
         width=1400, height=900,
         title='reset_sub Demo — 2x2 Grid',
         position=(2, 2, 1),
         toolbox=True,
+        sync_id='sync_group',
     )
 
     # 创建 3 个同步子图（使用 sync_id 与主图同步十字光标和时间轴）
-    sub_a = chart.create_subchart(position=(2, 2, 2), toolbox=True, sync_id=chart.id)
-    sub_b = chart.create_subchart(position=(2, 2, 3), sync_id=chart.id)
+    sub_a = chart.create_subchart(position=(2, 2, 2), toolbox=True, sync_id='sync_group')
+    sub_b = chart.create_subchart(position=(2, 2, 3), sync_id='sync_group')
 
     # sub_c 不同步——独立运行，作为"观察者"
     sub_c = chart.create_subchart(position=(2, 2, 4), toolbox=True)
