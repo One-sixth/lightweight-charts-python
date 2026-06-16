@@ -736,19 +736,15 @@ export class Handler {
                 try {
                     handlers.forEach((target) => {
                         if (target === source) return;
-                        if (!param.time) {
-                            try { target.chart.clearCrosshairPosition(); } catch (_) {}
-                            return;
-                        }
                         try {
+                            if (!param.time) {
+                                target.chart.clearCrosshairPosition();
+                                return;
+                            }
                             target.chart.setCrosshairPosition(0, param.time, target.series);
                             const point = param.seriesData.get(source.series) || null;
                             if (point && target.legend?.div) {
-                                const event = {
-                                    time: param.time,
-                                    point: point,
-                                } as any;
-                                target.legend.legendHandler(event, true);
+                                target.legend.legendHandler({ time: param.time, point } as any, true);
                             }
                         } catch (_) {}
                     });
@@ -857,16 +853,15 @@ export class Handler {
                 try {
                     handlers.forEach((target) => {
                         if (target === source) return;
-                        if (!param.time) {
-                            try { target.chart.clearCrosshairPosition(); } catch (_) {}
-                            return;
-                        }
                         try {
+                            if (!param.time) {
+                                target.chart.clearCrosshairPosition();
+                                return;
+                            }
                             target.chart.setCrosshairPosition(0, param.time, target.series);
                             const point = param.seriesData.get(source.series) || null;
                             if (point && target.legend?.div) {
-                                const event = { time: param.time, point: point } as any;
-                                target.legend.legendHandler(event, true);
+                                target.legend.legendHandler({ time: param.time, point } as any, true);
                             }
                         } catch (_) {}
                     });
@@ -1033,16 +1028,18 @@ export class Handler {
             chart._inSync = true;
             try {
                 targets.forEach(target => {
-                    if (!target.legend?.div) return;
-                    if (!param.time) {
-                        target.chart.clearCrosshairPosition();
-                        return;
-                    }
-                    const point = param.seriesData.get(chart.series) || null;
-                    target.chart.setCrosshairPosition(0, param.time, target.series);
-                    if (point) {
-                        target.legend.legendHandler({ time: param.time, point } as any, true);
-                    }
+                    try {
+                        if (!target.legend?.div) return;
+                        if (!param.time) {
+                            target.chart.clearCrosshairPosition();
+                            return;
+                        }
+                        const point = param.seriesData.get(chart.series) || null;
+                        target.chart.setCrosshairPosition(0, param.time, target.series);
+                        if (point) {
+                            target.legend.legendHandler({ time: param.time, point } as any, true);
+                        }
+                    } catch (_) {}
                 });
             } finally {
                 chart._inSync = false;
