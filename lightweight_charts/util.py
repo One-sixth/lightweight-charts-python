@@ -59,7 +59,10 @@ def parse_event_message(window, string):
     args = args.split(';;;')
     if name == 'null':
         return None, args
-    func = window.handlers[name]
+    func = window.handlers.get(name)
+    if func is None:
+        print(f'[Warning] Event handler "{name}" not found (may have been removed).')
+        return None, args
     return func, args
 
 def df_data(data: Union[pd.DataFrame, pd.Series]):

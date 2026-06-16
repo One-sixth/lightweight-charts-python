@@ -101,7 +101,11 @@ def main():
 
     try:
         chart.show(block=False)
-        chart.clear_handlers()
+
+        # 注意: 不要调用 chart.clear_handlers()！
+        # clear_handlers() 会清空 Window 上所有 handler（包括各子图 toolbox 的
+        # save_drawings handler），导致后续用户在子图上画图时 JS 发回调但 Python
+        # 找不到 handler 而报错。reset_sub() 内部会自行清理属于本图的 handler。
 
         # ============================================================
         #  第 1 步：填充所有子图

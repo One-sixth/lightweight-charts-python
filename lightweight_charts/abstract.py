@@ -1478,9 +1478,14 @@ class AbstractChart(Candlestick, Pane):
             t.delete()
 
         # 7. ToolBox 清理
+        # 注意: 必须先移除 handler，再调用 JS cleanup。
+        # 因为 JS _cleanup() → clearDrawings() → saveDrawings() 会向 Python
+        # 发送 save_drawings 回调。如果先调 _cleanup()，回调会排队，之后移除 handler
+        # 时消息已经在队列里，show_async() 处理到时 handler 已不在 → KeyError。
+        # 先移除 handler 后，排队的消息到达时找不到 handler，被 try/except 静默忽略。
         if hasattr(self, 'toolbox'):
-            self.toolbox._cleanup()
             self.win.handlers.pop(f'save_drawings{self.id}', None)
+            self.toolbox._cleanup()
 
         # 8. TopBar 清理
         if hasattr(self, 'topbar') and self.topbar._created:
@@ -1567,7 +1572,12 @@ class AbstractChart(Candlestick, Pane):
         ''')
 
     def _remove_my_handlers(self):
-        """从共享 handlers 字典中移除属于本子图的条目。"""
+        """从共享 handlers 字典中移除属于本子图的条目。
+
+        使用 salt 匹配（子字符串匹配），只移除 handler key 中包含本图 ID 后缀的条目。
+        例如本图 ID 为 window.AbstractChart_3，则 salt = '_AbstractChart_3'，
+        只会移除 key 中包含 '_AbstractChart_3' 的 handler，不会影响其他图表。
+        """
         salt = '_' + self.id[self.id.index('.') + 1:]
         to_remove = [k for k in self.win.handlers if salt in str(k)]
         for k in to_remove:

@@ -734,20 +734,21 @@ export class Handler {
                 if (source._inSync) return;
                 source._inSync = true;
                 try {
-                    handlers.forEach((target) => {
-                        if (target === source) return;
+                    const time = param.time;
+                    const srcSeries = source.series;
+                    const point = time ? param.seriesData.get(srcSeries) || null : null;
+                    for (let i = 0; i < handlers.length; i++) {
+                        const target = handlers[i];
+                        if (target === source) continue;
                         try {
-                            if (!param.time) {
-                                target.chart.clearCrosshairPosition();
-                                return;
-                            }
-                            target.chart.setCrosshairPosition(0, param.time, target.series);
-                            const point = param.seriesData.get(source.series) || null;
+                            const tc = target.chart;
+                            if (!time) { tc.clearCrosshairPosition(); continue; }
+                            tc.setCrosshairPosition(0, time, target.series);
                             if (point && target.legend?.div) {
-                                target.legend.legendHandler({ time: param.time, point } as any, true);
+                                target.legend.legendHandler({ time, point } as any, true);
                             }
                         } catch (_) {}
-                    });
+                    }
                 } finally {
                     source._inSync = false;
                 }
@@ -769,13 +770,16 @@ export class Handler {
                 if (source._inRangeSync) return;
                 source._inRangeSync = true;
                 try {
-                    const rangeKey = range ? `${range.from.toFixed(6)}_${range.to.toFixed(6)}` : '';
+                    const rFrom = range?.from;
+                    const rTo = range?.to;
+                    const rangeKey = range ? `${rFrom}_${rTo}` : '';
                     if (rangeKey === source._lastSyncedRange) return;
                     source._lastSyncedRange = rangeKey;
-                    handlers.forEach((target) => {
-                        if (target === source || !range) return;
+                    for (let i = 0; i < handlers.length; i++) {
+                        const target = handlers[i];
+                        if (target === source || !range) continue;
                         try { target.chart.timeScale().setVisibleLogicalRange(range); } catch (_) {}
-                    });
+                    }
                 } finally {
                     source._inRangeSync = false;
                 }
@@ -851,25 +855,27 @@ export class Handler {
                 if (source._inSync) return;
                 source._inSync = true;
                 try {
-                    handlers.forEach((target) => {
-                        if (target === source) return;
+                    const time = param.time;
+                    const srcSeries = source.series;
+                    const point = time ? param.seriesData.get(srcSeries) || null : null;
+                    for (let i = 0; i < handlers.length; i++) {
+                        const target = handlers[i];
+                        if (target === source) continue;
                         try {
-                            if (!param.time) {
-                                target.chart.clearCrosshairPosition();
-                                return;
-                            }
-                            target.chart.setCrosshairPosition(0, param.time, target.series);
-                            const point = param.seriesData.get(source.series) || null;
+                            const tc = target.chart;
+                            if (!time) { tc.clearCrosshairPosition(); continue; }
+                            tc.setCrosshairPosition(0, time, target.series);
                             if (point && target.legend?.div) {
-                                target.legend.legendHandler({ time: param.time, point } as any, true);
+                                target.legend.legendHandler({ time, point } as any, true);
                             }
                         } catch (_) {}
-                    });
+                    }
                 } finally {
                     source._inSync = false;
                 }
             };
             source.chart.subscribeCrosshairMove(crosshairCb);
+            // 存储回调引用（source 自己的回调订阅在自己 chart 上）
             source._syncCallbacks['__crosshairAll'] = {
                 crosshair: crosshairCb,
                 crosshairSource: source,
@@ -886,13 +892,16 @@ export class Handler {
                     if (source._inRangeSync) return;
                     source._inRangeSync = true;
                     try {
-                        const rangeKey = range ? `${range.from.toFixed(6)}_${range.to.toFixed(6)}` : '';
+                        const rFrom = range?.from;
+                        const rTo = range?.to;
+                        const rangeKey = range ? `${rFrom}_${rTo}` : '';
                         if (rangeKey === source._lastSyncedRange) return;
                         source._lastSyncedRange = rangeKey;
-                        rangeHandlers.forEach((target) => {
-                            if (target === source || !range) return;
+                        for (let i = 0; i < rangeHandlers.length; i++) {
+                            const target = rangeHandlers[i];
+                            if (target === source || !range) continue;
                             try { target.chart.timeScale().setVisibleLogicalRange(range); } catch (_) {}
-                        });
+                        }
                     } finally {
                         source._inRangeSync = false;
                     }
@@ -1027,20 +1036,21 @@ export class Handler {
             if (chart._inSync) return;
             chart._inSync = true;
             try {
-                targets.forEach(target => {
+                const time = param.time;
+                const srcSeries = chart.series;
+                const point = time ? param.seriesData.get(srcSeries) || null : null;
+                for (let i = 0; i < targets.length; i++) {
+                    const target = targets[i];
                     try {
-                        if (!target.legend?.div) return;
-                        if (!param.time) {
-                            target.chart.clearCrosshairPosition();
-                            return;
-                        }
-                        const point = param.seriesData.get(chart.series) || null;
-                        target.chart.setCrosshairPosition(0, param.time, target.series);
+                        if (!target.legend?.div) continue;
+                        const tc = target.chart;
+                        if (!time) { tc.clearCrosshairPosition(); continue; }
+                        tc.setCrosshairPosition(0, time, target.series);
                         if (point) {
-                            target.legend.legendHandler({ time: param.time, point } as any, true);
+                            target.legend.legendHandler({ time, point } as any, true);
                         }
                     } catch (_) {}
-                });
+                }
             } finally {
                 chart._inSync = false;
             }
@@ -1048,12 +1058,12 @@ export class Handler {
         chart.chart.subscribeCrosshairMove(crosshairCb);
 
         // 存储新的回调引用
-        targets.forEach(target => {
-            chart._syncCallbacks[target.id] = {
+        for (let i = 0; i < targets.length; i++) {
+            chart._syncCallbacks[targets[i].id] = {
                 crosshair: crosshairCb,
                 crosshairSource: chart
             };
-        });
+        }
 
         // 重建 range 同步
         const rangeCb = (range: LogicalRange | null) => {
@@ -1061,25 +1071,27 @@ export class Handler {
             if (chart._inRangeSync) return;
             chart._inRangeSync = true;
             try {
-                const rangeKey = range ? `${range.from.toFixed(6)}_${range.to.toFixed(6)}` : '';
+                const rFrom = range?.from;
+                const rTo = range?.to;
+                const rangeKey = range ? `${rFrom}_${rTo}` : '';
                 if (rangeKey === chart._lastSyncedRange) return;
                 chart._lastSyncedRange = rangeKey;
-                targets.forEach(target => {
+                for (let i = 0; i < targets.length; i++) {
                     if (range) {
-                        try { target.chart.timeScale().setVisibleLogicalRange(range); } catch (_) {}
+                        try { targets[i].chart.timeScale().setVisibleLogicalRange(range); } catch (_) {}
                     }
-                });
+                }
             } finally {
                 chart._inRangeSync = false;
             }
         };
         chart.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeCb);
-        targets.forEach(target => {
-            if (chart._syncCallbacks[target.id]) {
-                chart._syncCallbacks[target.id].range = rangeCb;
-                chart._syncCallbacks[target.id].rangeSource = chart;
+        for (let i = 0; i < targets.length; i++) {
+            if (chart._syncCallbacks[targets[i].id]) {
+                chart._syncCallbacks[targets[i].id].range = rangeCb;
+                chart._syncCallbacks[targets[i].id].rangeSource = chart;
             }
-        });
+        }
     }
 
     public static makeSearchBox(chart: Handler) {
