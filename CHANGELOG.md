@@ -4,6 +4,25 @@
 
 ---
 
+## [v2.6.1] - 2026-06-16
+
+### Fixed
+
+- **pywebview `evaluate_js` 无法序列化 lightweight-charts API 对象**: JS 函数返回包含 ISeriesApi/IChartApi 等对象的结构时，`evaluate_js` 永久卡死，导致 `run_script_and_get` 超时
+  - 修复: Python 端 `run_script` 调用末尾加 `;0`，阻止返回值传播
+  - 影响: `CandleSeries`、`Line`、`Histogram` 等所有通过 `run_script` 创建的 series
+- **消息循环异常处理终止整个消息处理**: `chart.py` 消息循环中 `KeyError` 和 `Exception` 的 `return` 会终止消息循环，导致后续消息全部丢失
+  - 修复: `KeyError` 和未知 `Exception` 改为 `break` + `put(None)` + 输出 `[FATAL]` 错误信息；`JavascriptException` 继续循环
+- **CandleSeries 标记不显示**: `_update_markers()` 未添加 try/catch 保护，JS 错误中断 async IIFE 执行链
+  - 修复: `CandleSeries._update_markers()` 添加 try/catch 防御
+
+### Changed
+
+- **示例 34**: 新增 `examples/34_candle_series/` — CandleSeries 独立K线系列演示（静态/实时/批量更新）
+- **测试**: 新增 `test/test_candle_series.py` — 6 个测试用例覆盖创建/删除/update/markers/多pane/混合资源/审计验证
+
+---
+
 ## [v2.6.0] - 2026-06-16
 
 ### Added

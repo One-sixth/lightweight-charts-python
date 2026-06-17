@@ -81,6 +81,7 @@ https://github.com/EsIstJosh/lightweight-charts-python
 35. 🔄 **子图内容重置** — `reset_sub()` 清除子图全部内容（数据/线条/标记/绘图/表格/ToolBox/TopBar/Legend/Events/sync/handlers），保留布局，不影响其他子图，reset 后可重用
 36. 📚 **示例 33** — reset_sub 子图内容重置完整演示（4 子图网格 + 主图 reset + 独立子图 + 十字光标同步恢复）
 37. 🔗 **`sync_id` 组同步 API（v2.6.0）** — 全新的基于组名的图表同步机制，所有 `AbstractChart` 子类统一支持 `sync_id` 和 `sync_crosshairs_only` 参数
+38. 🕯️ **示例 34** — CandleSeries 独立K线系列（主K线+参考K线在不同 pane，支持 set/update/update_batch/marker）
 
     🧰 **主要支持环境** — PySide6、PyQt6、wxPython
 
@@ -234,6 +235,7 @@ python -m build
 | 31 | `31_chart_sync` | 图表同步功能（时间轴+十字光标） |
 | 32 | `32_html_tab_chart` | HtmlTabChart 多策略 Tab 切换 |
 | 33 | `33_reset_sub` | reset_sub 子图内容重置 |
+| 34 | `34_candle_series` | CandleSeries 独立K线系列 |
 
 ---
 
@@ -958,5 +960,48 @@ chart.set(new_bars)
 > reset 后子图可重新填充使用，十字光标和时间轴同步自动恢复
 
 ![reset_sub](images/33_reset_sub.gif)
+
+---
+
+### 示例 34：CandleSeries（独立K线系列）
+
+```python
+import pandas as pd
+from lightweight_charts import Chart
+
+# 主K线
+chart = Chart(width=1400, height=900)
+chart.set(df_main)
+
+# 参考K线（独立 pane）
+ref = chart.create_candle_series(
+    name='参考品种',
+    pane_index=1,
+    up_color='rgba(0, 150, 255, 0.8)',
+    down_color='rgba(255, 100, 0, 0.8)',
+)
+ref.set(df_reference)       # 初始数据
+ref.update(new_bar)         # 更新/追加
+ref.update_batch(df_more)   # 批量追加
+ref.marker(...)             # 打标记
+
+chart.show(block=True)
+```
+
+**CandleSeries 功能：**
+
+| 功能 | 说明 |
+|------|------|
+| `create_candle_series()` | 创建独立K线（无 volume/open interest） |
+| `set(df)` | 设置初始 OHLC 数据 |
+| `update(series)` | 更新最新一根 bar 或追加新 bar |
+| `update_batch(df)` | 批量更新多根 bar |
+| `marker(...)` | 在独立K线上打标记 |
+| `delete()` | 删除系列并清理 JS 对象 |
+| `pane_index` | 控制绘制在哪个 pane |
+
+> 独立K线适用于参考K线、对比K线等场景，支持与主K线同步十字光标
+
+![CandleSeries](images/34_candle_series.png)
 
 ---
