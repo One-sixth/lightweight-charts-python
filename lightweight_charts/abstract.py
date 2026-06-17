@@ -941,6 +941,185 @@ class Histogram(SeriesCommon):
         }})''')
 
 
+class CandleSeries(SeriesCommon):
+    """独立K线系列，可在任意 pane 上绘制 OHLC 数据，无 volume/open interest。
+
+    适用于参考K线、对比K线等场景，支持 set/update/update_batch 动态更新。
+
+    用法示例::
+
+        chart = Chart(width=1200, height=800)
+        chart.set(df_main)  # 主K线 pane 0
+
+        ref = chart.create_candle_series(name='参考K线', pane_index=1)
+        ref.set(df_reference)  # 初始数据
+
+        ref.update(new_bar)        # 更新最新 bar 或追加新 bar
+        ref.update_batch(df_more)  # 批量追加
+    """
+
+    def __init__(self, chart, name: str = '', pane_index: int = 0,
+                 up_color: str = 'rgba(39, 157, 130, 100)',
+                 down_color: str = 'rgba(200, 97, 100, 100)',
+                 border_visible: bool = True, wick_visible: bool = True,
+                 price_line: bool = False, price_label: bool = True,
+                 price_scale_id: Optional[str] = None,
+                 crosshair_marker: bool = True):
+        super().__init__(chart, name, pane_index)
+        self.candle_data = pd.DataFrame()
+        self._has_volume = False
+        self._has_open_interest = False
+
+        border_up_color = up_color
+        border_down_color = down_color
+        wick_up_color = up_color
+        wick_down_color = down_color
+
+        self.run_script(f'''
+            {self.id} = {chart.id}.createCandleSeries(
+                "{name}",
+                {{
+                    upColor: '{up_color}',
+                    downColor: '{down_color}',
+                    borderUpColor: '{border_up_color}',
+                    borderDownColor: '{border_down_color}',
+                    wickUpColor: '{wick_up_color}',
+                    wickDownColor: '{wick_down_color}',
+                    borderVisible: {jbool(border_visible)},
+                    wickVisible: {jbool(wick_visible)},
+                    lastValueVisible: {jbool(price_label)},
+                    priceLineVisible: {jbool(price_line)},
+                    crosshairMarkerVisible: {jbool(crosshair_marker)},
+                    priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
+                }},
+                {pane_index}
+            )''')
+
+    def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
+        """
+        设置 K 线初始数据。
+
+        :param df: DataFrame，必须包含 time/date 列和 open, high, low, close 列。
+            如果为 None 或空 DataFrame，则清空数据。
+        """
+        self.run_script(f"{self.id}.series.setData([])")
+        self.data = pd.DataFrame()
+        self.candle_data = pd.DataFrame()
+
+        if df is None or df.empty:
+            return
+
+        df = self._normal_df(df)
+        self._set_interval(df)
+        df = self._time_to_bar_time(df)
+        df = self._merge_value_by_time(df)
+
+        required = ['open', 'high', 'low', 'close']
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            raise ValueError(f"DataFrame 缺少必需列: {missing}")
+
+        ohlc = df[['time', 'open', 'high', 'low', 'close']]
+        self.candle_data = ohlc.copy()
+        self.data = ohlc.copy()
+        self._last_bar = ohlc.iloc[-1]
+
+        ohlc_js_data = js_data(ohlc)
+        self.run_script(f'{self.id}.series.setData({ohlc_js_data}); ')
+
+        if self.markers:
+            self._update_markers()
+
+    def update(self, series: pd.Series):
+        """
+        更新最新一根 bar 或追加新 bar。
+
+        :param series: 包含 time, open, high, low, close 的 Series。
+            若 time 与最后一根相同则更新，否则追加。
+        :raises AssertionError: 如果尚未调用 set() 设置初始数据
+        """
+        if self._last_bar is None:
+            raise AssertionError("set() must be called first.")
+        self.update_batch(series.to_frame().T)
+
+    def update_batch(self, df: pd.DataFrame):
+        """
+        批量更新多根 K 线。
+
+        :param df: DataFrame，必须包含 time/date 列和 open, high, low, close 列。
+        """
+        if df.empty:
+            return
+
+        df = self._normal_df(df)
+        df = self._time_to_bar_time(df)
+        df = self._merge_value_by_time(df)
+
+        required = ['open', 'high', 'low', 'close']
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            raise ValueError(f"DataFrame 缺少必需列: {missing}")
+
+        ohlc = df[['time', 'open', 'high', 'low', 'close']]
+
+        if len(ohlc) > 1 and not ohlc['time'].is_monotonic_increasing:
+            raise ValueError("Time column must be monotonic increasing.")
+
+        if self._last_bar is not None:
+            mask = ohlc['time'] >= self._last_bar['time']
+            ohlc = ohlc[mask]
+            n_drop = len(mask) - mask.sum()
+            if n_drop > 0:
+                print(f'Warning! Drop {n_drop} lines because earlier than _last_bar.')
+            if ohlc.empty:
+                return
+
+        js_commands = []
+        for _, row in ohlc.iterrows():
+            js_commands.append(f'{self.id}.series.update({js_data(row)});')
+
+        if self.candle_data.empty:
+            self.candle_data = ohlc
+        elif self.candle_data.iloc[-1]['time'] == ohlc.iloc[0]['time']:
+            self.candle_data = pd.concat([self.candle_data.iloc[:-1], ohlc], ignore_index=True)
+        else:
+            self.candle_data = pd.concat([self.candle_data, ohlc], ignore_index=True)
+
+        self.data = self.candle_data.copy()
+        self._last_bar = ohlc.iloc[-1]
+
+        self.run_script(' '.join(js_commands))
+
+    def delete(self):
+        """删除此 K 线系列及其 JS 对象。"""
+        self._chart._lines.remove(self) if self in self._chart._lines else None
+        self.run_script(f'''
+            {self._chart.id}.chart.removeSeries({self.id}.series)
+            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series); if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1)
+
+            {self.id}legendItem = {self._chart.id}.legend._lines.find((line) => line.series == {self.id}.series)
+            {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
+            try {{ if ({self.id}legendItem) {self._chart.id}.legend.div.removeChild({self.id}legendItem.row) }} catch(e) {{}}
+
+            delete {self.id}legendItem
+            delete {self.id}
+        ''')
+
+    def _update_markers(self):
+        """重写标记更新，添加 try-catch 防御，防止 JS 错误中断 async IIFE 执行链。"""
+        if not self.markers:
+            self.run_script(f'{self.id}.seriesMarkers.setMarkers([])')
+            return
+        str_markers = json.dumps(list(self.markers.values()))
+        self.run_script(f'''
+            try {{
+                {self.id}.seriesMarkers.setMarkers({str_markers});
+            }} catch(e) {{
+                console.error('CandleSeries setMarkers failed:', e.message);
+            }}
+        ''')
+
+
 class Candlestick(SeriesCommon):
     def __init__(self, chart: 'AbstractChart'):
         super().__init__(chart)
@@ -1720,6 +1899,40 @@ class AbstractChart(Candlestick, Pane):
         hist = Histogram(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index)
         self._lines.append(hist)
         return hist
+
+    def create_candle_series(
+            self, name: str = '', pane_index: int = 0,
+            up_color: str = 'rgba(39, 157, 130, 100)',
+            down_color: str = 'rgba(200, 97, 100, 100)',
+            border_visible: bool = True, wick_visible: bool = True,
+            price_line: bool = False, price_label: bool = True,
+            price_scale_id: Optional[str] = None,
+            crosshair_marker: bool = True
+    ) -> CandleSeries:
+        """
+        创建并返回一个独立 K 线系列对象（无 volume/open interest）。
+
+        :param name: K 线名称，用于图例显示
+        :param pane_index: 面板索引，用于在多个面板中放置
+        :param up_color: 上涨K线颜色
+        :param down_color: 下跌K线颜色
+        :param border_visible: 是否显示K线边框
+        :param wick_visible: 是否显示影线
+        :param price_line: 是否显示价格线（在图表右侧显示当前价格）
+        :param price_label: 是否显示价格标签
+        :param price_scale_id: 价格刻度ID，用于共享刻度
+        :param crosshair_marker: 十字光标是否显示标记
+        :return: CandleSeries 实例
+        """
+        candle = CandleSeries(
+            self, name, pane_index,
+            up_color=up_color, down_color=down_color,
+            border_visible=border_visible, wick_visible=wick_visible,
+            price_line=price_line, price_label=price_label,
+            price_scale_id=price_scale_id, crosshair_marker=crosshair_marker,
+        )
+        self._lines.append(candle)
+        return candle
 
     def lines(self) -> list[Line]:
         """

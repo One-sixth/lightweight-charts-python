@@ -1,4 +1,4 @@
-from .abstract import AbstractChart, Window
+from .abstract import AbstractChart, Window, CandleSeries
 from .chart import Chart, CrossProcessChart
 from .widgets import JupyterChart
 from .widgets import HTMLChart

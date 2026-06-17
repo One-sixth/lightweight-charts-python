@@ -2055,10 +2055,10 @@ var Lib = (function (exports, lightweightCharts) {
                 '_seriesList', 'seriesMarkers', 'commandFunctions',
                 'reSize', '_createChart', 'createCandlestickSeries',
                 'createVolumeSeries', 'createOpenInterestSeries',
-                'createLineSeries', 'createHistogramSeries', '_styleMap',
+                'createLineSeries', 'createHistogramSeries', 'createCandleSeries', '_styleMap',
             ]);
             // Regex matching our custom window global variable names
-            const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
+            const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|CandleSeries_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
             // Build a lookup: handler ID → Handler instance
             const handlerMap = {};
             for (const h of Handler._all) {
@@ -2591,6 +2591,17 @@ var Lib = (function (exports, lightweightCharts) {
             return {
                 name: name,
                 series: line,
+            };
+        }
+        createCandleSeries(name, options, paneIndex = 0) {
+            const candle = this.chart.addSeries(lightweightCharts.CandlestickSeries, { ...options }, paneIndex);
+            this._seriesList.push(candle);
+            this.legend.makeSeriesRow(name, candle, paneIndex);
+            const seriesMarkers = lightweightCharts.createSeriesMarkers(candle, [], { autoScale: true });
+            return {
+                name: name,
+                series: candle,
+                seriesMarkers: seriesMarkers,
             };
         }
         createToolBox() {

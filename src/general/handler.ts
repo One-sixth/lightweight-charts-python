@@ -82,11 +82,11 @@ export class Handler {
             '_seriesList', 'seriesMarkers', 'commandFunctions',
             'reSize', '_createChart', 'createCandlestickSeries',
             'createVolumeSeries', 'createOpenInterestSeries',
-            'createLineSeries', 'createHistogramSeries', '_styleMap',
+            'createLineSeries', 'createHistogramSeries', 'createCandleSeries', '_styleMap',
         ]);
 
         // Regex matching our custom window global variable names
-        const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
+        const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|CandleSeries_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
 
         // Build a lookup: handler ID → Handler instance
         const handlerMap: Record<string, Handler> = {};
@@ -701,6 +701,23 @@ export class Handler {
         return {
             name: name,
             series: line,
+        };
+    }
+
+    createCandleSeries(name: string, options: DeepPartial<SeriesOptionsCommon>, paneIndex: number = 0)
+    {
+        const candle = this.chart.addSeries(
+            CandlestickSeries,
+            { ...options },
+            paneIndex
+        );
+        this._seriesList.push(candle);
+        this.legend.makeSeriesRow(name, candle, paneIndex);
+        const seriesMarkers = createSeriesMarkers(candle, [], { autoScale: true });
+        return {
+            name: name,
+            series: candle,
+            seriesMarkers: seriesMarkers,
         };
     }
 
