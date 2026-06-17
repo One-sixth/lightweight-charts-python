@@ -8,8 +8,8 @@
 ```
 lightweight-charts-python/
 ├── lightweight_charts/         ← Python 后端 (核心包)
-│   ├── __init__.py             # 导出 Chart, JupyterChart, HTMLChart, HtmlTabChart, PolygonChart
-│   ├── abstract.py             # 核心类: Window, AbstractChart, Candlestick, Line, Histogram, SeriesCommon
+│   ├── __init__.py             # 导出 Chart, JupyterChart, HTMLChart, HtmlTabChart, PolygonChart, CandleSeries
+│   ├── abstract.py             # 核心类: Window, AbstractChart, Candlestick, CandleSeries, Line, Histogram, SeriesCommon
 │   ├── chart.py                # Chart (pywebview 桌面窗口实现) + CrossProcessChart (跨进程嵌入 Qt)
 │   ├── widgets.py              # JupyterChart, HTMLChart, HtmlTabChart, QtChart, WxChart, StreamlitChart
 │   ├── toolbox.py              # ToolBox (绘图的保存/加载/导入/导出)
@@ -44,8 +44,9 @@ lightweight-charts-python/
 Pane (util.py)                      ← 所有组件的基类 (拥有 id, run_script)
 ├── Window (abstract.py)            ← JS 通信层: run_script(), run_script_and_get()
 ├── SeriesCommon (abstract.py)      ← 数据系列基类
-│   ├── Candlestick                 ← K线 + 成交量
+│   ├── Candlestick                 ← K线 + 成交量 (主图)
 │   │   └── AbstractChart           ← 图表主类 (多重继承 Candlestick + Pane)
+│   ├── CandleSeries                ← 独立K线系列 (无 volume, 可在任意 pane)
 │   ├── Line                        ← 折线
 │   └── Histogram                   ← 柱状图
 ├── Drawing (drawings.py)

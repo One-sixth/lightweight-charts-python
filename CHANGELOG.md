@@ -8,6 +8,15 @@
 
 ### Added
 
+- **`CandleSeries` 独立K线系列**: 在任意 pane 上绘制独立 K 线（无 volume/open interest），适用于参考K线、对比K线等场景
+  - `AbstractChart.create_candle_series()` 工厂方法，支持 name/pane_index/up_color/down_color/price_line/price_label 等参数
+  - `CandleSeries.set()` 设置初始 OHLC 数据
+  - `CandleSeries.update()` 更新最新一根 bar 或追加新 bar
+  - `CandleSeries.update_batch()` 批量更新多根 bar
+  - `CandleSeries.marker()` 在独立 K 线上打标记
+  - `CandleSeries.delete()` 删除系列并清理 JS 对象
+  - JS 端新增 `Handler.createCandleSeries()` 方法，调用 `chart.addSeries(CandlestickSeries, ...)`，注册到 `_seriesList` 和 `legend`
+  - `_update_markers()` 添加 try/catch 防御，防止 JS 错误中断 async IIFE 执行链
 - **`sync_id` 组同步 API**: 全新的基于组名的图表同步机制，替代旧的 `sync=chart.id` 配对同步
   - 所有 `AbstractChart` 子类（`Chart`、`HtmlTabChart`、`HTMLChart`、`StreamlitChart`、`JupyterChart`、`WxChart`、`QtChart`）统一支持 `sync_id` 和 `sync_crosshairs_only` 参数
   - `Chart.__init__` 新增 `sync_id` 参数，主图表可直接加入同步组

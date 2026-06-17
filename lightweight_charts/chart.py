@@ -161,17 +161,20 @@ class PyWV:
                     else:
                         window.evaluate_js(arg)
                 except KeyError as e:
-                    return
+                    pp(f'[FATAL] KeyError in message loop: {e}')
+                    if '_~_~RETURN~_~_' in arg:
+                        self.return_queue.put(None)
+                    break
                 except JavascriptException as e:
-                    # msg = eval(str(e))
                     msg = str(e)
                     pp(msg)
                     if '_~_~RETURN~_~_' in arg:
                         self.return_queue.put(None)
-                except Exception:
+                except Exception as e:
+                    pp(f'[FATAL] Unknown exception in message loop: {type(e).__name__}: {e}')
                     if '_~_~RETURN~_~_' in arg:
                         self.return_queue.put(None)
-                    return
+                    break
 
 
 class WebviewHandler():

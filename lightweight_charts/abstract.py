@@ -993,7 +993,7 @@ class CandleSeries(SeriesCommon):
                     priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
                 }},
                 {pane_index}
-            )''')
+            );0''')
 
     def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
         """
