@@ -86,7 +86,7 @@ export class Handler {
         ]);
 
         // Regex matching our custom window global variable names
-        const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|CandleSeries_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
+        const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|CandleSeries_\d|VolumeSeries_\d|OpenInterestSeries_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
 
         // Build a lookup: handler ID → Handler instance
         const handlerMap: Record<string, Handler> = {};

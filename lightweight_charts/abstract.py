@@ -222,6 +222,7 @@ class Window:
             autosize=autosize, position=position, pane_index=pane_index,
             marker_auto_scale=marker_auto_scale
         )
+        subchart._is_subchart = True
         # 如果指定了 sync_id，加入同步组
         if sync_id:
             self.run_script(f'''
@@ -439,7 +440,7 @@ class SeriesCommon(Pane):
 
         :param df: 包含时间序列数据的 DataFrame，需要包含 'time' 列 或 'date' 列，否则使用 'index' 作为 ‘time’ 列。
             对于 Line 系列，还需要 'value' 列或与系列同名的列。
-            对于 Candlestick 系列，需要 'open', 'high', 'low', 'close' 列。
+            对于 CandleSeries 系列，需要 'open', 'high', 'low', 'close' 列。
             如果为 None 或空 DataFrame，则清空数据。
         """
         # 重置系列
@@ -511,7 +512,7 @@ class SeriesCommon(Pane):
 
         Processes each row from the DataFrame using the same logic as
         update(), but collects all JavaScript commands into a single
-        batch for efficiency.  This mirrors Candlestick.update_bars()
+        batch for efficiency.  This mirrors CandleSeries.update_batch()
         for Line and Histogram series.
 
         :param df: DataFrame, must contain a 'time' column plus the
@@ -563,12 +564,120 @@ class SeriesCommon(Pane):
         # 一次性执行
         self.run_script(' '.join(js_commands))
 
+    def price_scale(
+        self,
+        auto_scale: bool = True,
+        mode: PRICE_SCALE_MODE = 'normal',
+        invert_scale: bool = False,
+        align_labels: bool = True,
+        scale_margin_top: float = 0.2,
+        scale_margin_bottom: float = 0.2,
+        border_visible: bool = False,
+        border_color: Optional[str] = None,
+        text_color: Optional[str] = None,
+        entire_text_only: bool = False,
+        visible: bool = True,
+        ticks_visible: bool = False,
+        tick_mark_density: float = None,
+        minimum_width: int = 0,
+        perm_width: int = 0
+    ):
+        """配置价格坐标轴的外观与行为。"""
+        self.run_script(f'''
+            {self.id}.series.priceScale().applyOptions({{
+                autoScale: {jbool(auto_scale)},
+                mode: {as_enum(mode, PRICE_SCALE_MODE)},
+                invertScale: {jbool(invert_scale)},
+                alignLabels: {jbool(align_labels)},
+                scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}},
+                borderVisible: {jbool(border_visible)},
+                {f'borderColor: "{border_color}",' if border_color else ''}
+                {f'textColor: "{text_color}",' if text_color else ''}
+                entireTextOnly: {jbool(entire_text_only)},
+                visible: {jbool(visible)},
+                ticksVisible: {jbool(ticks_visible)},
+                {f'tickMarkDensity: {tick_mark_density},' if tick_mark_density is not None else ''}
+                minimumWidth: {minimum_width},
+                {f'permWidth: {perm_width},' if perm_width else ''}
+            }})''')
+
+    def update_from_tick(self, series: pd.Series, cumulative_volume: bool = False):
+        """
+        使用单个 tick 更新图表。
+        :param series: labels: date/time, price, [volume, open_interest]
+        :param cumulative_volume: 是否累加成交量
+        """
+        self.update_from_ticks(series.to_frame().T, cumulative_volume=cumulative_volume)
+
+    def update_from_ticks(self, df: pd.DataFrame, cumulative_volume: bool = False):
+        """
+        批量使用 tick 更新图表，内部自动聚合成 bar。
+
+        :param df: DataFrame with columns: date/time, price, [volume, open_interest]
+        :param cumulative_volume: If True, adds tick volume onto the latest bar's volume.
+        """
+        if df.empty:
+            return
+
+        if self._last_bar is None:
+            raise AssertionError('update_from_ticks() must be called after set()')
+
+        df = self._normal_df(df)
+        df = self._time_to_bar_time(df)
+
+        group_df = df.groupby('time')
+
+        bars = pd.DataFrame({
+            'time': list(group_df.groups),
+            'open': group_df['price'].first().array,
+            'high': group_df['price'].max().array,
+            'low': group_df['price'].min().array,
+            'close': group_df['price'].last().array,
+        })
+
+        # 检测 volume/OI
+        has_vol = 'volume' in df.columns
+        has_oi = 'open_interest' in df.columns
+
+        vol_series = None
+        oi_series = None
+
+        if has_vol:
+            if cumulative_volume:
+                vol_series = group_df['volume'].sum().array
+            else:
+                vol_series = group_df['volume'].last().array
+
+        if has_oi:
+            oi_series = group_df['open_interest'].last().array
+
+        if self._last_bar['time'] == bars['time'].iloc[0]:
+            bars.iloc[0, 1] = self._last_bar['open']
+            bars.iloc[0, 2] = max(self._last_bar['high'], bars.iloc[0, 2])
+            bars.iloc[0, 3] = min(self._last_bar['low'], bars.iloc[0, 3])
+
+            if has_vol and cumulative_volume:
+                vol_series.iloc[0] += self._last_bar.get('volume', 0)
+
+        if has_vol:
+            bars['volume'] = vol_series
+        if has_oi:
+            bars['open_interest'] = oi_series
+
+        self.update_batch(bars)
+
     def _update_markers(self):
         if not self.markers:
             self.run_script(f'{self.id}.seriesMarkers.setMarkers([])')
             return
         str_markers = json.dumps(list(self.markers.values()))
-        self.run_script(f'{self.id}.seriesMarkers.setMarkers({str_markers})')
+        self.run_script(f'''
+            try {{
+                {self.id}.seriesMarkers.setMarkers({str_markers});
+            }} catch(e) {{
+                console.error('setMarkers failed:', e.message);
+            }}
+        ''')
 
     def marker_list(self, markers: list[dict]):
         """
@@ -634,95 +743,6 @@ class SeriesCommon(Pane):
         self.markers.pop(marker_id)
         self._update_markers()
 
-    def horizontal_line(self, price: NUM, color: str = 'rgb(122, 146, 202)', width: int = 2,
-                        style: LINE_STYLE = 'solid', text: str = '', axis_label_visible: bool = True,
-                        func: Optional[Callable] = None
-                        ) -> 'HorizontalLine':
-        """
-        在指定价格位置创建一条水平线。
-
-        :param price: 水平线所在的价格位置
-        :param color: 线条颜色，默认为 'rgb(122, 146, 202)'
-        :param width: 线条宽度（像素），默认为 2
-        :param style: 线条样式，可选值：'solid', 'dotted', 'dashed', 'large_dashed', 'sparse_dotted'
-        :param text: 线条标签文本
-        :param axis_label_visible: 是否在坐标轴上显示标签，默认为 True
-        :param func: 点击回调函数，签名为 func(price)
-        :return: HorizontalLine 实例
-        """
-        return HorizontalLine(self, price, color, width, style, text, axis_label_visible, func)
-
-    def trend_line(
-        self,
-        start_time: TIME,
-        start_value: NUM,
-        end_time: TIME,
-        end_value: NUM,
-        round: bool = False,
-        line_color: str = '#1E80F0',
-        width: int = 2,
-        style: LINE_STYLE = 'solid',
-    ) -> TwoPointDrawing:
-        """创建一条趋势线。
-        :param start_time: 起点时间
-        :param start_value: 起点价格
-        :param end_time: 终点时间
-        :param end_value: 终点价格
-        :param round: 是否取整坐标
-        :param line_color: 线条颜色
-        :param width: 线宽
-        :param style: 线条样式"""
-        return TrendLine(*locals().values())
-
-    def box(
-        self,
-        start_time: TIME,
-        start_value: NUM,
-        end_time: TIME,
-        end_value: NUM,
-        round: bool = False,
-        color: str = '#1E80F0',
-        fill_color: str = 'rgba(255, 255, 255, 0.2)',
-        width: int = 2,
-        style: LINE_STYLE = 'solid',
-    ) -> TwoPointDrawing:
-        """创建一个矩形方框。
-        :param start_time: 左上角时间
-        :param start_value: 左上角价格
-        :param end_time: 右下角时间
-        :param end_value: 右下角价格
-        :param fill_color: 填充色"""
-        return Box(*locals().values())
-
-    def ray_line(
-        self,
-        start_time: TIME,
-        value: NUM,
-        round: bool = False,
-        color: str = '#1E80F0',
-        width: int = 2,
-        style: LINE_STYLE = 'solid',
-        text: str = ''
-    ) -> RayLine:
-        """创建一条射线（从起点延伸至无穷远）。
-        :param start_time: 起点时间
-        :param value: 起点价格
-        :param text: 标签文本"""
-        return RayLine(*locals().values())
-
-    def vertical_line(
-        self,
-        time: TIME,
-        color: str = '#1E80F0',
-        width: int = 2,
-        style: LINE_STYLE ='solid',
-        text: str = ''
-    ) -> VerticalLine:
-        """创建一条垂直线。
-        :param time: 时间位置
-        :param text: 标签文本"""
-        return VerticalLine(*locals().values())
-
     def clear_markers(self, _dont_update: bool = False):
         """
         Clears the markers displayed on the data.\n
@@ -730,16 +750,6 @@ class SeriesCommon(Pane):
         self.markers.clear()
         if not _dont_update:
             self._update_markers()
-
-    def create_price_line(self, price: float = 0.0, color: str = 'rgba(214, 237, 255, 0.6)',
-            style: LINE_STYLE = 'large_dashed', width: int = 1, price_label: bool = False,
-            title: str = '') -> 'PriceLine':
-        """
-        Creates a horizontal price line on the series.
-
-        Returns a PriceLine object with a delete() method.
-        """
-        return PriceLine(self, price, color, style, width, price_label, title)
 
     def precision(self, precision: int):
         """
@@ -768,23 +778,6 @@ class SeriesCommon(Pane):
         if ('volumeSeries' in {self.id}) {self.id}.volumeSeries.applyOptions({{visible: {jbool(arg)}}});
         if ('openInterestSeries' in {self.id}) {self.id}.openInterestSeries.applyOptions({{visible: {jbool(arg)}}});
         ''')
-
-    def vertical_span(
-        self,
-        start_time: Union[TIME, tuple, list],
-        end_time: Optional[TIME] = None,
-        color: str = 'rgba(252, 219, 3, 0.2)',
-        round: bool = False
-    ):
-        """
-        Creates a vertical line or span across the chart.\n
-        Start time and end time can be used together, or end_time can be
-        omitted and a single time or a list of times can be passed to start_time.
-        """
-        if round:
-            start_time = self._single_datetime_format(start_time)
-            end_time = self._single_datetime_format(end_time) if end_time else None
-        return VerticalSpan(self, start_time, end_time, color)
 
 
 class PriceLine(Pane):
@@ -941,6 +934,313 @@ class Histogram(SeriesCommon):
         }})''')
 
 
+class VolumeSeries(SeriesCommon):
+    """成交量柱状图，绑定到 CandleSeries，自动根据 K 线涨跌着色。
+
+    通常通过 ``CandleSeries.attach_volume()`` 或 ``AbstractChart.attach_volume()``
+    创建，也可以独立创建后手动 ``set()``。
+
+    用法示例::
+
+        # 通过 chart 自动 attach（set 检测到 volume 列时自动创建）
+        chart.set(df_with_volume)
+
+        # 手动 attach
+        vol = chart.attach_volume(up_color='green', down_color='red')
+        vol.set(df)
+
+        # 独立配置
+        vol.config(scale_margin_top=0.7)
+
+        # 删除
+        vol.delete()
+    """
+
+    def __init__(self, candle: 'CandleSeries', pane_index: int = None,
+                 up_color: str = 'rgba(83,141,131,0.8)',
+                 down_color: str = 'rgba(200,127,130,0.8)',
+                 scale_margin_top: float = 0.8,
+                 scale_margin_bottom: float = 0.0,
+                 _wrap_existing: bool = False):
+        """
+        :param candle: 绑定的 CandleSeries 实例，用于获取 OHLC 着色
+        :param pane_index: 面板索引，None 则跟随 candle 的 pane_index
+        :param up_color: 上涨颜色（close > open）
+        :param down_color: 下跌颜色（close <= open）
+        :param scale_margin_top: 价格轴顶部边距（0-1）
+        :param scale_margin_bottom: 价格轴底部边距（0-1）
+        :param _wrap_existing: 内部参数，True 时包装 Handler 已有的 volumeSeries（不创建新 JS 对象）
+        """
+        pane = pane_index if pane_index is not None else candle.pane_index
+        super().__init__(candle._chart, name='', pane_index=pane)
+        self._candle = candle
+        self._up_color = up_color
+        self._down_color = down_color
+        self._wrap_existing = _wrap_existing
+
+        if _wrap_existing:
+            # 包装模式：复用 Handler 已有的 volumeSeries，不创建新 JS 对象
+            # self.id 已由 Pane.__init__ 自动生成，我们需要指向 Handler 的 volumeSeries
+            # 创建一个轻量包装对象
+            self.run_script(f'''
+                {self.id} = {{}};
+                {self.id}.series = {candle.id}.volumeSeries;
+            ;0''')
+        else:
+            # 独立模式：创建新的 HistogramSeries
+            self.run_script(f'''
+                {self.id} = {self._chart.id}.createHistogramSeries(
+                    "",
+                    {{
+                        color: '{down_color}',
+                        lastValueVisible: false,
+                        priceLineVisible: false,
+                        priceScaleId: 'volume_scale',
+                        priceFormat: {{type: "volume"}},
+                    }},
+                    {pane}
+                )
+                {self.id}.series.priceScale().applyOptions({{
+                    scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}}
+                }});0''')
+
+    def set(self, df: pd.DataFrame):
+        """设置成交量数据。自动根据绑定的 candle 的 OHLC 着色。
+
+        :param df: DataFrame，需要包含 time 和 volume 列。如果包含 open/close 列则自动着色。
+        """
+        if df is None or df.empty:
+            self.run_script(f'{self.id}.series.setData([])')
+            return
+
+        if 'volume' not in df.columns:
+            return
+
+        df = self._candle._normal_df(df)
+        df = self._candle._time_to_bar_time(df)
+
+        vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
+
+        # 根据 OHLC 着色
+        if 'open' in df.columns and 'close' in df.columns:
+            vol_df['color'] = self._down_color
+            vol_df.loc[df['close'] > df['open'], 'color'] = self._up_color
+        else:
+            vol_df['color'] = self._down_color
+
+        self.run_script(f'{self.id}.series.setData({js_data(vol_df)})')
+
+    def update(self, series: pd.Series):
+        """更新最新一根 bar 的成交量或追加新 bar。
+
+        :param series: 包含 time, volume 的 Series（可选 open, close 用于着色）
+        """
+        self.update_batch(series.to_frame().T)
+
+    def update_batch(self, df: pd.DataFrame):
+        """批量更新成交量。
+
+        :param df: DataFrame，需要包含 time 和 volume 列
+        """
+        if df is None or df.empty:
+            return
+
+        df = self._candle._normal_df(df)
+        df = self._candle._time_to_bar_time(df)
+
+        if 'volume' not in df.columns:
+            return
+
+        vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
+
+        if 'open' in df.columns and 'close' in df.columns:
+            vol_df['color'] = self._down_color
+            vol_df.loc[df['close'] > df['open'], 'color'] = self._up_color
+        else:
+            vol_df['color'] = self._down_color
+
+        js_commands = []
+        for _, row in vol_df.iterrows():
+            js_commands.append(f'{self.id}.series.update({js_data(row)})')
+        self.run_script('; '.join(js_commands))
+
+    def config(self, scale_margin_top: float = None, scale_margin_bottom: float = None,
+               up_color: str = None, down_color: str = None):
+        """配置成交量样式。
+
+        :param scale_margin_top: 价格轴顶部边距
+        :param scale_margin_bottom: 价格轴底部边距
+        :param up_color: 上涨颜色
+        :param down_color: 下跌颜色
+        """
+        if up_color is not None:
+            self._up_color = up_color
+        if down_color is not None:
+            self._down_color = down_color
+        if scale_margin_top is not None or scale_margin_bottom is not None:
+            top = scale_margin_top if scale_margin_top is not None else 0.8
+            bottom = scale_margin_bottom if scale_margin_bottom is not None else 0.0
+            self.run_script(f'''
+                {self.id}.series.priceScale().applyOptions({{
+                    scaleMargins: {{top: {top}, bottom: {bottom}}}
+                }})''')
+
+    def delete(self):
+        """删除成交量系列。不影响绑定的 CandleSeries。"""
+        self.run_script(f'''
+            {self._chart.id}.chart.removeSeries({self.id}.series)
+            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series);
+            if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1);
+            var _legendItem = {self._chart.id}.legend._lines.find(l => l.series == {self.id}.series);
+            if (_legendItem) {{
+                {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter(l => l != _legendItem);
+                try {{ {self._chart.id}.legend.div.removeChild(_legendItem.row) }} catch(e) {{}}
+            }}
+            delete {self.id}
+        ''')
+
+    def _toggle_data(self, arg):
+        """显示/隐藏成交量系列。"""
+        self.run_script(f'{self.id}.series.applyOptions({{visible: {jbool(arg)}}})')
+
+
+class OpenInterestSeries(SeriesCommon):
+    """持仓量折线，绑定到 CandleSeries。
+
+    通常通过 ``CandleSeries.attach_open_interest()`` 或
+    ``AbstractChart.attach_open_interest()`` 创建。
+
+    用法示例::
+
+        oi = chart.attach_open_interest(color='#F5A623')
+        oi.set(df)
+        oi.config(color='#FF6600')
+        oi.delete()
+    """
+
+    def __init__(self, candle: 'CandleSeries', pane_index: int = None,
+                 color: str = '#F5A623',
+                 line_width: int = 1,
+                 scale_margin_top: float = 0.8,
+                 scale_margin_bottom: float = 0.0,
+                 _wrap_existing: bool = False):
+        """
+        :param candle: 绑定的 CandleSeries 实例
+        :param pane_index: 面板索引，None 则跟随 candle
+        :param color: 线条颜色
+        :param line_width: 线宽
+        :param scale_margin_top: 价格轴顶部边距
+        :param scale_margin_bottom: 价格轴底部边距
+        :param _wrap_existing: 内部参数，True 时包装 Handler 已有的 openInterestSeries
+        """
+        pane = pane_index if pane_index is not None else candle.pane_index
+        super().__init__(candle._chart, name='', pane_index=pane)
+        self._candle = candle
+        self._color = color
+        self._wrap_existing = _wrap_existing
+
+        if _wrap_existing:
+            self.run_script(f'''
+                {self.id} = {{}};
+                {self.id}.series = {candle.id}.openInterestSeries;
+            ;0''')
+        else:
+            self.run_script(f'''
+                {self.id} = {self._chart.id}.createLineSeries(
+                    "",
+                    {{
+                        color: '{color}',
+                        lineWidth: {line_width},
+                        priceScaleId: 'oi_scale',
+                        lastValueVisible: false,
+                        priceLineVisible: false,
+                        crosshairMarkerVisible: true,
+                    }},
+                    {pane}
+                )
+                {self.id}.series.priceScale().applyOptions({{
+                    scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}},
+                    autoScale: true,
+                }});0''')
+
+    def set(self, df: pd.DataFrame):
+        """设置持仓量数据。
+
+        :param df: DataFrame，需要包含 time 和 open_interest 列
+        """
+        if df is None or df.empty:
+            self.run_script(f'{self.id}.series.setData([])')
+            return
+
+        if 'open_interest' not in df.columns:
+            return
+
+        df = self._candle._normal_df(df)
+        df = self._candle._time_to_bar_time(df)
+
+        oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
+        self.run_script(f'{self.id}.series.setData({js_data(oi_df)})')
+
+    def update(self, series: pd.Series):
+        """更新最新一根 bar 的持仓量或追加新 bar。"""
+        self.update_batch(series.to_frame().T)
+
+    def update_batch(self, df: pd.DataFrame):
+        """批量更新持仓量。"""
+        if df is None or df.empty:
+            return
+
+        df = self._candle._normal_df(df)
+        df = self._candle._time_to_bar_time(df)
+
+        if 'open_interest' not in df.columns:
+            return
+
+        oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
+        js_commands = []
+        for _, row in oi_df.iterrows():
+            js_commands.append(f'{self.id}.series.update({js_data(row)})')
+        self.run_script('; '.join(js_commands))
+
+    def config(self, color: str = None, line_width: int = None,
+               scale_margin_top: float = None, scale_margin_bottom: float = None):
+        """配置持仓量样式。"""
+        opts = {}
+        if color is not None:
+            opts['color'] = color
+            self._color = color
+        if line_width is not None:
+            opts['lineWidth'] = line_width
+        if opts:
+            self.run_script(f'{self.id}.series.applyOptions({js_json(opts)})')
+        if scale_margin_top is not None or scale_margin_bottom is not None:
+            top = scale_margin_top if scale_margin_top is not None else 0.8
+            bottom = scale_margin_bottom if scale_margin_bottom is not None else 0.0
+            self.run_script(f'''
+                {self.id}.series.priceScale().applyOptions({{
+                    scaleMargins: {{top: {top}, bottom: {bottom}}},
+                    autoScale: true,
+                }})''')
+
+    def delete(self):
+        """删除持仓量系列。"""
+        self.run_script(f'''
+            {self._chart.id}.chart.removeSeries({self.id}.series)
+            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series);
+            if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1);
+            var _legendItem = {self._chart.id}.legend._lines.find(l => l.series == {self.id}.series);
+            if (_legendItem) {{
+                {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter(l => l != _legendItem);
+                try {{ {self._chart.id}.legend.div.removeChild(_legendItem.row) }} catch(e) {{}}
+            }}
+            delete {self.id}
+        ''')
+
+    def _toggle_data(self, arg):
+        """显示/隐藏持仓量系列。"""
+        self.run_script(f'{self.id}.series.applyOptions({{visible: {jbool(arg)}}})')
+
+
 class CandleSeries(SeriesCommon):
     """独立K线系列，可在任意 pane 上绘制 OHLC 数据，无 volume/open interest。
 
@@ -969,6 +1269,7 @@ class CandleSeries(SeriesCommon):
         self.candle_data = pd.DataFrame()
         self._has_volume = False
         self._has_open_interest = False
+        self._attached: list = []  # 附属 series（VolumeSeries, OpenInterestSeries）
 
         border_up_color = up_color
         border_down_color = down_color
@@ -995,11 +1296,89 @@ class CandleSeries(SeriesCommon):
                 {pane_index}
             );0''')
 
+    @classmethod
+    def _wrap_handler(cls, chart: 'AbstractChart') -> 'CandleSeries':
+        """创建包装 Handler 主 series 的 CandleSeries（不创建新 JS 对象）。
+
+        用于组合模式：AbstractChart 通过此方法创建 self.candle，
+        共享 Handler 的 JS 对象引用（self.candle.id == chart.id）。
+        """
+        obj = cls.__new__(cls)
+        Pane.__init__(obj, chart.win)
+        obj._chart = chart
+        obj.id = chart.id  # 共享 Handler JS 对象
+        obj.name = ''
+        obj.pane_index = 0
+        obj._last_bar = None
+        obj.data = pd.DataFrame()
+        obj.candle_data = pd.DataFrame()
+        obj._has_volume = False
+        obj._has_open_interest = False
+        obj._attached = []
+        obj.markers = {}
+        obj._interval = 86400
+        obj.offset = 0
+        obj._period_locked = False
+        obj.num_decimals = 2
+        return obj
+
+    def clear_data(self):
+        """清空所有 K 线数据（candle + volume + OI）。
+
+        _wrap_existing 的附属 series 只清数据不删除（它们是 Handler 的固有组件），
+        非 _wrap_existing 的附属 series 完全删除（它们是独立创建的 JS 对象）。
+        """
+        self.run_script(f'{self.id}.series.setData([])')
+        self.candle_data = pd.DataFrame()
+        self.data = pd.DataFrame()
+        self._last_bar = None
+        for attached in list(self._attached):
+            if getattr(attached, '_wrap_existing', False):
+                # 只清数据，不删除 JS 对象
+                self.run_script(f'{attached.id}.series.setData([])')
+            else:
+                # 独立创建的 series，完全删除
+                attached.delete()
+                self._attached.remove(attached)
+        self._has_volume = any(isinstance(a, VolumeSeries) for a in self._attached)
+        self._has_open_interest = any(isinstance(a, OpenInterestSeries) for a in self._attached)
+
+    def attach_volume(self, **kwargs) -> 'VolumeSeries':
+        """创建并绑定成交量系列。
+
+        主图表（_wrap_handler 模式）复用 Handler 已有的 volumeSeries，
+        独立 CandleSeries 创建新的 HistogramSeries。
+
+        :return: VolumeSeries 实例
+        """
+        # 检测是否为主图表（id 与 chart.id 相同 → _wrap_handler 模式）
+        is_main = (self.id == self._chart.id)
+        vol = VolumeSeries(self, _wrap_existing=is_main, **kwargs)
+        self._attached.append(vol)
+        self._has_volume = True
+        return vol
+
+    def attach_open_interest(self, **kwargs) -> 'OpenInterestSeries':
+        """创建并绑定持仓量系列。
+
+        主图表复用 Handler 已有的 openInterestSeries，
+        独立 CandleSeries 创建新的 LineSeries。
+
+        :return: OpenInterestSeries 实例
+        """
+        is_main = (self.id == self._chart.id)
+        oi = OpenInterestSeries(self, _wrap_existing=is_main, **kwargs)
+        self._attached.append(oi)
+        self._has_open_interest = True
+        return oi
+
     def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
         """
         设置 K 线初始数据。
 
         :param df: DataFrame，必须包含 time/date 列和 open, high, low, close 列。
+            如果包含 volume 列且未 attach VolumeSeries，会自动创建。
+            如果包含 open_interest 列且未 attach OpenInterestSeries，会自动创建。
             如果为 None 或空 DataFrame，则清空数据。
         """
         self.run_script(f"{self.id}.series.setData([])")
@@ -1026,6 +1405,19 @@ class CandleSeries(SeriesCommon):
 
         ohlc_js_data = js_data(ohlc)
         self.run_script(f'{self.id}.series.setData({ohlc_js_data}); ')
+
+        # 检测并自动 attach volume/OI
+        if 'volume' in df.columns and not any(isinstance(a, VolumeSeries) for a in self._attached):
+            self.attach_volume()
+        if 'open_interest' in df.columns and not any(isinstance(a, OpenInterestSeries) for a in self._attached):
+            self.attach_open_interest()
+
+        # 转发数据给附属 series
+        for attached in self._attached:
+            if isinstance(attached, VolumeSeries):
+                attached.set(df)
+            elif isinstance(attached, OpenInterestSeries):
+                attached.set(df)
 
         if self.markers:
             self._update_markers()
@@ -1090,8 +1482,23 @@ class CandleSeries(SeriesCommon):
 
         self.run_script(' '.join(js_commands))
 
+        # 转发给附属 series
+        for attached in self._attached:
+            if isinstance(attached, VolumeSeries) and 'volume' in df.columns:
+                attached.update_batch(df)
+            elif isinstance(attached, OpenInterestSeries) and 'open_interest' in df.columns:
+                attached.update_batch(df)
+
     def delete(self):
-        """删除此 K 线系列及其 JS 对象。"""
+        """删除此 K 线系列及其附属 series（volume/OI）。"""
+        # 先删除附属 series（VolumeSeries / OpenInterestSeries）
+        for attached in list(self._attached):
+            attached.delete()
+        self._attached.clear()
+        self._has_volume = False
+        self._has_open_interest = False
+
+        # 再删除自身
         self._chart._lines.remove(self) if self in self._chart._lines else None
         self.run_script(f'''
             {self._chart.id}.chart.removeSeries({self.id}.series)
@@ -1105,259 +1512,48 @@ class CandleSeries(SeriesCommon):
             delete {self.id}
         ''')
 
-    def _update_markers(self):
-        """重写标记更新，添加 try-catch 防御，防止 JS 错误中断 async IIFE 执行链。"""
-        if not self.markers:
-            self.run_script(f'{self.id}.seriesMarkers.setMarkers([])')
-            return
-        str_markers = json.dumps(list(self.markers.values()))
-        self.run_script(f'''
-            try {{
-                {self.id}.seriesMarkers.setMarkers({str_markers});
-            }} catch(e) {{
-                console.error('CandleSeries setMarkers failed:', e.message);
-            }}
-        ''')
+    def _toggle_data(self, arg):
+        """显示/隐藏 K 线及其附属 series（volume/OI）。"""
+        self.run_script(f'{self.id}.series.applyOptions({{visible: {jbool(arg)}}})')
+        for attached in self._attached:
+            attached._toggle_data(arg)
 
-
-class Candlestick(SeriesCommon):
-    def __init__(self, chart: 'AbstractChart'):
-        super().__init__(chart)
-        self._volume_up_color = 'rgba(83,141,131,0.8)'
-        self._volume_down_color = 'rgba(200,127,130,0.8)'
-
-        self.candle_data = pd.DataFrame()
-        self.candle_column = []
-
-        self._has_volume = False
-        self._has_open_interest = False
-
-    def clear_data(self):
+    def candle_style(
+            self, up_color: str = 'rgba(39, 157, 130, 100)', down_color: str = 'rgba(200, 97, 100, 100)',
+            wick_visible: bool = True, border_visible: bool = True, border_up_color: str = '',
+            border_down_color: str = '', wick_up_color: str = '', wick_down_color: str = ''):
         """
-        Clears all OHLCV data from the chart without removing the series itself.
-        The chart will be empty and ready for new data via set().
+        Candle styling for each of its parts.
+        If only `up_color` and `down_color` are passed, they will color all parts of the candle.
         """
-        self.run_script(f'{self.id}.series.setData([])')
-        self.run_script(f'{self.id}.volumeSeries.setData([])')
-        self.run_script(f'{self.id}.openInterestSeries.setData([])')
-        self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
-        self.candle_data = pd.DataFrame()
-        self.candle_column = []
-        self._last_bar = None
-        self._has_volume = self._has_open_interest = False
+        border_up_color = border_up_color if border_up_color else up_color
+        border_down_color = border_down_color if border_down_color else down_color
+        wick_up_color = wick_up_color if wick_up_color else up_color
+        wick_down_color = wick_down_color if wick_down_color else down_color
+        self.run_script(f"{self.id}.series.applyOptions({js_json(locals())})")
 
-    def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
+    def volume_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0,
+                      up_color=None, down_color=None):
         """
-        Sets the initial data for the chart.\n
-        :param df: columns: date/time, open, high, low, close, volume (if volume enabled), open_interest (if open_interest enabled).
-        :param keep_drawings: keeps any drawings made through the toolbox. Otherwise, they will be deleted.
+        Configure volume settings.
+        Numbers for scaling must be greater than 0 and less than 1.
+        Volume colors must be applied prior to setting/updating the bars.
         """
-        self.clear_data()
+        vol = next((a for a in self._attached if isinstance(a, VolumeSeries)), None)
+        if vol:
+            vol.config(scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom,
+                       up_color=up_color, down_color=down_color)
 
-        if df is None or df.empty:
-            return
-
-        exclude_lowercase = []
-        if hasattr(self, '_lines'):
-            exclude_lowercase = [line.name for line in self._lines]
-
-        df = self._normal_df(df, exclude_lowercase=exclude_lowercase)
-        self._set_interval(df)
-        df = self._time_to_bar_time(df)
-        df = self._merge_value_by_time(df)
-
-        self._has_volume = 'volume' in df
-        self._has_open_interest = 'open_interest' in df
-
-        self.candle_column = ['time', 'open', 'high', 'low', 'close']
-        if self._has_volume:
-            self.candle_column.append('volume')
-        if self._has_open_interest:
-            self.candle_column.append('open_interest')
-
-        self.candle_data = df[self.candle_column]
-        self._last_bar = df.iloc[-1]
-
-        ohlc_js_data = js_data(self.candle_data[['time', 'open', 'high', 'low', 'close']])
-        self.run_script(f'{self.id}.series.setData({ohlc_js_data})')
-
-        if self._has_volume:
-            vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
-            vol_df['color'] = self._volume_down_color
-            vol_df.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-            vol_js_data = js_data(vol_df)
-            self.run_script(f'{self.id}.volumeSeries.setData({vol_js_data})')
-
-        if self._has_open_interest:
-            oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
-            oi_js_data = js_data(oi_df)
-            self.run_script(f'{self.id}.openInterestSeries.setData({oi_js_data})')
-
-        if hasattr(self, '_lines'):
-            # 如果输入DF里面还有其他列
-            for line in self._lines:
-                if line.name in df.columns:
-                    line.set(df[['time', line.name]])
-
-        # set autoScale to true in case the user has dragged the price scale
-        self.run_script(f'''
-            if (!{self.id}.chart.priceScale("right").options.autoScale)
-                {self.id}.chart.priceScale("right").applyOptions({{autoScale: true}})
-        ''')
-        # sync interval to JS for crosshair time formatting
-        self.run_script(f'{self._chart.id}._interval = {int(self._interval)}')
-        # re-send markers with updated interval alignment to prevent drift
-        if self.markers:
-            self._update_markers()
-        # Note: keep_drawings behavior may vary depending on timing of toolbox initialization
-        # The toolBox may not be fully initialized when set() is called early
-        if keep_drawings:
-            self.run_script(f'{self._chart.id}.toolBox?._drawingTool.repositionOnTime()')
-        else:
-            self.run_script(f"{self._chart.id}.toolBox?.clearDrawings()")
-
-    def update_bar(self, series: pd.Series):
-        '''
-        更新单个 bar
-        :param series:
-        :return:
-        '''
-        self.update_bars(series.to_frame().T)
-
-    update = update_bar
-
-    def update_from_tick(self, series: pd.Series, cumulative_volume: bool = False):
+    def open_interest_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0,
+                             color=None):
         """
-        使用 tick 更新
-        :param series: labels: date/time, price, [volume, open_interest] .
-        :param cumulative_volume: Adds the given volume onto the latest bar.
+        Configure open interest settings.
+        Numbers for scaling must be greater than 0 and less than 1.
         """
-        if self._last_bar is None:
-            raise AssertionError('update_from_tick() must be called after set()')
-
-        self.update_from_ticks(series.to_frame().T, cumulative_volume=cumulative_volume)
-
-    def update_bars(self, df: pd.DataFrame):
-        """
-        Batch-updates the chart with multiple OHLCV bars at once.
-
-        Processes each row from the DataFrame using the same logic as update(),
-        but collects all JavaScript commands into a single batch for efficiency.
-
-        :param df: DataFrame with columns: date/time, open, high, low, close, [volume, open_interest]
-        """
-        # 丢弃所有比last_bar数据更旧的数据
-        df = self._clean_update_batch(df)
-        if df.empty:
-            return
-
-        if self._last_bar is None or self._last_bar['time'] != df['time'].iloc[-1]:
-            is_new_bar = True
-        else:
-            is_new_bar = False
-
-        if self.candle_data.empty:
-            self.candle_data = df
-        elif self.candle_data.iloc[-1]['time'] == df['time'].iloc[0]:
-            self.candle_data = pd.concat([self.candle_data.iloc[:-1], df], ignore_index=True)
-        else:
-            self.candle_data = pd.concat([self.candle_data, df], ignore_index=True)
-
-        js_commands = []
-
-        ohlc_df = df[['time', 'open', 'high', 'low', 'close']]
-        for _, series in ohlc_df.iterrows():
-            js_commands.append(f'{self.id}.series.update({js_data(series)})')
-
-        if self._has_volume:
-            assert 'volume' in df.columns, 'DataFrame must contain volume column'
-            vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
-            vol_df['color'] = self._volume_down_color
-            vol_df.loc[df['close'] > df['open'], 'color'] = self._volume_up_color
-            for _, series in vol_df.iterrows():
-                js_commands.append(f'{self.id}.volumeSeries.update({js_data(series)})')
-
-        if self._has_open_interest:
-            assert 'open_interest' in df.columns, 'DataFrame must contain open_interest column'
-            oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
-            for _, series in oi_df.iterrows():
-                js_commands.append(f'{self.id}.openInterestSeries.update({js_data(series)})')
-
-        self._last_bar = df.iloc[-1]
-
-        if is_new_bar:
-            self._chart.events.new_bar._emit(self)
-
-        # Send all JS commands in one batch
-        self.run_script('; '.join(js_commands))
-
-    def update_from_ticks(self, df: pd.DataFrame, cumulative_volume: bool = False):
-        """
-        Batch-updates the chart from multiple ticks at once.
-
-        Processes each tick row using the same logic as update_from_tick(),
-        but collects all JavaScript commands into a single batch for efficiency.
-
-        需要自己组装为多个 bars，然后发给 update_bars进行更新，有点麻烦
-
-        :param df: DataFrame with columns: date/time, price, [volume, open_interest]
-        :param cumulative_volume: If True, adds tick volume onto the latest bar's volume.
-        """
-        if df.empty:
-            return
-
-        if self._last_bar is None:
-            raise AssertionError('update_from_ticks() must be called after set()')
-
-        df = self._normal_df(df)
-        df = self._time_to_bar_time(df)
-
-        # 使用 pandas 聚合技巧，把 tick 变成 bar
-        group_df = df.groupby('time')
-
-        bars = pd.DataFrame({
-            'time': list(group_df.groups),
-            'open': group_df['price'].first().array,
-            'high': group_df['price'].max().array,
-            'low': group_df['price'].min().array,
-            'close': group_df['price'].last().array,
-        })
-
-        vol_df = oi_df = None
-
-        if self._has_volume:
-            if cumulative_volume:
-                vol_df = group_df['volume'].sum().array
-            else:
-                vol_df = group_df['volume'].last().array
-
-        if self._has_open_interest:
-            oi_df = group_df['open_interest'].last().array
-
-        if self._last_bar['time'] == bars['time'].iloc[0]:
-            # 发现同一个bar，更新
-            bars.iloc[0, 1] = self._last_bar['open']
-            bars.iloc[0, 2] = max(self._last_bar['high'], bars.iloc[0, 2])
-            bars.iloc[0, 3] = min(self._last_bar['low'], bars.iloc[0, 3])
-
-            if self._has_volume:
-                if cumulative_volume:
-                    vol_df.iloc[0] += self._last_bar['volume']
-                else:
-                    # 无需更新volume，因为volume是单向的
-                    pass
-
-            # 无需更新open_interest，因为open_interest是单向的
-            # if self._has_open_interest:
-            #     pass
-
-        if self._has_volume:
-            bars['volume'] = vol_df
-
-        if self._has_open_interest:
-            bars['open_interest'] = oi_df
-
-        self.update_bars(bars)
+        oi = next((a for a in self._attached if isinstance(a, OpenInterestSeries)), None)
+        if oi:
+            oi.config(scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom,
+                      color=color)
 
     def price_scale(
         self,
@@ -1393,75 +1589,84 @@ class Candlestick(SeriesCommon):
                 ticksVisible: {jbool(ticks_visible)},
                 {f'tickMarkDensity: {tick_mark_density},' if tick_mark_density is not None else ''}
                 minimumWidth: {minimum_width},
-                permWidth: {perm_width}
+                {f'permWidth: {perm_width},' if perm_width else ''}
             }})''')
 
-    def set_price_format(self, type: Literal['base', 'custom'] = 'base', base: int = None, precision: int = 2):
+    def update_from_tick(self, series: pd.Series, cumulative_volume: bool = False):
         """
-        Set the price format for the price scale. The 'base' format avoids floating point precision issues.
-        :param type: 'base' or 'custom' (v5.2.0+). Default 'base'.
-        :param base: The base value for format 'base'. Required when type='base'.
-        :param precision: Number of decimal places. Default 2.
+        使用单个 tick 更新图表。
+        :param series: labels: date/time, price, [volume, open_interest]
+        :param cumulative_volume: 是否累加成交量
         """
-        if type == 'base':
-            if base is None:
-                raise ValueError("base parameter is required when type='base'")
-            options = {'type': 'base', 'base': base, 'precision': precision}
-        else:
-            options = {'type': type, 'precision': precision}
-        self.run_script(f'''
-            {self.id}.series.priceScale().applyOptions({{
-                priceFormat: {js_json(options)}
-            }})
-        ''')
+        self.update_from_ticks(series.to_frame().T, cumulative_volume=cumulative_volume)
 
-    def candle_style(
-            self, up_color: str = 'rgba(39, 157, 130, 100)', down_color: str = 'rgba(200, 97, 100, 100)',
-            wick_visible: bool = True, border_visible: bool = True, border_up_color: str = '',
-            border_down_color: str = '', wick_up_color: str = '', wick_down_color: str = ''):
+    def update_from_ticks(self, df: pd.DataFrame, cumulative_volume: bool = False):
         """
-        Candle styling for each of its parts.\n
-        If only `up_color` and `down_color` are passed, they will color all parts of the candle.
-        """
-        border_up_color = border_up_color if border_up_color else up_color
-        border_down_color = border_down_color if border_down_color else down_color
-        wick_up_color = wick_up_color if wick_up_color else up_color
-        wick_down_color = wick_down_color if wick_down_color else down_color
-        self.run_script(f"{self.id}.series.applyOptions({js_json(locals())})")
+        批量使用 tick 更新图表，内部自动聚合成 bar。
 
-    def volume_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0,
-                      up_color='rgba(83,141,131,0.8)', down_color='rgba(200,127,130,0.8)'):
+        :param df: DataFrame with columns: date/time, price, [volume, open_interest]
+        :param cumulative_volume: If True, adds tick volume onto the latest bar's volume.
         """
-        Configure volume settings.\n
-        Numbers for scaling must be greater than 0 and less than 1.\n
-        Volume colors must be applied prior to setting/updating the bars.\n
-        """
-        self._volume_up_color = up_color if up_color else self._volume_up_color
-        self._volume_down_color = down_color if down_color else self._volume_down_color
-        self.run_script(f'''
-        {self.id}.volumeSeries.priceScale().applyOptions({{
-            scaleMargins: {{
-                top: {scale_margin_top},
-                bottom: {scale_margin_bottom},
-            }}
-        }})''')
+        if df.empty:
+            return
 
-    def open_interest_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0):
-        """
-        Configure open interest settings.
+        if self._last_bar is None:
+            raise AssertionError('update_from_ticks() must be called after set()')
 
-        Numbers for scaling must be greater than 0 and less than 1.
-        """
-        self.run_script(f'''
-        {self.id}.openInterestSeries.priceScale().applyOptions({{
-            scaleMargins: {{
-                top: {scale_margin_top},
-                bottom: {scale_margin_bottom},
-            }}
-        }})''')
+        df = self._normal_df(df)
+        df = self._time_to_bar_time(df)
+
+        group_df = df.groupby('time')
+
+        bars = pd.DataFrame({
+            'time': list(group_df.groups),
+            'open': group_df['price'].first().array,
+            'high': group_df['price'].max().array,
+            'low': group_df['price'].min().array,
+            'close': group_df['price'].last().array,
+        })
+
+        # 检测 volume/OI
+        has_vol = 'volume' in df.columns
+        has_oi = 'open_interest' in df.columns
+
+        vol_series = None
+        oi_series = None
+
+        if has_vol:
+            if cumulative_volume:
+                vol_series = group_df['volume'].sum().array
+            else:
+                vol_series = group_df['volume'].last().array
+
+        if has_oi:
+            oi_series = group_df['open_interest'].last().array
+
+        if self._last_bar['time'] == bars['time'].iloc[0]:
+            bars.iloc[0, 1] = self._last_bar['open']
+            bars.iloc[0, 2] = max(self._last_bar['high'], bars.iloc[0, 2])
+            bars.iloc[0, 3] = min(self._last_bar['low'], bars.iloc[0, 3])
+
+            if has_vol and cumulative_volume:
+                vol_series.iloc[0] += self._last_bar.get('volume', 0)
+
+        if has_vol:
+            bars['volume'] = vol_series
+        if has_oi:
+            bars['open_interest'] = oi_series
+
+        self.update_batch(bars)
 
 
-class AbstractChart(Candlestick, Pane):
+
+
+class AbstractChart(Pane):
+    """图表容器——管理所有序列和工具组件，自身不是任何 Series。
+
+    采用组合模式：self.candle (CandleSeries) 管理 K 线数据，
+    self.volume (VolumeSeries) / self.oi (OpenInterestSeries) 可选挂载。
+    所有 CandleSeries 方法通过委托保持向后兼容。
+    """
 
     def __init__(self, window: Window, width: float = 1.0, height: float = 1.0,
                  scale_candles_only: bool = False, toolbox: bool = False,
@@ -1477,6 +1682,7 @@ class AbstractChart(Candlestick, Pane):
         self._scale_candles_only = scale_candles_only
         self._width = width
         self._height = height
+        self._is_subchart = False  # 由 create_subchart() 设为 True
         self.events: Events = Events(self)
 
         from .polygon import PolygonAPI
@@ -1512,12 +1718,224 @@ class AbstractChart(Candlestick, Pane):
         )
         self.run_script(self._html_chart_init + ';0')
 
-        Candlestick.__init__(self, self)
+        # ── 组合模式：主 K 线作为 CandleSeries 包装 Handler ──
+        self.candle = CandleSeries._wrap_handler(self)
+        # volume 和 oi 默认创建（复用 Handler 已有的 JS series）
+        self.volume: 'VolumeSeries' = self.candle.attach_volume()
+        self.oi: 'OpenInterestSeries' = self.candle.attach_open_interest()
+
         self.subcharts.append(self.id)
 
         self.topbar: TopBar = TopBar(self)
         if toolbox:
             self.toolbox: ToolBox = ToolBox(self)
+
+    # ═══════════════════════════════════════════════════════
+    #  委托方法 — 向后兼容 chart.set() / chart.update() 等 API
+    # ═══════════════════════════════════════════════════════
+
+    # ── CandleSeries 属性代理 ──
+
+    @property
+    def candle_data(self):
+        """K 线数据 DataFrame。"""
+        return self.candle.candle_data
+
+    @property
+    def data(self):
+        """系列数据 DataFrame。"""
+        return self.candle.data
+
+    @property
+    def markers(self):
+        """标记字典。"""
+        return self.candle.markers
+
+    @property
+    def _last_bar(self):
+        """最后一根 bar 的数据。"""
+        return self.candle._last_bar
+
+    @property
+    def _interval(self):
+        """时间间隔（秒）。"""
+        return self.candle._interval
+
+    @property
+    def offset(self):
+        """时间偏移（秒）。"""
+        return self.candle.offset
+
+    # ── 内部方法代理（drawings.py 等外部代码需要访问）──
+
+    def _single_datetime_format(self, arg):
+        """格式化单个时间值。"""
+        return self.candle._single_datetime_format(arg)
+
+    def _normal_df(self, df, exclude_lowercase=None):
+        """标准化 DataFrame。"""
+        return self.candle._normal_df(df, exclude_lowercase)
+
+    def _time_to_bar_time(self, data):
+        """将时间戳转换为 bar 时间。"""
+        return self.candle._time_to_bar_time(data)
+
+    def _set_interval(self, df):
+        """设置时间间隔。"""
+        return self.candle._set_interval(df)
+
+    # ── 高频数据方法（显式委托，IDE 友好）──
+
+    def set(self, df=None, keep_drawings=False):
+        """设置 K 线数据。自动检测 volume/OI 列并转发数据。"""
+        return self.candle.set(df, keep_drawings)
+
+    def update(self, series):
+        """更新最新一根 bar 或追加新 bar。"""
+        return self.candle.update(series)
+
+    update_bar = property(lambda self: self.candle.update)
+
+    def update_batch(self, df):
+        """批量更新多根 K 线。"""
+        return self.candle.update_batch(df)
+
+    update_bars = property(lambda self: self.candle.update_batch)  # backward-compatible alias
+
+    def update_from_tick(self, series, cumulative_volume=False):
+        """使用单个 tick 更新图表。"""
+        return self.candle.update_from_tick(series, cumulative_volume)
+
+    def update_from_ticks(self, df, cumulative_volume=False):
+        """批量使用 tick 更新图表。"""
+        return self.candle.update_from_ticks(df, cumulative_volume)
+
+    def clear_data(self):
+        """清空所有 K 线数据。"""
+        return self.candle.clear_data()
+
+    # ── 附属 series 管理 ──
+
+    def attach_volume(self, **kwargs) -> 'VolumeSeries':
+        """创建并绑定成交量系列。
+
+        :return: VolumeSeries 实例
+        """
+        vol = self.candle.attach_volume(**kwargs)
+        self.volume = vol
+        return vol
+
+    def attach_open_interest(self, **kwargs) -> 'OpenInterestSeries':
+        """创建并绑定持仓量系列。
+
+        :return: OpenInterestSeries 实例
+        """
+        oi = self.candle.attach_open_interest(**kwargs)
+        self.oi = oi
+        return oi
+
+    # ── 标记方法（显式委托）──
+
+    def marker(self, time=None, position='below', shape='arrow_up', color='#2196F3', text=''):
+        """创建标记。"""
+        return self.candle.marker(time=time, position=position, shape=shape, color=color, text=text)
+
+    def remove_marker(self, marker_id):
+        """移除标记。"""
+        return self.candle.remove_marker(marker_id)
+
+    def marker_list(self, marker_list):
+        """批量创建标记。"""
+        return self.candle.marker_list(marker_list)
+
+    def clear_markers(self, _dont_update: bool = False):
+        """清空所有标记。"""
+        return self.candle.clear_markers(_dont_update)
+
+    # ── 样式配置（显式委托）──
+
+    def candle_style(self, **kwargs):
+        """配置 K 线样式。"""
+        return self.candle.candle_style(**kwargs)
+
+    def volume_config(self, **kwargs):
+        """配置成交量样式。"""
+        return self.candle.volume_config(**kwargs)
+
+    def open_interest_config(self, **kwargs):
+        """配置持仓量样式。"""
+        return self.candle.open_interest_config(**kwargs)
+
+    def price_scale(self, **kwargs):
+        """配置价格坐标轴。"""
+        return self.candle.price_scale(**kwargs)
+
+    def set_price_format(self, **kwargs):
+        """设置价格格式。"""
+        return self.candle.set_price_format(**kwargs)
+
+    # ── 绘图方法（直接在 AbstractChart 上创建，不委托到 candle）──
+    # Drawing 构造函数需要 chart 参数来注册到 chart._drawings，
+    # 所以必须传 self（AbstractChart）而非 self.candle。
+
+    def horizontal_line(self, price, color='rgb(122, 146, 202)', width=2,
+                        style='solid', text='', axis_label_visible=True, func=None):
+        """创建水平线。"""
+        return HorizontalLine(self, price, color, width, style, text, axis_label_visible, func)
+
+    def trend_line(self, start_time, start_value, end_time, end_value,
+                   round=False, line_color='#1E80F0', width=2, style='solid'):
+        """创建趋势线。"""
+        return TrendLine(self, start_time, start_value, end_time, end_value, round, line_color, width, style)
+
+    def ray_line(self, start_time, value, round=False, color='#1E80F0', width=2, style='solid', text=''):
+        """创建射线。"""
+        return RayLine(self, start_time, value, round, color, width, style, text)
+
+    def vertical_line(self, time, color='#1E80F0', width=2, style='solid', text=''):
+        """创建垂直线。"""
+        return VerticalLine(self, time, color, width, style, text)
+
+    def vertical_span(self, start_time, end_time=None, color='rgba(252, 219, 3, 0.2)', round=False):
+        """创建垂直区间。"""
+        if round:
+            start_time = self.candle._single_datetime_format(start_time)
+            end_time = self.candle._single_datetime_format(end_time) if end_time else None
+        return VerticalSpan(self, start_time, end_time, color)
+
+    def box(self, start_time, start_value, end_time, end_value,
+            round=False, color='#1E80F0', fill_color='rgba(255, 255, 255, 0.2)', width=2, style='solid'):
+        """创建矩形。"""
+        return Box(self, start_time, start_value, end_time, end_value, round, color, fill_color, width, style)
+
+    # ── 其他委托 ──
+
+    def create_price_line(self, price=0.0, color='rgba(214, 237, 255, 0.6)',
+                          style='large_dashed', width=1, price_label=False, title=''):
+        """创建价格线。"""
+        return PriceLine(self, price, color, style, width, price_label, title)
+
+    def precision(self, precision=2):
+        """设置精度。"""
+        return self.candle.precision(precision)
+
+    def pop(self, count=1):
+        """从末尾移除数据点。"""
+        return self.candle.pop(count)
+
+    def set_period(self, seconds=None):
+        """锁定/解锁时间间隔。"""
+        return self.candle.set_period(seconds)
+
+    def hide_data(self):
+        """隐藏数据。"""
+        return self.candle.hide_data()
+
+    def show_data(self):
+        """显示数据。"""
+        return self.candle.show_data()
+
+    # ═══════════════════════════════════════════════════════
 
     def fit(self):
         """
@@ -1565,14 +1983,16 @@ class AbstractChart(Candlestick, Pane):
     def clear_handlers(self):
         """
         Clears all registered event/message handlers in the Window.
-        Use this when resetting a chart to prevent handler accumulation
-        in long-running embedded applications.
+        Only available on the main chart (not subcharts).
         """
+        if self._is_subchart:
+            raise RuntimeError("clear_handlers() 只能在主图表上调用，不能在子图上调用。")
         self.win.handlers.clear()
 
     def reset(self):
         """
         Resets the chart to a clean initial state without destroying the WebView.
+        Only available on the main chart (not subcharts).
 
         Performs:
         1. Clears all OHLCV data (candle + volume series)
@@ -1585,6 +2005,8 @@ class AbstractChart(Candlestick, Pane):
         After reset(), the chart is ready for new data via set().
         TopBar widgets and styling options are preserved.
         """
+        if self._is_subchart:
+            raise RuntimeError("reset() 只能在主图表上调用。子图请使用 reset_sub()。")
         self.clear_data()
         for line in list(self._lines):
             line.delete()
@@ -1609,11 +2031,22 @@ class AbstractChart(Candlestick, Pane):
             raise ValueError(f"Subchart {subchart_id} not found in this chart.")
         self.subcharts.remove(subchart_id)
         self.run_script(f'''
-            {subchart_id}.chart.remove();
-            {subchart_id}.wrapper.remove();
-            var _hid = Lib.Handler._all.findIndex(function(h) {{ return h.id === "{subchart_id}" }});
-            if (_hid >= 0) Lib.Handler._all.splice(_hid, 1);
-            delete {subchart_id};
+            (() => {{
+                const h = {subchart_id};
+                // 清理引用此 handler series 的 window 全局变量（VolumeSeries/OI 等）
+                const seriesSet = new Set([h.series, h.volumeSeries, h.openInterestSeries].filter(Boolean));
+                Object.keys(window).forEach(k => {{
+                    const v = window[k];
+                    if (v && typeof v === 'object' && v.series && seriesSet.has(v.series)) {{
+                        delete window[k];
+                    }}
+                }});
+                h.chart.remove();
+                h.wrapper.remove();
+                var _hid = Lib.Handler._all.findIndex(function(h2) {{ return h2.id === "{subchart_id}" }});
+                if (_hid >= 0) Lib.Handler._all.splice(_hid, 1);
+                delete {subchart_id};
+            }})()
         ''')
 
     def reset_sub(self):
@@ -1783,7 +2216,7 @@ class AbstractChart(Candlestick, Pane):
             'chart': {
                 'id': self.id,
                 'type': 'AbstractChart',
-                'has_data': not self.candle_data.empty,
+                'has_data': not self.candle.candle_data.empty,
                 'subchart_ids': [s for s in self.subcharts if s != self.id],
             },
             'lines': [],
@@ -1814,7 +2247,7 @@ class AbstractChart(Candlestick, Pane):
             })
 
         # --- markers ---
-        for mid, m in self.markers.items():
+        for mid, m in self.candle.markers.items():
             info['markers'].append({
                 'id': mid,
                 'type': 'Marker',
@@ -2149,7 +2582,7 @@ class AbstractChart(Candlestick, Pane):
         """
         Adds a watermark to the chart.
         """
-        self.run_script(f'''{self._chart.id}.createWatermark('{text}', {font_size}, '{color}')''')
+        self.run_script(f'''{self.id}.createWatermark('{text}', {font_size}, '{color}')''')
 
     def legend(self, visible: bool = False, ohlc: bool = True, percent: bool = False, lines: bool = True,
                color: str = 'rgb(191, 195, 203)', font_size: int = 11, font_family: str = 'Monaco',

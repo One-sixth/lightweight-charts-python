@@ -264,15 +264,15 @@ class TrendLine(TwoPointDrawing):
 
 class VerticalSpan(Pane):
     """垂直区间高亮，支持单个时间点标记或起止时间段。"""
-    def __init__(self, series: 'SeriesCommon', start_time: Union[TIME, tuple, list], end_time: Optional[TIME] = None,
+    def __init__(self, chart: 'AbstractChart', start_time: Union[TIME, tuple, list], end_time: Optional[TIME] = None,
                  color: str = 'rgba(252, 219, 3, 0.2)'):
         """
-        :param series: 绑定的数据系列
+        :param chart: 绑定的图表实例
         :param start_time: 起始时间（或时间列表，用于多点标记）
         :param end_time: 结束时间（None 则为单点标记）
         :param color: 填充颜色
         """
-        self._chart = series._chart
+        self._chart = chart
         super().__init__(self._chart.win)
         start_time = pd.to_datetime(start_time).tz_localize(None)
         end_time = pd.to_datetime(end_time).tz_localize(None) if end_time else None

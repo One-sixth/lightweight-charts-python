@@ -428,7 +428,7 @@ def test_multi_pane():
         sys.exit(1)
 
 
-# ── Test 5: CandleSeries with main Candlestick cleanup ─────────
+# ── Test 5: CandleSeries with main series cleanup ─────────
 
 def test_candle_with_main():
     sep = "=" * 60
