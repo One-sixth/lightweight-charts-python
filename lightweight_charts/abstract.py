@@ -601,20 +601,21 @@ class SeriesCommon(Pane):
                 {f'permWidth: {perm_width},' if perm_width else ''}
             }})''')
 
-    def update_from_tick(self, series: pd.Series, cumulative_volume: bool = False):
+    def update_from_tick(self, series: pd.Series):
         """
         使用单个 tick 更新图表。
-        :param series: labels: date/time, price, [volume, open_interest]
-        :param cumulative_volume: 是否累加成交量
+        :param series: 包含 time 和 value 的 Series
         """
-        self.update_from_ticks(series.to_frame().T, cumulative_volume=cumulative_volume)
+        self.update_from_ticks(series.to_frame().T)
 
-    def update_from_ticks(self, df: pd.DataFrame, cumulative_volume: bool = False):
+    def update_from_ticks(self, df: pd.DataFrame):
         """
-        批量使用 tick 更新图表，内部自动聚合成 bar。
+        批量使用 tick 更新图表，内部自动按时间分片取 last 值。
 
-        :param df: DataFrame with columns: date/time, price, [volume, open_interest]
-        :param cumulative_volume: If True, adds tick volume onto the latest bar's volume.
+        通用版本：按 time 分组，取每组最后一条数据的 value。
+        CandleSeries 会覆盖此方法，实现 OHLC 聚合。
+
+        :param df: DataFrame，需要 time 列和 value 列（或与系列同名的列）
         """
         if df.empty:
             return
@@ -622,47 +623,20 @@ class SeriesCommon(Pane):
         if self._last_bar is None:
             raise AssertionError('update_from_ticks() must be called after set()')
 
-        df = self._normal_df(df)
+        df = self._normal_df(df, exclude_lowercase=self.name)
         df = self._time_to_bar_time(df)
 
-        group_df = df.groupby('time')
+        # 确定值列名
+        value_col = self.name if self.name and self.name in df.columns else 'value'
+        if value_col not in df.columns:
+            raise ValueError(f"DataFrame 缺少值列 '{value_col}'")
 
+        # 按时间分组，取每组最后一条
+        group_df = df.groupby('time')
         bars = pd.DataFrame({
             'time': list(group_df.groups),
-            'open': group_df['price'].first().array,
-            'high': group_df['price'].max().array,
-            'low': group_df['price'].min().array,
-            'close': group_df['price'].last().array,
+            value_col: group_df[value_col].last().array,
         })
-
-        # 检测 volume/OI
-        has_vol = 'volume' in df.columns
-        has_oi = 'open_interest' in df.columns
-
-        vol_series = None
-        oi_series = None
-
-        if has_vol:
-            if cumulative_volume:
-                vol_series = group_df['volume'].sum().array
-            else:
-                vol_series = group_df['volume'].last().array
-
-        if has_oi:
-            oi_series = group_df['open_interest'].last().array
-
-        if self._last_bar['time'] == bars['time'].iloc[0]:
-            bars.iloc[0, 1] = self._last_bar['open']
-            bars.iloc[0, 2] = max(self._last_bar['high'], bars.iloc[0, 2])
-            bars.iloc[0, 3] = min(self._last_bar['low'], bars.iloc[0, 3])
-
-            if has_vol and cumulative_volume:
-                vol_series.iloc[0] += self._last_bar.get('volume', 0)
-
-        if has_vol:
-            bars['volume'] = vol_series
-        if has_oi:
-            bars['open_interest'] = oi_series
 
         self.update_batch(bars)
 
