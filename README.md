@@ -106,6 +106,7 @@ sub2 = chart.create_subchart(sync_id='main')    # 自动互相同步
 ```
 
 **`sync_id` 参数规则**：
+
 | 输入 | 结果 |
 |------|------|
 | `'main'`（字符串） | 加入名为 `'main'` 的同步组 |

@@ -102,6 +102,7 @@ sub2 = chart.create_subchart(sync_id='main')    # auto mutual sync
 ```
 
 **`sync_id` parameter rules**:
+
 | Input | Result |
 |-------|--------|
 | `'main'` (string) | Join sync group named `'main'` |
