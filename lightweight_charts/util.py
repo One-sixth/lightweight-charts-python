@@ -6,6 +6,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Literal, Union, Tuple
 import pandas as pd
+import numpy as np
 
 
 class Pane:
@@ -415,3 +416,134 @@ class BulkRunScript:
         """添加一条 JS 脚本到缓冲区。
         :param script: JS 代码字符串"""
         self.scripts.append(script)
+
+
+# ── 数据工具纯函数（从 SeriesCommon 提取）──
+
+def get_df_interval_offset(df: pd.DataFrame) -> (int, int):
+    """获取数据 DF 内时间点的通常间隔（秒）。
+
+    :param df: 标准化后的 DataFrame，time 列为秒级时间戳
+    :return: (interval 秒, offset 秒)
+    """
+
+    if df['time'].dtype not in (np.int64, np.float64):
+        raise ValueError('请先使用 normal_df 对输入进行标准化')
+
+    time_df = pd.to_datetime(df['time'], unit='s')
+
+    common_interval = time_df.diff().value_counts(sort=True, ascending=False, dropna=True)
+    if common_interval.empty:
+        raise AssertionError("No common interval found.")
+
+    interval = common_interval.index[0].total_seconds()
+
+    units = [
+        pd.Timedelta(microseconds=time_df.dt.microsecond.value_counts().index[0]),
+        pd.Timedelta(seconds=time_df.dt.second.value_counts().index[0]),
+        pd.Timedelta(minutes=time_df.dt.minute.value_counts().index[0]),
+        pd.Timedelta(hours=time_df.dt.hour.value_counts().index[0]),
+        pd.Timedelta(days=time_df.dt.day.value_counts().index[0]),
+    ]
+    offset = 0
+    for value in units:
+        value = value.total_seconds()
+        if value == 0:
+            continue
+        elif value >= interval:
+            break
+        offset = value
+        break
+
+    return interval, offset
+
+
+def normal_df(df: pd.DataFrame, exclude_lowercase=None) -> pd.DataFrame:
+    """标准化输入 DataFrame。
+
+    - 格式化列名：全部小写（exclude_lowercase 中的除外）
+    - date 列重命名为 time
+    - 无 time 列时用 index
+    - 时间转换为秒级时间戳
+
+    :param df: 输入 DataFrame
+    :param exclude_lowercase: 不转小写的列名（str/list/tuple/set）
+    :return: 标准化后的 DataFrame（副本）
+    """
+
+    df = df.copy()
+
+    if isinstance(exclude_lowercase, str):
+        exclude_lowercase = [exclude_lowercase]
+
+    exclude_lowercase = set() if exclude_lowercase is None else set(exclude_lowercase)
+
+    new_labels = []
+    for n in df.columns:
+        n = str(n)
+        new_labels.append(n if n in exclude_lowercase else n.lower())
+
+    if any(df.columns != new_labels):
+        df.columns = new_labels
+
+    if 'date' in new_labels and 'time' in new_labels:
+        raise ValueError("date and time cannot be used at the same time.")
+
+    if 'date' in df.columns:
+        df.rename(columns={'date': 'time'}, inplace=True)
+
+    if 'time' not in df.columns:
+        df['time'] = df.index
+
+    if df['time'].dtype in (np.int64, np.float64):
+        pass
+    else:
+        df['time'] = pd.to_datetime(df['time'], unit='s').dt.tz_localize(None)
+        df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
+
+    return df
+
+
+def time_to_bar_time(data, offset: int, interval: int):
+    """将时间戳对齐到 bar 时间边界。
+
+    :param data: 时间值（int/float/Series/DataFrame）
+    :param offset: 时间偏移（秒）
+    :param interval: 时间间隔（秒）
+    :return: 对齐后的时间值
+    """
+    if isinstance(data, pd.DataFrame):
+        data["time"] = (data["time"].array - offset) // interval * interval + offset
+        return data
+    else:
+        return (data - offset) // interval * interval + offset
+
+
+def merge_value_by_time(df: pd.DataFrame) -> pd.DataFrame:
+    """合并同样时间戳的 bar。
+
+    :param df: 包含 time 列的 DataFrame
+    :return: 合并后的 DataFrame
+    """
+    group_df = df.groupby('time')
+
+    new_df = pd.DataFrame({
+        'time': list(group_df.groups)
+    })
+
+    if 'open' in df.columns:
+        new_df['open'] = group_df['open'].first().array
+        new_df['high'] = group_df['high'].max().array
+        new_df['low'] = group_df['low'].min().array
+        new_df['close'] = group_df['close'].last().array
+
+    if 'volume' in df.columns:
+        new_df['volume'] = group_df['volume'].sum().array
+
+    if 'open_interest' in df.columns:
+        new_df['open_interest'] = group_df['open_interest'].last().array
+
+    for col in set(df.columns).difference({'time', 'open', 'high', 'low', 'close', 'volume', 'open_interest'}):
+        new_df[col] = group_df[col].last().array
+
+    return new_df

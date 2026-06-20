@@ -17,7 +17,8 @@ from .util import (
     BulkRunScript, Pane, Events, IDGen, as_enum, jbool, js_json, TIME, NUM, FLOAT,
     LINE_STYLE, MARKER_POSITION, MARKER_SHAPE, CROSSHAIR_MODE,
     PRICE_SCALE_MODE, marker_position, marker_shape, js_data,
-    Position, GridPosition, parse_position
+    Position, GridPosition, parse_position,
+    normal_df, merge_value_by_time, get_df_interval_offset, time_to_bar_time
 )
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -304,37 +305,7 @@ class SeriesCommon(Pane):
 
     def _get_df_interval_offset(self, df: pd.DataFrame) -> (int, int):
         """获取数据DF内时间点的通常间隔（秒），返回，时间间隔（秒）和偏移时间（秒）"""
-
-        if df['time'].dtype not in (np.int64, np.float64):
-            raise ValueError('请先使用 _normal_df 对输入进行标准化')
-
-        # df['time'] 为 1970年以来的秒数，无时区
-        time_df = pd.to_datetime(df['time'], unit='s')
-
-        common_interval = time_df.diff().value_counts(sort=True, ascending=False, dropna=True)
-        if common_interval.empty:
-            raise AssertionError("No common interval found.")
-
-        interval = common_interval.index[0].total_seconds()
-
-        units = [
-            pd.Timedelta(microseconds=time_df.dt.microsecond.value_counts().index[0]),
-            pd.Timedelta(seconds=time_df.dt.second.value_counts().index[0]),
-            pd.Timedelta(minutes=time_df.dt.minute.value_counts().index[0]),
-            pd.Timedelta(hours=time_df.dt.hour.value_counts().index[0]),
-            pd.Timedelta(days=time_df.dt.day.value_counts().index[0]),
-        ]
-        offset = 0
-        for value in units:
-            value = value.total_seconds()
-            if value == 0:
-                continue
-            elif value >= interval:
-                break
-            offset = value
-            break
-
-        return interval, offset
+        return get_df_interval_offset(df)
 
     def _set_interval(self, df: pd.DataFrame):
         """根据数据时间点，智能地设置时间间隔"""
@@ -344,88 +315,16 @@ class SeriesCommon(Pane):
 
     @staticmethod
     def _normal_df(df: pd.DataFrame, exclude_lowercase: Optional[Union[str, list, tuple, set]] = None) -> pd.DataFrame:
-        '''
-        标准化输入DF
-        格式化列名，将所有列名转换为小写，排除exclude_lowercase中的列名。
-        如果有 date 列，就改名为 time 列。
-        如果没有 time 列，就用 index 作为 time 列。
-        时间转换为秒数
-        '''
-        df = df.copy()
-
-        if isinstance(exclude_lowercase, str):
-            exclude_lowercase = [exclude_lowercase]
-
-        exclude_lowercase = set() if exclude_lowercase is None else set(exclude_lowercase)
-
-        new_labels = []
-        for n in df.columns:
-            n = str(n)
-            new_labels.append(n if n in exclude_lowercase else n.lower())
-
-        if any(df.columns != new_labels):
-            # 仅在不同时才修改
-            df.columns = new_labels
-
-        # 不允许 date 和 time 同时出现
-        if 'date' in new_labels and 'time' in new_labels:
-            raise ValueError("date and time cannot be used at the same time.")
-
-        # 替换 date 到 time，如果有
-        if 'date' in df.columns:
-            df.rename(columns={'date': 'time'}, inplace=True)
-
-        # 如果没有 time ，就用 index 作为 time 列
-        if 'time' not in df.columns:
-            df['time'] = df.index
-
-
-        if df['time'].dtype in (np.int64, np.float64):
-            # 如果输入是 np.int64 或 np.float64，则直接认为是 秒级时间戳。
-            pass
-        else:
-            # 转换为时间戳，清除时区信息
-            df['time'] = pd.to_datetime(df['time'], unit='s').dt.tz_localize(None)
-            # 转换为秒级时间戳，单位是秒，类型是int
-            df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
-
-        return df
+        '''标准化输入DF'''
+        return normal_df(df, exclude_lowercase)
 
     def _time_to_bar_time(self, data: int | float | pd.Series | pd.DataFrame) -> int | float | pd.Series | pd.DataFrame:
         """将时间戳转换为bar时间戳"""
-        if isinstance(data, pd.DataFrame):
-            data["time"] = (data["time"].array - self.offset) // self._interval * self._interval + self.offset
-            return data
-        else:
-            return (data-self.offset) // self._interval * self._interval + self.offset
+        return time_to_bar_time(data, self.offset, self._interval)
 
     def _merge_value_by_time(self, df: pd.DataFrame) -> pd.DataFrame:
         """合并同样时间戳的bar"""
-
-        group_df = df.groupby('time')
-
-        new_df = pd.DataFrame({
-            'time': list(group_df.groups)
-        })
-
-        if 'open' in df.columns:
-            # 是 bar 数据
-            new_df['open'] = group_df['open'].first().array
-            new_df['high'] = group_df['high'].max().array
-            new_df['low'] = group_df['low'].min().array
-            new_df['close'] = group_df['close'].last().array
-
-        if 'volume' in df.columns:
-            new_df['volume'] = group_df['volume'].sum().array
-
-        if 'open_interest' in df.columns:
-            new_df['open_interest'] = group_df['open_interest'].last().array
-
-        # 其他名称的列，也只保留最后一个
-        for col in set(df.columns).difference({'time', 'open', 'high', 'low', 'close', 'volume', 'open_interest'}):
-            new_df[col] = group_df[col].last().array
-
-        return new_df
+        return merge_value_by_time(df)
 
     def _single_datetime_format(self, arg) -> int:
         if not isinstance(arg, (int, np.int64, float, np.float64)):
