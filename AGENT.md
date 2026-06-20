@@ -135,8 +135,9 @@ lightweight-charts-onesixth/
 
 ### 标记不显示
 1. 检查 `_update_markers` 是否有 try/catch 保护
-2. 检查 `seriesMarkers` 是否在 JS 端正确创建
+2. 检查 `seriesMarkers` 是否已创建（`_update_markers` 会动态创建）
 3. 检查 async IIFE 中是否有脚本报错中断了执行链
+4. 所有 Series（Line/Histogram/VolumeSeries/OI Series）都支持标记
 
 ### 子图 volume/oi 泄漏
 1. `remove_subchart()` 会清理 JS 全局变量

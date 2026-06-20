@@ -88,13 +88,20 @@ class AbstractChart(Pane):  # 不再继承 Candlestick
 - 链中任何脚本报错会中断整个 async 函数
 - 关键操作（如 `setMarkers`）必须用 try/catch 保护
 
-### seriesMarkers 创建位置
-- 必须在 JS 端创建（`createSeriesMarkers` 在 IIFE 闭包内）
-- 通过返回对象传递给 Python：`{name, series, seriesMarkers}`
+### seriesMarkers 动态创建
+- `_update_markers()` 中动态检查 `{self.id}.seriesMarkers` 是否存在
+- 如果不存在，调用 `LightweightCharts.createSeriesMarkers(series, [], {autoScale: true})` 创建
+- 这样所有 Series（Line/Histogram/VolumeSeries/OI Series）都支持标记
+- Handler 构造函数中仍为 `this.series` 预创建 seriesMarkers（主 K 线）
 
 ### Handler 构造函数
 - 永远创建 3 个 series：`this.series`（K 线）、`this.volumeSeries`（成交量）、`this.openInterestSeries`（持仓量）
 - Python 端通过 `_wrap_existing` 模式复用，不重复创建
+
+### pane_index 参数
+- `create_line`/`create_histogram` 等支持 `pane_index` 参数
+- `pane_index=0`（默认）与主 K 线同 pane
+- `pane_index=1` 独立 pane（如 Volume 柱状图不挤压 K 线）
 
 ---
 

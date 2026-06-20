@@ -6,6 +6,13 @@
 
 ## [v2.7.0] - 2026-06-20
 
+### 新功能
+
+- **所有 Series 支持标记（markers）**: Line、Histogram、VolumeSeries、OpenInterestSeries 现在都可以使用 `marker()` / `marker_list()` / `remove_marker()` / `clear_markers()` 创建和管理标记
+  - `_update_markers()` 动态创建 `seriesMarkers`（如果不存在则自动调用 `LightweightCharts.createSeriesMarkers`）
+  - 原本只有 CandleSeries 和主图表支持标记，现在所有系列都支持
+  - 新增示例 `examples/35_line_markers/` 展示 Line 和 Histogram 上的标记
+
 ### 架构重构：AbstractChart 组合模式
 
 - **`AbstractChart` 从继承改为组合**：`class AbstractChart(Candlestick, Pane)` → `class AbstractChart(Pane)`

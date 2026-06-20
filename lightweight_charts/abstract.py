@@ -259,45 +259,12 @@ class SeriesCommon(Pane):
         :param pane_index: 所属面板索引"""
         super().__init__(chart.win)
         self._chart = chart
-        if hasattr(chart, '_interval'):
-            self._interval = chart._interval
-        else:
-            self._interval = 1
         self._last_bar = None
         self.name = name
         self.num_decimals = 2
-        self.offset = 0
         self.data = pd.DataFrame()
         self.markers = {}
         self.pane_index = pane_index
-        self._period_locked = False
-
-    def set_period(self, seconds: Optional[int] = None):
-        """
-        Locks the chart's time interval to the given value in seconds.
-        When locked, set() will skip automatic interval detection,
-        using the locked interval for time alignment instead.
-        注意，set_period 后，需要重新 chart.set(df) 来使其生效，否则后面的各种标记，可能都会错乱
-
-        :param seconds: The interval in seconds to lock to, or None to unlock.
-
-        Example::
-
-            chart.set_period(60)       # lock to 1-minute bars
-            chart.set_period(300)      # lock to 5-minute bars
-            chart.set_period(None)     # unlock, re-enable auto-detection
-            chart.set(df)              # 下一次 set 时生效
-        """
-        if seconds is not None:
-            self._interval = seconds
-            self._period_locked = True
-        else:
-            self._period_locked = False
-
-        if hasattr(self, "_lines"):
-            # 如果是 'AbstractChart' 对象，需要更新所有价格线的时间间隔
-            for line in self._lines:
-                line.set_period(seconds)
 
     def pop(self, count: int = 1):
         """从系列末尾移除指定数量的数据点。"""
@@ -307,31 +274,22 @@ class SeriesCommon(Pane):
         """获取数据DF内时间点的通常间隔（秒），返回，时间间隔（秒）和偏移时间（秒）"""
         return get_df_interval_offset(df)
 
-    def _set_interval(self, df: pd.DataFrame):
-        """根据数据时间点，智能地设置时间间隔"""
-        if self._period_locked:
-            return
-        self._interval, self.offset = self._get_df_interval_offset(df)
-
     @staticmethod
     def _normal_df(df: pd.DataFrame, exclude_lowercase: Optional[Union[str, list, tuple, set]] = None) -> pd.DataFrame:
         '''标准化输入DF'''
         return normal_df(df, exclude_lowercase)
 
     def _time_to_bar_time(self, data: int | float | pd.Series | pd.DataFrame) -> int | float | pd.Series | pd.DataFrame:
-        """将时间戳转换为bar时间戳"""
-        return time_to_bar_time(data, self.offset, self._interval)
+        """将时间戳转换为bar时间戳（委托到所属图表的时间级别）。"""
+        return self._chart._time_to_bar_time(data)
 
     def _merge_value_by_time(self, df: pd.DataFrame) -> pd.DataFrame:
         """合并同样时间戳的bar"""
         return merge_value_by_time(df)
 
     def _single_datetime_format(self, arg) -> int:
-        if not isinstance(arg, (int, np.int64, float, np.float64)):
-            # 转换为时间戳，清除时区信息
-            arg = (pd.to_datetime(arg, unit='s').tz_localize(None) - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
-        arg = int(self._time_to_bar_time(arg))
-        return arg
+        """格式化单个时间值（委托到所属图表的时间级别）。"""
+        return self._chart._single_datetime_format(arg)
 
     def set(self, df: Optional[pd.DataFrame] = None):
         """
@@ -349,8 +307,13 @@ class SeriesCommon(Pane):
         if df is None or df.empty:
             return
 
+        # 检查时间级别是否已初始化
+        if self._chart._interval is None:
+            raise RuntimeError(
+                f"时间级别未初始化。请先调用 chart.set(df) 或 chart.set_period(seconds)。"
+            )
+
         df = self._normal_df(df, exclude_lowercase=self.name)
-        self._set_interval(df)
         df = self._time_to_bar_time(df)
         df = self._merge_value_by_time(df)
 
@@ -541,11 +504,18 @@ class SeriesCommon(Pane):
 
     def _update_markers(self):
         if not self.markers:
-            self.run_script(f'{self.id}.seriesMarkers.setMarkers([])')
+            self.run_script(f'''
+                if ({self.id}.seriesMarkers) {self.id}.seriesMarkers.setMarkers([]);
+            ''')
             return
         str_markers = json.dumps(list(self.markers.values()))
         self.run_script(f'''
             try {{
+                if (!{self.id}.seriesMarkers) {{
+                    {self.id}.seriesMarkers = LightweightCharts.createSeriesMarkers(
+                        {self.id}.series, [], {{autoScale: true}}
+                    );
+                }}
                 {self.id}.seriesMarkers.setMarkers({str_markers});
             }} catch(e) {{
                 console.error('setMarkers failed:', e.message);
@@ -554,13 +524,16 @@ class SeriesCommon(Pane):
 
     def marker_list(self, markers: list[dict]):
         """
-        Creates multiple markers.\n
-        :param markers: The list of markers to set. These should be in the format:\n
-        [
-            {"time": "2021-01-21", "position": "below", "shape": "circle", "color": "#2196F3", "text": ""},
-            {"time": "2021-01-22", "position": "below", "shape": "circle", "color": "#2196F3", "text": ""},
-            ...
-        ]
+        Creates multiple markers.
+
+        :param markers: The list of markers to set. Format::
+
+            [
+                {"time": "2021-01-21", "position": "below", "shape": "circle", "color": "#2196F3", "text": "", "size": 1},
+                {"time": "2021-01-22", "position": "above", "shape": "arrow_down", "color": "#F44336", "text": "sell"},
+            ]
+
+        支持的字段: time(必须), position(必须), shape(必须), color(必须), text(可选), size(可选, 默认1)
         :return: a list of marker ids.
         """
         markers = markers.copy()
@@ -572,8 +545,7 @@ class SeriesCommon(Pane):
                 "position": marker_position(marker['position']),
                 "color": marker['color'],
                 "shape": marker_shape(marker['shape']),
-                "text": marker['text'],
-                "price": marker.get('price', None),
+                "text": marker.get('text', ''),
                 "size": marker.get('size', 1),
             }
             marker_ids.append(marker_id)
@@ -581,15 +553,18 @@ class SeriesCommon(Pane):
         return marker_ids
 
     def marker(self, time: Optional[datetime] = None, position: MARKER_POSITION = 'below',
-               shape: MARKER_SHAPE = 'arrow_up', color: str = '#2196F3', text: str = ''
+               shape: MARKER_SHAPE = 'arrow_up', color: str = '#2196F3', text: str = '',
+               size: int = 1
                ) -> str:
         """
         Creates a new marker.
+
         :param time: Time location of the marker. If no time is given, it will be placed at the last bar.
-        :param position: The position of the marker.
+        :param position: The position of the marker ('above', 'below', 'inside').
+        :param shape: The shape of the marker ('arrow_up', 'arrow_down', 'circle', 'square').
         :param color: The color of the marker (rgb, rgba or hex).
-        :param shape: The shape of the marker.
         :param text: The text to be placed with the marker.
+        :param size: The size of the marker (default 1).
         :return: The id of the marker placed.
         """
         if self._last_bar is None:
@@ -604,6 +579,7 @@ class SeriesCommon(Pane):
             "color": color,
             "shape": marker_shape(shape),
             "text": text,
+            "size": size,
         }
         self.markers[marker_id] = marker_dict
         self._update_markers()
@@ -890,7 +866,7 @@ class VolumeSeries(SeriesCommon):
             return
 
         df = self._candle._normal_df(df)
-        df = self._candle._time_to_bar_time(df)
+        df = self._chart._time_to_bar_time(df)
 
         vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
 
@@ -919,7 +895,7 @@ class VolumeSeries(SeriesCommon):
             return
 
         df = self._candle._normal_df(df)
-        df = self._candle._time_to_bar_time(df)
+        df = self._chart._time_to_bar_time(df)
 
         if 'volume' not in df.columns:
             return
@@ -1049,7 +1025,7 @@ class OpenInterestSeries(SeriesCommon):
             return
 
         df = self._candle._normal_df(df)
-        df = self._candle._time_to_bar_time(df)
+        df = self._chart._time_to_bar_time(df)
 
         oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
         self.run_script(f'{self.id}.series.setData({js_data(oi_df)})')
@@ -1064,7 +1040,7 @@ class OpenInterestSeries(SeriesCommon):
             return
 
         df = self._candle._normal_df(df)
-        df = self._candle._time_to_bar_time(df)
+        df = self._chart._time_to_bar_time(df)
 
         if 'open_interest' not in df.columns:
             return
@@ -1189,9 +1165,6 @@ class CandleSeries(SeriesCommon):
         obj._has_open_interest = False
         obj._attached = []
         obj.markers = {}
-        obj._interval = 86400
-        obj.offset = 0
-        obj._period_locked = False
         obj.num_decimals = 2
         return obj
 
@@ -1262,7 +1235,6 @@ class CandleSeries(SeriesCommon):
             return
 
         df = self._normal_df(df)
-        self._set_interval(df)
         df = self._time_to_bar_time(df)
         df = self._merge_value_by_time(df)
 
@@ -1554,6 +1526,10 @@ class AbstractChart(Pane):
         self._width = width
         self._height = height
         self._is_subchart = False  # 由 create_subchart() 设为 True
+        # 时间级别（图表级，所有 series 共享）
+        self._interval = None       # None = 未初始化，需先调 set() 或 set_period()
+        self.offset = 0
+        self._period_locked = False
         self.events: Events = Events(self)
 
         from .polygon import PolygonAPI
@@ -1627,38 +1603,63 @@ class AbstractChart(Pane):
         """最后一根 bar 的数据。"""
         return self.candle._last_bar
 
-    @property
-    def _interval(self):
-        """时间间隔（秒）。"""
-        return self.candle._interval
+    # ── 时间级别方法（图表级，不再委托到 candle）──
 
-    @property
-    def offset(self):
-        """时间偏移（秒）。"""
-        return self.candle.offset
+    def _set_interval(self, df: pd.DataFrame):
+        """根据数据时间点，智能地设置时间间隔。"""
+        if self._period_locked:
+            return
+        self._interval, self.offset = get_df_interval_offset(df)
 
-    # ── 内部方法代理（drawings.py 等外部代码需要访问）──
+    def _time_to_bar_time(self, data):
+        """将时间戳对齐到 bar 时间边界。"""
+        if self._interval is None:
+            raise RuntimeError("时间级别未初始化，请先调用 chart.set() 或 chart.set_period()。")
+        return time_to_bar_time(data, self.offset, self._interval)
 
-    def _single_datetime_format(self, arg):
-        """格式化单个时间值。"""
-        return self.candle._single_datetime_format(arg)
+    def _single_datetime_format(self, arg) -> int:
+        """格式化单个时间值为秒级时间戳。"""
+        if self._interval is None:
+            raise RuntimeError("时间级别未初始化，请先调用 chart.set() 或 chart.set_period()。")
+        if not isinstance(arg, (int, np.int64, float, np.float64)):
+            arg = (pd.to_datetime(arg, unit='s').tz_localize(None) - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
+        return int(self._time_to_bar_time(arg))
 
     def _normal_df(self, df, exclude_lowercase=None):
         """标准化 DataFrame。"""
-        return self.candle._normal_df(df, exclude_lowercase)
+        return normal_df(df, exclude_lowercase)
 
-    def _time_to_bar_time(self, data):
-        """将时间戳转换为 bar 时间。"""
-        return self.candle._time_to_bar_time(data)
+    def set_period(self, seconds: Optional[int] = None):
+        """
+        锁定/解锁图表的时间间隔。
+        锁定后 set() 将跳过自动检测，使用指定的时间间隔。
 
-    def _set_interval(self, df):
-        """设置时间间隔。"""
-        return self.candle._set_interval(df)
+        :param seconds: 时间间隔（秒），None 则解锁
+
+        Example::
+
+            chart.set_period(60)       # 锁定为 1 分钟
+            chart.set_period(300)      # 锁定为 5 分钟
+            chart.set_period(None)     # 解锁，恢复自动检测
+            chart.set(df)              # 下一次 set 时生效
+        """
+        if seconds is not None:
+            self._interval = seconds
+            self._period_locked = True
+        else:
+            self._period_locked = False
+
+        # 更新所有附属系列的时间间隔
+        for line in self._lines:
+            pass  # 附属系列通过 self._chart 访问，无需单独设置
 
     # ── 高频数据方法（显式委托，IDE 友好）──
 
     def set(self, df=None, keep_drawings=False):
         """设置 K 线数据。自动检测 volume/OI 列并转发数据。"""
+        if df is not None and not df.empty:
+            df = self._normal_df(df)
+            self._set_interval(df)
         return self.candle.set(df, keep_drawings)
 
     def update(self, series):
@@ -1707,9 +1708,9 @@ class AbstractChart(Pane):
 
     # ── 标记方法（显式委托）──
 
-    def marker(self, time=None, position='below', shape='arrow_up', color='#2196F3', text=''):
+    def marker(self, time=None, position='below', shape='arrow_up', color='#2196F3', text='', size=1):
         """创建标记。"""
-        return self.candle.marker(time=time, position=position, shape=shape, color=color, text=text)
+        return self.candle.marker(time=time, position=position, shape=shape, color=color, text=text, size=size)
 
     def remove_marker(self, marker_id):
         """移除标记。"""
@@ -1793,10 +1794,6 @@ class AbstractChart(Pane):
     def pop(self, count=1):
         """从末尾移除数据点。"""
         return self.candle.pop(count)
-
-    def set_period(self, seconds=None):
-        """锁定/解锁时间间隔。"""
-        return self.candle.set_period(seconds)
 
     def hide_data(self):
         """隐藏数据。"""
