@@ -1,5 +1,4 @@
 import json
-import pandas as pd
 import inspect
 
 from typing import Union, Optional
@@ -269,20 +268,25 @@ class VerticalSpan(Pane):
         """
         :param chart: 绑定的图表实例
         :param start_time: 起始时间（或时间列表，用于多点标记）
-        :param end_time: 结束时间（None 则为单点标记）
+        :param end_time: 结束时间（None 则为单点标记）。仅当 start_time 为单个值时可用。
         :param color: 填充颜色
+        :raises ValueError: 当 start_time 为多个值且 end_time 不为 None 时
         """
         self._chart = chart
         super().__init__(self._chart.win)
-        start_time = pd.to_datetime(start_time).tz_localize(None)
-        end_time = pd.to_datetime(end_time).tz_localize(None) if end_time else None
+        fmt = self._chart._single_datetime_format
+
+        # 参数校验：start_time 是否为多值
+        is_multi = hasattr(start_time, '__iter__') and not isinstance(start_time, (str, int, float))
+        if is_multi and end_time is not None:
+            raise ValueError("start_time 为多个值时，end_time 必须为 None。")
 
         if end_time is None:
             # Single time marker(s) — use thin bars
-            if hasattr(start_time, '__iter__') and not isinstance(start_time, pd.Timestamp):
-                data = [{'time': t.timestamp(), 'value': 1} for t in start_time]
+            if is_multi:
+                data = [{'time': fmt(t), 'value': 1} for t in start_time]
             else:
-                data = [{'time': start_time.timestamp(), 'value': 1}]
+                data = [{'time': fmt(start_time), 'value': 1}]
             self.run_script(f'''
 var _vs = {self._chart.id}.chart.addSeries(LightweightCharts.HistogramSeries, {{
     color: '{color}',
@@ -299,8 +303,8 @@ _vs.setData({json.dumps(data)});
         else:
             # Range between two dates — use continuous fill
             data = [
-                {'time': start_time.timestamp(), 'value': 1},
-                {'time': end_time.timestamp(), 'value': 1},
+                {'time': fmt(start_time), 'value': 1},
+                {'time': fmt(end_time), 'value': 1},
             ]
             self.run_script(f'''
 var _vs = {self._chart.id}.chart.addSeries(LightweightCharts.AreaSeries, {{

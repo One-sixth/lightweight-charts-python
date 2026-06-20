@@ -15,9 +15,8 @@ import pandas as pd
 import numpy as np
 from PySide6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout,
-    QTextEdit, QLabel, QSpinBox, QFormLayout, QGroupBox
+    QTextEdit, QSpinBox, QFormLayout, QGroupBox
 )
-from PySide6.QtCore import Qt
 from lightweight_charts.widgets import QtChart
 
 

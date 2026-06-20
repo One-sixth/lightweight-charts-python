@@ -24,6 +24,49 @@ self.run_script(f'{self.id} = {chart.id}.createCandleSeries(...);0')
 
 ---
 
+## 🏗️ 架构概览（v2.7.0 组合模式）
+
+### 类层次
+
+```
+Pane (util.py)
+├── Window (abstract.py)           ← JS 桥接层
+├── SeriesCommon (abstract.py)     ← 数据系列基类（数据工具、标记、精度、显隐）
+│   ├── CandleSeries               ← K 线（OHLC + volume/OI + tick 聚合 + 样式配置）
+│   ├── Line                       ← 折线
+│   ├── Histogram                  ← 柱状图
+│   ├── VolumeSeries               ← 成交量（绑定到 CandleSeries，OHLC 着色）
+│   └── OpenInterestSeries         ← 持仓量（绑定到 CandleSeries）
+└── AbstractChart (abstract.py)    ← 图表容器（组合模式，不继承任何 Series）
+    ├── self.candle: CandleSeries         ← 主 K 线（_wrap_handler 包装 Handler）
+    ├── self.volume: VolumeSeries         ← 成交量（默认创建，_wrap_existing）
+    ├── self.oi: OpenInterestSeries       ← 持仓量（默认创建，_wrap_existing）
+    ├── self._lines: list[Line|Histogram] ← 附加系列
+    ├── self._drawings: list[Drawing]     ← 绘图
+    └── self.topbar / toolbox / events    ← 工具
+```
+
+### 职责划分
+
+| 类 | 职责 | 关键方法 |
+|---|------|----------|
+| **SeriesCommon** | 数据工具、标记、精度、显隐 | `_normal_df`, `marker`, `precision`, `hide_data` |
+| **CandleSeries** | K 线数据、volume/OI 管理、tick 聚合、样式 | `set`, `update`, `update_from_ticks`, `candle_style`, `volume_config` |
+| **VolumeSeries** | 成交量数据、OHLC 着色 | `set`, `update`, `config`, `delete` |
+| **OpenInterestSeries** | 持仓量数据 | `set`, `update`, `config`, `delete` |
+| **AbstractChart** | 图表容器、绘图、子图管理、同步 | `horizontal_line`, `create_subchart`, `reset`, `join_sync_group` |
+
+### 关键设计
+
+1. **组合模式**：AbstractChart 不继承 Candlestick，通过 `self.candle`/`self.volume`/`self.oi` 管理 series
+2. **`_wrap_existing`**：主图表的 volume/oi 复用 Handler 已有的 JS series，`clear_data()` 只清数据不删除
+3. **`_is_subchart`**：标识子图，`reset()`/`clear_handlers()` 限制仅主图可调用
+4. **属性代理**：`candle_data`/`data`/`markers` 等用 `@property`，不用 `__getattr__`
+5. **绘图方法只在 AbstractChart**：不在 SeriesCommon
+6. **`update_from_ticks` 双层设计**：SeriesCommon 通用版（取 last）+ CandleSeries 覆盖版（OHLC 聚合）
+
+---
+
 ## 🛠️ 开发流程
 
 ### 新增 JS 功能
@@ -49,7 +92,8 @@ copy dist\bundle.js lightweight_charts\js\bundle.js
 ### 测试命令
 ```bash
 cd D:\Data\github_repo\lightweight-charts-onesixth
-python test/test_candle_series.py
+python test/test_candle_series.py    # CandleSeries 6 个测试
+python test/run_tests.py             # 完整测试套件（test_cleanup + test_features + test_util）
 ```
 
 ---
@@ -59,9 +103,10 @@ python test/test_candle_series.py
 ```
 lightweight-charts-onesixth/
 ├── lightweight_charts/         ← Python 后端
-│   ├── abstract.py             # 核心类: Window, AbstractChart, Candlestick, CandleSeries, Line, Histogram
+│   ├── abstract.py             # 核心类: Window, SeriesCommon, AbstractChart, CandleSeries, Line, Histogram, VolumeSeries, OpenInterestSeries
 │   ├── chart.py                # Chart (pywebview) + CrossProcessChart
 │   ├── widgets.py              # JupyterChart, HTMLChart, HtmlTabChart, QtChart
+│   ├── drawings.py             # Drawing 基类 + HorizontalLine, TrendLine, Box, VerticalLine, RayLine, VerticalSpan
 │   ├── js/bundle.js            # 编译后前端
 │   └── __init__.py             # 导出
 ├── src/                        ← TypeScript 前端
@@ -82,7 +127,6 @@ lightweight-charts-onesixth/
 1. 先检查是否加了 `;0`（最常见原因）
 2. 检查 JS 函数是否抛异常（查看消息循环日志）
 3. 检查 `_return_q` 是否初始化
-4. 尝试用 `run_script` 写入 window 变量，再用 `run_script_and_get` 读取
 
 ### audit 不返回
 1. 检查 `chart.py` 消息循环是否有 `return` 终止了循环
@@ -93,6 +137,11 @@ lightweight-charts-onesixth/
 1. 检查 `_update_markers` 是否有 try/catch 保护
 2. 检查 `seriesMarkers` 是否在 JS 端正确创建
 3. 检查 async IIFE 中是否有脚本报错中断了执行链
+
+### 子图 volume/oi 泄漏
+1. `remove_subchart()` 会清理 JS 全局变量
+2. `clear_data()` 对 `_wrap_existing` 的 series 只清数据不删除
+3. test_cleanup.py 的泄漏检测排除 VolumeSeries/OpenInterestSeries（Chart 固有组件）
 
 ---
 
@@ -106,11 +155,6 @@ lightweight-charts-onesixth/
 | `test_multi_pane` | 多 pane 独立 K 线/各自数据和标记/独立更新/独立删除 |
 | `test_candle_with_main` | 主 K 线 + CandleSeries + Line + Histogram 混合资源清理 |
 | `test_options` | 自定义颜色/边框/影线/价格线参数 + JS 验证 |
-
----
-
-## 🔴 已排除的修改（确认不必要）
-
-- `handler.ts` audit 函数的 try-catch 包装 — 根因是 `;0` 后缀，不是 audit 函数
-- `Window.__init__` 中 `import multiprocessing` + `self._return_q = multiprocessing.Queue()` — 多余
-- `chart.py` 中 `str(result) if result is not None else None` — evaluate_js 返回值 pywebview 已正确处理
+| `test_cleanup.py` | 资源全链路创建/删除 + JS TOML 审计 + 多图表清理 |
+| `test_features.py` | 数据列重命名/line 追踪/截图/topbar 事件 |
+| `test_util.py` | 工具函数测试（13 个） |

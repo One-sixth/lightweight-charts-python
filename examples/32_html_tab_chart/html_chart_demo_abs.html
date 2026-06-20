@@ -117,6 +117,12 @@ body {
 	border-bottom: 2px solid var(--border-color);
 	display: flex;
 	align-items: center;
+	max-width: 100%;
+	min-width: 0;
+	overflow: hidden;
+	box-sizing: border-box;
+	flex-shrink: 0;
+	white-space: nowrap;
 }
 
 .topbar-container {
@@ -133,6 +139,12 @@ body {
 	border-radius: 4px;
 	color: var(--color);
 	background-color: transparent;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	box-sizing: border-box;
+	width: fit-content;
+	max-width: calc(100% - 6px);
 }
 .topbar-button:hover {
 	background-color: var(--hover-bg-color)
@@ -160,12 +172,18 @@ body {
 	margin: 0px 18px;
 	font-size: 16px;
 	color: var(--color);
+	box-sizing: border-box;
+	width: fit-content;
+	max-width: calc(100% - 6px);
 }
 
 .topbar-textbox-input {
 	background-color: var(--bg-color);
 	color: var(--color);
 	border: 1px solid var(--color);
+	box-sizing: border-box;
+	width: fit-content;
+	max-width: calc(100% - 6px);
 }
 
 .topbar-menu {
@@ -2344,10 +2362,10 @@ body {
                 '_seriesList', 'seriesMarkers', 'commandFunctions',
                 'reSize', '_createChart', 'createCandlestickSeries',
                 'createVolumeSeries', 'createOpenInterestSeries',
-                'createLineSeries', 'createHistogramSeries', '_styleMap',
+                'createLineSeries', 'createHistogramSeries', 'createCandleSeries', '_styleMap',
             ]);
             // Regex matching our custom window global variable names
-            const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
+            const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|CandleSeries_\d|VolumeSeries_\d|OpenInterestSeries_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
             // Build a lookup: handler ID → Handler instance
             const handlerMap = {};
             for (const h of Handler._all) {
@@ -2508,6 +2526,14 @@ body {
         // syncCharts 同步追踪
         _syncedHandlers = [];
         _syncCallbacks = {};
+        // 组同步：sync_id 作为组名
+        _syncGroup = '';
+        _syncCrosshairOnly = false;
+        // 重入守卫：防止 crosshair 同步回调级联触发
+        _inSync = false;
+        // range 同步守卫：防止 range 回调级联 + 冗余更新
+        _inRangeSync = false;
+        _lastSyncedRange = '';
         gridPosition = null;
         gridDimensions = null;
         isGridLayout = false;
@@ -2538,8 +2564,9 @@ body {
                 const delta = e.clientY - startY;
                 const newH = Math.max(50, startHeight + delta); // min height 50px
                 this.wrapper.style.height = `${newH}px`;
-                // Resize the chart canvas accordingly:
-                this.chart.resize(this.wrapper.offsetWidth, newH - this.resize_hdr_height);
+                // Resize the chart canvas accordingly (subtract topbar height like reSize does):
+                const topBarOffset = this._topBar?._div.offsetHeight || 0;
+                this.chart.resize(this.wrapper.offsetWidth, newH - topBarOffset - this.resize_hdr_height);
             };
             const onMouseUp = () => {
                 document.removeEventListener('mousemove', onMouseMove);
@@ -2873,6 +2900,17 @@ body {
                 series: line,
             };
         }
+        createCandleSeries(name, options, paneIndex = 0) {
+            const candle = this.chart.addSeries(lightweightCharts.CandlestickSeries, { ...options }, paneIndex);
+            this._seriesList.push(candle);
+            this.legend.makeSeriesRow(name, candle, paneIndex);
+            const seriesMarkers = lightweightCharts.createSeriesMarkers(candle, [], { autoScale: true });
+            return {
+                name: name,
+                series: candle,
+                seriesMarkers: seriesMarkers,
+            };
+        }
         createToolBox() {
             this.toolBox = new ToolBox(this.id, this.chart, this.series, this.commandFunctions);
             this.div.appendChild(this.toolBox.div);
@@ -2895,29 +2933,35 @@ body {
             // 1) Crosshair
             handlers.forEach((source) => {
                 const crosshairCb = (param) => {
-                    handlers.forEach((target) => {
-                        if (target === source)
-                            return;
-                        if (!param.time) {
+                    // 重入守卫：防止 crosshair 同步级联触发
+                    if (source._inSync)
+                        return;
+                    source._inSync = true;
+                    try {
+                        const time = param.time;
+                        const srcSeries = source.series;
+                        const point = time ? param.seriesData.get(srcSeries) || null : null;
+                        for (let i = 0; i < handlers.length; i++) {
+                            const target = handlers[i];
+                            if (target === source)
+                                continue;
                             try {
-                                target.chart.clearCrosshairPosition();
+                                const tc = target.chart;
+                                if (!time) {
+                                    tc.clearCrosshairPosition();
+                                    continue;
+                                }
+                                tc.setCrosshairPosition(0, time, target.series);
+                                if (point && target.legend?.div) {
+                                    target.legend.legendHandler({ time, point }, true);
+                                }
                             }
                             catch (_) { }
-                            return;
                         }
-                        try {
-                            target.chart.setCrosshairPosition(0, param.time, target.series);
-                            const point = param.seriesData.get(source.series) || null;
-                            if (point && target.legend?.div) {
-                                const event = {
-                                    time: param.time,
-                                    point: point,
-                                };
-                                target.legend.legendHandler(event, true);
-                            }
-                        }
-                        catch (_) { }
-                    });
+                    }
+                    finally {
+                        source._inSync = false;
+                    }
                 };
                 source.chart.subscribeCrosshairMove(crosshairCb);
                 // 存储回调引用（source 自己的回调订阅在自己 chart 上）
@@ -2931,11 +2975,30 @@ body {
             // 2) Visible range synchronization
             handlers.forEach((source) => {
                 const rangeCb = (range) => {
-                    handlers.forEach((target) => {
-                        if (target === source || !range)
+                    // 重入守卫：防止 range 回调级联触发
+                    if (source._inRangeSync)
+                        return;
+                    source._inRangeSync = true;
+                    try {
+                        const rFrom = range?.from;
+                        const rTo = range?.to;
+                        const rangeKey = range ? `${rFrom}_${rTo}` : '';
+                        if (rangeKey === source._lastSyncedRange)
                             return;
-                        target.chart.timeScale().setVisibleLogicalRange(range);
-                    });
+                        source._lastSyncedRange = rangeKey;
+                        for (let i = 0; i < handlers.length; i++) {
+                            const target = handlers[i];
+                            if (target === source || !range)
+                                continue;
+                            try {
+                                target.chart.timeScale().setVisibleLogicalRange(range);
+                            }
+                            catch (_) { }
+                        }
+                    }
+                    finally {
+                        source._inRangeSync = false;
+                    }
                 };
                 source.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeCb);
                 source._syncCallbacks['__rangeAll'] = {
@@ -2943,6 +3006,136 @@ body {
                     rangeSource: source,
                 };
             });
+        }
+        /**
+         * 加入同步组。sync_id 作为组名，同组内所有 handler 自动同步。
+         * 支持混合 crosshairOnly：组内任意 handler 设为 true 则该对仅同步十字光标。
+         */
+        static joinSyncGroup(chartOrId, groupName, crosshairOnly = false) {
+            // 如果传入字符串ID，查找对应的Handler对象
+            let chart;
+            if (typeof chartOrId === 'string') {
+                chart = Handler._all.find(h => h.id === chartOrId);
+                if (!chart) {
+                    console.error(`Handler not found for id: ${chartOrId}`);
+                    return;
+                }
+            }
+            else {
+                chart = chartOrId;
+            }
+            chart._syncGroup = groupName;
+            chart._syncCrosshairOnly = crosshairOnly;
+            // 找出同组所有 handler
+            const groupHandlers = Handler._all.filter(h => h._syncGroup === groupName);
+            // 清理同组所有旧 sync 回调
+            groupHandlers.forEach(h => {
+                for (const [, cb] of Object.entries(h._syncCallbacks)) {
+                    if (cb.crosshair && cb.crosshairSource) {
+                        cb.crosshairSource.chart.unsubscribeCrosshairMove(cb.crosshair);
+                    }
+                    if (cb.range && cb.rangeSource) {
+                        cb.rangeSource.chart.timeScale().unsubscribeVisibleLogicalRangeChange(cb.range);
+                    }
+                }
+                h._syncCallbacks = {};
+                h._syncedHandlers = [];
+            });
+            // 重建同组同步
+            if (groupHandlers.length > 1) {
+                Handler.syncGroup(groupHandlers);
+            }
+        }
+        /**
+         * 组同步：根据每个 handler 的 _syncCrosshairOnly 设置，
+         * 决定 crosshair 和 range 的同步范围。
+         * - crosshair：所有同组 handler 互相同步
+         * - range：仅 _syncCrosshairOnly=false 的 handler 之间同步
+         */
+        static syncGroup(handlers) {
+            // 更新 _syncedHandlers
+            handlers.forEach(h => {
+                h._syncedHandlers = handlers.map(t => t.id).filter(id => id !== h.id);
+            });
+            // 1) Crosshair sync — 所有 handler 互相同步
+            handlers.forEach((source) => {
+                const crosshairCb = (param) => {
+                    // 重入守卫：setCrosshairPosition 会触发目标图表的 crosshairMove，
+                    // 导致回调级联（N² 更新风暴）。检测到重入时直接跳过。
+                    if (source._inSync)
+                        return;
+                    source._inSync = true;
+                    try {
+                        const time = param.time;
+                        const srcSeries = source.series;
+                        const point = time ? param.seriesData.get(srcSeries) || null : null;
+                        for (let i = 0; i < handlers.length; i++) {
+                            const target = handlers[i];
+                            if (target === source)
+                                continue;
+                            try {
+                                const tc = target.chart;
+                                if (!time) {
+                                    tc.clearCrosshairPosition();
+                                    continue;
+                                }
+                                tc.setCrosshairPosition(0, time, target.series);
+                                if (point && target.legend?.div) {
+                                    target.legend.legendHandler({ time, point }, true);
+                                }
+                            }
+                            catch (_) { }
+                        }
+                    }
+                    finally {
+                        source._inSync = false;
+                    }
+                };
+                source.chart.subscribeCrosshairMove(crosshairCb);
+                // 存储回调引用（source 自己的回调订阅在自己 chart 上）
+                source._syncCallbacks['__crosshairAll'] = {
+                    crosshair: crosshairCb,
+                    crosshairSource: source,
+                };
+            });
+            // 2) Range sync — 仅 _syncCrosshairOnly=false 的 handler 之间同步
+            const rangeHandlers = handlers.filter(h => !h._syncCrosshairOnly);
+            if (rangeHandlers.length > 1) {
+                rangeHandlers.forEach((source) => {
+                    const rangeCb = (range) => {
+                        // 重入守卫：setVisibleLogicalRange 会触发目标图表的
+                        // visibleLogicalRangeChange，导致 range 回调级联（N² 更新风暴）
+                        if (source._inRangeSync)
+                            return;
+                        source._inRangeSync = true;
+                        try {
+                            const rFrom = range?.from;
+                            const rTo = range?.to;
+                            const rangeKey = range ? `${rFrom}_${rTo}` : '';
+                            if (rangeKey === source._lastSyncedRange)
+                                return;
+                            source._lastSyncedRange = rangeKey;
+                            for (let i = 0; i < rangeHandlers.length; i++) {
+                                const target = rangeHandlers[i];
+                                if (target === source || !range)
+                                    continue;
+                                try {
+                                    target.chart.timeScale().setVisibleLogicalRange(range);
+                                }
+                                catch (_) { }
+                            }
+                        }
+                        finally {
+                            source._inRangeSync = false;
+                        }
+                    };
+                    source.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeCb);
+                    source._syncCallbacks['__rangeAll'] = {
+                        range: rangeCb,
+                        rangeSource: source,
+                    };
+                });
+            }
         }
         static syncCharts(childChart, parentChart, crosshairOnly = false) {
             function crosshairHandler(chart, point, param) {
@@ -2962,12 +3155,28 @@ body {
             const childTimeScale = childChart.chart.timeScale();
             const parentTimeScale = parentChart.chart.timeScale();
             const setChildRange = (timeRange) => {
-                if (timeRange)
-                    childTimeScale.setVisibleLogicalRange(timeRange);
+                if (childChart._inRangeSync)
+                    return;
+                childChart._inRangeSync = true;
+                try {
+                    if (timeRange)
+                        childTimeScale.setVisibleLogicalRange(timeRange);
+                }
+                finally {
+                    childChart._inRangeSync = false;
+                }
             };
             const setParentRange = (timeRange) => {
-                if (timeRange)
-                    parentTimeScale.setVisibleLogicalRange(timeRange);
+                if (parentChart._inRangeSync)
+                    return;
+                parentChart._inRangeSync = true;
+                try {
+                    if (timeRange)
+                        parentTimeScale.setVisibleLogicalRange(timeRange);
+                }
+                finally {
+                    parentChart._inRangeSync = false;
+                }
             };
             const setParentCrosshair = (param) => {
                 crosshairHandler(parentChart, getPoint(childChart.series, param), param);
@@ -3045,42 +3254,77 @@ body {
                 return;
             // 重建 crosshair 同步
             const crosshairCb = (param) => {
-                targets.forEach(target => {
-                    if (!target.legend?.div)
-                        return;
-                    if (!param.time) {
-                        target.chart.clearCrosshairPosition();
-                        return;
+                // 重入守卫：防止 crosshair 同步级联触发
+                if (chart._inSync)
+                    return;
+                chart._inSync = true;
+                try {
+                    const time = param.time;
+                    const srcSeries = chart.series;
+                    const point = time ? param.seriesData.get(srcSeries) || null : null;
+                    for (let i = 0; i < targets.length; i++) {
+                        const target = targets[i];
+                        try {
+                            if (!target.legend?.div)
+                                continue;
+                            const tc = target.chart;
+                            if (!time) {
+                                tc.clearCrosshairPosition();
+                                continue;
+                            }
+                            tc.setCrosshairPosition(0, time, target.series);
+                            if (point) {
+                                target.legend.legendHandler({ time, point }, true);
+                            }
+                        }
+                        catch (_) { }
                     }
-                    const point = param.seriesData.get(chart.series) || null;
-                    target.chart.setCrosshairPosition(0, param.time, target.series);
-                    if (point) {
-                        target.legend.legendHandler({ time: param.time, point }, true);
-                    }
-                });
+                }
+                finally {
+                    chart._inSync = false;
+                }
             };
             chart.chart.subscribeCrosshairMove(crosshairCb);
             // 存储新的回调引用
-            targets.forEach(target => {
-                chart._syncCallbacks[target.id] = {
+            for (let i = 0; i < targets.length; i++) {
+                chart._syncCallbacks[targets[i].id] = {
                     crosshair: crosshairCb,
                     crosshairSource: chart
                 };
-            });
+            }
             // 重建 range 同步
             const rangeCb = (range) => {
-                targets.forEach(target => {
-                    if (range)
-                        target.chart.timeScale().setVisibleLogicalRange(range);
-                });
+                // 重入守卫：防止 range 回调级联触发
+                if (chart._inRangeSync)
+                    return;
+                chart._inRangeSync = true;
+                try {
+                    const rFrom = range?.from;
+                    const rTo = range?.to;
+                    const rangeKey = range ? `${rFrom}_${rTo}` : '';
+                    if (rangeKey === chart._lastSyncedRange)
+                        return;
+                    chart._lastSyncedRange = rangeKey;
+                    for (let i = 0; i < targets.length; i++) {
+                        if (range) {
+                            try {
+                                targets[i].chart.timeScale().setVisibleLogicalRange(range);
+                            }
+                            catch (_) { }
+                        }
+                    }
+                }
+                finally {
+                    chart._inRangeSync = false;
+                }
             };
             chart.chart.timeScale().subscribeVisibleLogicalRangeChange(rangeCb);
-            targets.forEach(target => {
-                if (chart._syncCallbacks[target.id]) {
-                    chart._syncCallbacks[target.id].range = rangeCb;
-                    chart._syncCallbacks[target.id].rangeSource = chart;
+            for (let i = 0; i < targets.length; i++) {
+                if (chart._syncCallbacks[targets[i].id]) {
+                    chart._syncCallbacks[targets[i].id].range = rangeCb;
+                    chart._syncCallbacks[targets[i].id].rangeSource = chart;
                 }
-            });
+            }
         }
         static makeSearchBox(chart) {
             const searchWindow = document.createElement('div');
@@ -3404,36 +3648,35 @@ body {
 
   (async ()=> {
  
-window.HTMLChart_14 = new Lib.Handler("window.HTMLChart_14", 1, 1, 1, 1, 1, true, 0, true);0
-window.HTMLChart_14.series.setData([])
-window.HTMLChart_14.volumeSeries.setData([])
-window.HTMLChart_14.openInterestSeries.setData([])
-window.HTMLChart_14.toolBox?.clearDrawings()
-window.HTMLChart_14.series.setData([{"time": 1704067200.0, "open": 100.57, "high": 102.1, "low": 100.02, "close": 100.99}, {"time": 1704153600.0, "open": 101.06, "high": 101.87, "low": 100.71, "close": 100.84}, {"time": 1704240000.0, "open": 101.83, "high": 102.41, "low": 101.77, "close": 102.12}, {"time": 1704326400.0, "open": 105.32, "high": 105.35, "low": 104.22, "close": 105.02}, {"time": 1704412800.0, "open": 104.93, "high": 105.2, "low": 103.6, "close": 104.68}, {"time": 1704499200.0, "open": 105.08, "high": 105.29, "low": 103.81, "close": 104.35}, {"time": 1704585600.0, "open": 108.15, "high": 109.57, "low": 107.0, "close": 107.42}, {"time": 1704672000.0, "open": 109.56, "high": 110.48, "low": 108.14, "close": 109.01}, {"time": 1704758400.0, "open": 107.49, "high": 109.65, "low": 106.04, "close": 108.2}, {"time": 1704844800.0, "open": 109.08, "high": 109.94, "low": 107.89, "close": 109.36}, {"time": 1704931200.0, "open": 109.23, "high": 110.51, "low": 107.51, "close": 108.56}, {"time": 1705017600.0, "open": 107.17, "high": 109.21, "low": 106.2, "close": 107.76}, {"time": 1705104000.0, "open": 107.64, "high": 109.41, "low": 107.64, "close": 108.33}, {"time": 1705190400.0, "open": 104.79, "high": 105.88, "low": 103.69, "close": 104.71}, {"time": 1705276800.0, "open": 101.91, "high": 102.27, "low": 101.07, "close": 101.57}, {"time": 1705363200.0, "open": 100.88, "high": 102.17, "low": 99.65, "close": 100.64}, {"time": 1705449600.0, "open": 98.26, "high": 99.45, "low": 97.87, "close": 98.91}, {"time": 1705536000.0, "open": 100.32, "high": 100.91, "low": 98.23, "close": 99.56}, {"time": 1705622400.0, "open": 98.5, "high": 99.24, "low": 97.19, "close": 98.04}, {"time": 1705708800.0, "open": 95.18, "high": 96.68, "low": 94.77, "close": 95.64}, {"time": 1705795200.0, "open": 98.49, "high": 98.75, "low": 96.87, "close": 98.26}, {"time": 1705881600.0, "open": 98.61, "high": 99.16, "low": 97.94, "close": 97.96}, {"time": 1705968000.0, "open": 98.06, "high": 99.6, "low": 96.65, "close": 98.18}, {"time": 1706054400.0, "open": 95.44, "high": 96.31, "low": 94.22, "close": 95.76}, {"time": 1706140800.0, "open": 94.41, "high": 95.71, "low": 93.09, "close": 94.91}, {"time": 1706227200.0, "open": 95.31, "high": 95.44, "low": 94.32, "close": 95.2}, {"time": 1706313600.0, "open": 92.78, "high": 94.05, "low": 91.56, "close": 93.32}, {"time": 1706400000.0, "open": 94.34, "high": 95.34, "low": 93.54, "close": 94.05}, {"time": 1706486400.0, "open": 93.58, "high": 94.72, "low": 91.91, "close": 93.12}, {"time": 1706572800.0, "open": 92.74, "high": 93.44, "low": 91.62, "close": 92.73}, {"time": 1706659200.0, "open": 92.11, "high": 93.21, "low": 90.59, "close": 91.82}, {"time": 1706745600.0, "open": 94.78, "high": 95.1, "low": 93.96, "close": 94.97}, {"time": 1706832000.0, "open": 94.99, "high": 95.81, "low": 94.58, "close": 95.04}, {"time": 1706918400.0, "open": 92.63, "high": 93.38, "low": 91.48, "close": 93.33}, {"time": 1707004800.0, "open": 94.24, "high": 95.54, "low": 93.15, "close": 94.8}, {"time": 1707091200.0, "open": 93.0, "high": 93.11, "low": 92.74, "close": 92.81}, {"time": 1707177600.0, "open": 93.32, "high": 94.21, "low": 92.24, "close": 93.25}, {"time": 1707264000.0, "open": 90.08, "high": 90.52, "low": 88.98, "close": 90.06}, {"time": 1707350400.0, "open": 87.91, "high": 88.1, "low": 87.88, "close": 88.0}, {"time": 1707436800.0, "open": 88.87, "high": 89.8, "low": 87.85, "close": 88.4}, {"time": 1707523200.0, "open": 89.17, "high": 90.0, "low": 88.43, "close": 89.66}, {"time": 1707609600.0, "open": 90.26, "high": 90.63, "low": 88.74, "close": 90.03}, {"time": 1707696000.0, "open": 90.01, "high": 90.83, "low": 89.36, "close": 89.93}, {"time": 1707782400.0, "open": 89.32, "high": 90.55, "low": 89.3, "close": 89.53}, {"time": 1707868800.0, "open": 86.6, "high": 87.29, "low": 85.49, "close": 87.24}, {"time": 1707955200.0, "open": 86.16, "high": 86.32, "low": 85.52, "close": 86.19}, {"time": 1708041600.0, "open": 85.12, "high": 86.12, "low": 84.61, "close": 85.57}, {"time": 1708128000.0, "open": 87.47, "high": 87.53, "low": 86.79, "close": 87.28}, {"time": 1708214400.0, "open": 87.91, "high": 89.04, "low": 87.04, "close": 87.91}, {"time": 1708300800.0, "open": 84.62, "high": 86.03, "low": 84.59, "close": 85.2}, {"time": 1708387200.0, "open": 86.39, "high": 87.14, "low": 85.29, "close": 85.79}, {"time": 1708473600.0, "open": 85.22, "high": 85.98, "low": 84.02, "close": 85.28}, {"time": 1708560000.0, "open": 84.95, "high": 86.1, "low": 84.08, "close": 84.32}, {"time": 1708646400.0, "open": 84.79, "high": 85.36, "low": 84.67, "close": 85.34}, {"time": 1708732800.0, "open": 86.41, "high": 87.42, "low": 85.31, "close": 87.01}, {"time": 1708819200.0, "open": 89.0, "high": 89.37, "low": 88.39, "close": 88.55}, {"time": 1708905600.0, "open": 87.48, "high": 88.63, "low": 86.34, "close": 87.3}, {"time": 1708992000.0, "open": 86.6, "high": 87.14, "low": 85.63, "close": 86.9}, {"time": 1709078400.0, "open": 88.2, "high": 88.74, "low": 87.02, "close": 87.51}, {"time": 1709164800.0, "open": 88.91, "high": 90.38, "low": 87.76, "close": 89.13}, {"time": 1709251200.0, "open": 88.81, "high": 89.81, "low": 88.32, "close": 88.45}, {"time": 1709337600.0, "open": 88.25, "high": 89.35, "low": 87.82, "close": 88.25}, {"time": 1709424000.0, "open": 86.42, "high": 86.59, "low": 85.25, "close": 86.58}, {"time": 1709510400.0, "open": 84.55, "high": 86.01, "low": 83.35, "close": 84.8}, {"time": 1709596800.0, "open": 86.31, "high": 86.89, "low": 85.75, "close": 86.12}, {"time": 1709683200.0, "open": 88.56, "high": 89.56, "low": 87.26, "close": 88.31}, {"time": 1709769600.0, "open": 87.71, "high": 88.94, "low": 87.63, "close": 88.29}, {"time": 1709856000.0, "open": 89.89, "high": 91.17, "low": 89.41, "close": 89.97}, {"time": 1709942400.0, "open": 90.13, "high": 91.68, "low": 89.29, "close": 90.65}, {"time": 1710028800.0, "open": 89.09, "high": 90.63, "low": 88.99, "close": 89.68}, {"time": 1710115200.0, "open": 90.65, "high": 90.77, "low": 90.24, "close": 90.36}, {"time": 1710201600.0, "open": 92.76, "high": 93.47, "low": 91.63, "close": 92.95}, {"time": 1710288000.0, "open": 93.7, "high": 94.76, "low": 92.46, "close": 92.98}, {"time": 1710374400.0, "open": 96.12, "high": 96.92, "low": 95.08, "close": 95.69}, {"time": 1710460800.0, "open": 90.71, "high": 91.95, "low": 90.69, "close": 91.28}, {"time": 1710547200.0, "open": 92.06, "high": 92.88, "low": 91.9, "close": 92.72}, {"time": 1710633600.0, "open": 93.32, "high": 94.14, "low": 91.61, "close": 92.96}, {"time": 1710720000.0, "open": 92.23, "high": 93.75, "low": 91.92, "close": 92.55}, {"time": 1710806400.0, "open": 92.07, "high": 94.14, "low": 92.01, "close": 92.79}, {"time": 1710892800.0, "open": 89.61, "high": 90.94, "low": 89.47, "close": 89.57}, {"time": 1710979200.0, "open": 89.97, "high": 90.68, "low": 88.46, "close": 89.3}, {"time": 1711065600.0, "open": 89.9, "high": 90.81, "low": 89.11, "close": 89.97}, {"time": 1711152000.0, "open": 91.78, "high": 92.84, "low": 90.47, "close": 92.45}, {"time": 1711238400.0, "open": 91.61, "high": 92.53, "low": 91.23, "close": 91.68}, {"time": 1711324800.0, "open": 90.38, "high": 90.92, "low": 89.59, "close": 90.44}, {"time": 1711411200.0, "open": 90.39, "high": 91.73, "low": 88.77, "close": 89.71}, {"time": 1711497600.0, "open": 91.0, "high": 92.39, "low": 90.07, "close": 91.28}, {"time": 1711584000.0, "open": 92.51, "high": 93.66, "low": 90.6, "close": 91.91}, {"time": 1711670400.0, "open": 91.29, "high": 91.86, "low": 89.85, "close": 91.13}, {"time": 1711756800.0, "open": 91.39, "high": 92.09, "low": 90.87, "close": 92.06}, {"time": 1711843200.0, "open": 93.03, "high": 93.24, "low": 91.49, "close": 92.31}, {"time": 1711929600.0, "open": 94.72, "high": 95.92, "low": 92.83, "close": 94.01}, {"time": 1712016000.0, "open": 92.79, "high": 93.3, "low": 92.71, "close": 92.92}, {"time": 1712102400.0, "open": 92.93, "high": 94.32, "low": 91.08, "close": 92.46}, {"time": 1712188800.0, "open": 92.3, "high": 93.61, "low": 90.73, "close": 91.9}, {"time": 1712275200.0, "open": 89.5, "high": 89.75, "low": 88.22, "close": 89.57}, {"time": 1712361600.0, "open": 89.75, "high": 91.05, "low": 88.92, "close": 90.14}, {"time": 1712448000.0, "open": 90.09, "high": 91.57, "low": 89.39, "close": 90.66}, {"time": 1712534400.0, "open": 90.78, "high": 91.94, "low": 90.0, "close": 90.75}, {"time": 1712620800.0, "open": 91.01, "high": 91.56, "low": 90.28, "close": 90.46}, {"time": 1712707200.0, "open": 88.61, "high": 89.43, "low": 87.32, "close": 88.25}, {"time": 1712793600.0, "open": 87.16, "high": 87.69, "low": 86.7, "close": 87.67}, {"time": 1712880000.0, "open": 87.06, "high": 87.79, "low": 85.88, "close": 87.21}, {"time": 1712966400.0, "open": 86.06, "high": 87.07, "low": 85.53, "close": 86.04}, {"time": 1713052800.0, "open": 86.38, "high": 87.61, "low": 85.69, "close": 85.88}, {"time": 1713139200.0, "open": 86.58, "high": 86.92, "low": 85.98, "close": 86.59}, {"time": 1713225600.0, "open": 89.6, "high": 90.06, "low": 88.75, "close": 89.62}, {"time": 1713312000.0, "open": 89.38, "high": 90.16, "low": 89.2, "close": 89.99}, {"time": 1713398400.0, "open": 89.97, "high": 91.36, "low": 89.73, "close": 90.49}, {"time": 1713484800.0, "open": 91.04, "high": 91.68, "low": 89.56, "close": 90.46}, {"time": 1713571200.0, "open": 87.0, "high": 87.48, "low": 86.78, "close": 87.43}, {"time": 1713657600.0, "open": 87.02, "high": 87.59, "low": 86.87, "close": 87.47}, {"time": 1713744000.0, "open": 87.25, "high": 88.14, "low": 86.59, "close": 87.66}, {"time": 1713830400.0, "open": 90.96, "high": 92.73, "low": 90.1, "close": 91.63}, {"time": 1713916800.0, "open": 91.95, "high": 93.22, "low": 91.32, "close": 91.41}, {"time": 1714003200.0, "open": 92.44, "high": 93.48, "low": 91.74, "close": 91.99}, {"time": 1714089600.0, "open": 91.84, "high": 92.7, "low": 90.99, "close": 92.03}, {"time": 1714176000.0, "open": 90.13, "high": 91.19, "low": 90.08, "close": 90.18}, {"time": 1714262400.0, "open": 92.44, "high": 93.69, "low": 91.42, "close": 92.13}, {"time": 1714348800.0, "open": 92.88, "high": 94.1, "low": 92.14, "close": 93.47}])
-window.HTMLChart_14.volumeSeries.setData([{"time": 1704067200.0, "value": 7881, "color": "rgba(83,141,131,0.8)"}, {"time": 1704153600.0, "value": 10155, "color": "rgba(200,127,130,0.8)"}, {"time": 1704240000.0, "value": 7418, "color": "rgba(83,141,131,0.8)"}, {"time": 1704326400.0, "value": 3336, "color": "rgba(200,127,130,0.8)"}, {"time": 1704412800.0, "value": 5131, "color": "rgba(200,127,130,0.8)"}, {"time": 1704499200.0, "value": 2070, "color": "rgba(200,127,130,0.8)"}, {"time": 1704585600.0, "value": 8191, "color": "rgba(200,127,130,0.8)"}, {"time": 1704672000.0, "value": 3508, "color": "rgba(200,127,130,0.8)"}, {"time": 1704758400.0, "value": 7890, "color": "rgba(83,141,131,0.8)"}, {"time": 1704844800.0, "value": 10847, "color": "rgba(83,141,131,0.8)"}, {"time": 1704931200.0, "value": 1742, "color": "rgba(200,127,130,0.8)"}, {"time": 1705017600.0, "value": 903, "color": "rgba(83,141,131,0.8)"}, {"time": 1705104000.0, "value": 2601, "color": "rgba(83,141,131,0.8)"}, {"time": 1705190400.0, "value": 3311, "color": "rgba(200,127,130,0.8)"}, {"time": 1705276800.0, "value": 9160, "color": "rgba(200,127,130,0.8)"}, {"time": 1705363200.0, "value": 7165, "color": "rgba(200,127,130,0.8)"}, {"time": 1705449600.0, "value": 3532, "color": "rgba(83,141,131,0.8)"}, {"time": 1705536000.0, "value": 7868, "color": "rgba(200,127,130,0.8)"}, {"time": 1705622400.0, "value": 6316, "color": "rgba(200,127,130,0.8)"}, {"time": 1705708800.0, "value": 1072, "color": "rgba(83,141,131,0.8)"}, {"time": 1705795200.0, "value": 11484, "color": "rgba(200,127,130,0.8)"}, {"time": 1705881600.0, "value": 11197, "color": "rgba(200,127,130,0.8)"}, {"time": 1705968000.0, "value": 10353, "color": "rgba(83,141,131,0.8)"}, {"time": 1706054400.0, "value": 4349, "color": "rgba(83,141,131,0.8)"}, {"time": 1706140800.0, "value": 8595, "color": "rgba(83,141,131,0.8)"}, {"time": 1706227200.0, "value": 11888, "color": "rgba(200,127,130,0.8)"}, {"time": 1706313600.0, "value": 9096, "color": "rgba(83,141,131,0.8)"}, {"time": 1706400000.0, "value": 4088, "color": "rgba(200,127,130,0.8)"}, {"time": 1706486400.0, "value": 11028, "color": "rgba(200,127,130,0.8)"}, {"time": 1706572800.0, "value": 8079, "color": "rgba(200,127,130,0.8)"}, {"time": 1706659200.0, "value": 4585, "color": "rgba(200,127,130,0.8)"}, {"time": 1706745600.0, "value": 1202, "color": "rgba(83,141,131,0.8)"}, {"time": 1706832000.0, "value": 7417, "color": "rgba(83,141,131,0.8)"}, {"time": 1706918400.0, "value": 4834, "color": "rgba(83,141,131,0.8)"}, {"time": 1707004800.0, "value": 3217, "color": "rgba(83,141,131,0.8)"}, {"time": 1707091200.0, "value": 6751, "color": "rgba(200,127,130,0.8)"}, {"time": 1707177600.0, "value": 11729, "color": "rgba(200,127,130,0.8)"}, {"time": 1707264000.0, "value": 3833, "color": "rgba(200,127,130,0.8)"}, {"time": 1707350400.0, "value": 11581, "color": "rgba(83,141,131,0.8)"}, {"time": 1707436800.0, "value": 2740, "color": "rgba(200,127,130,0.8)"}, {"time": 1707523200.0, "value": 8803, "color": "rgba(83,141,131,0.8)"}, {"time": 1707609600.0, "value": 9064, "color": "rgba(200,127,130,0.8)"}, {"time": 1707696000.0, "value": 3574, "color": "rgba(200,127,130,0.8)"}, {"time": 1707782400.0, "value": 2100, "color": "rgba(83,141,131,0.8)"}, {"time": 1707868800.0, "value": 8680, "color": "rgba(83,141,131,0.8)"}, {"time": 1707955200.0, "value": 6102, "color": "rgba(83,141,131,0.8)"}, {"time": 1708041600.0, "value": 7697, "color": "rgba(83,141,131,0.8)"}, {"time": 1708128000.0, "value": 7809, "color": "rgba(200,127,130,0.8)"}, {"time": 1708214400.0, "value": 2624, "color": "rgba(200,127,130,0.8)"}, {"time": 1708300800.0, "value": 7360, "color": "rgba(83,141,131,0.8)"}, {"time": 1708387200.0, "value": 8004, "color": "rgba(200,127,130,0.8)"}, {"time": 1708473600.0, "value": 5124, "color": "rgba(83,141,131,0.8)"}, {"time": 1708560000.0, "value": 1576, "color": "rgba(200,127,130,0.8)"}, {"time": 1708646400.0, "value": 8449, "color": "rgba(83,141,131,0.8)"}, {"time": 1708732800.0, "value": 1060, "color": "rgba(83,141,131,0.8)"}, {"time": 1708819200.0, "value": 8603, "color": "rgba(200,127,130,0.8)"}, {"time": 1708905600.0, "value": 9798, "color": "rgba(200,127,130,0.8)"}, {"time": 1708992000.0, "value": 9836, "color": "rgba(83,141,131,0.8)"}, {"time": 1709078400.0, "value": 9495, "color": "rgba(200,127,130,0.8)"}, {"time": 1709164800.0, "value": 5604, "color": "rgba(83,141,131,0.8)"}, {"time": 1709251200.0, "value": 10908, "color": "rgba(200,127,130,0.8)"}, {"time": 1709337600.0, "value": 10829, "color": "rgba(200,127,130,0.8)"}, {"time": 1709424000.0, "value": 1822, "color": "rgba(83,141,131,0.8)"}, {"time": 1709510400.0, "value": 7222, "color": "rgba(83,141,131,0.8)"}, {"time": 1709596800.0, "value": 4481, "color": "rgba(200,127,130,0.8)"}, {"time": 1709683200.0, "value": 9643, "color": "rgba(200,127,130,0.8)"}, {"time": 1709769600.0, "value": 6954, "color": "rgba(83,141,131,0.8)"}, {"time": 1709856000.0, "value": 2111, "color": "rgba(83,141,131,0.8)"}, {"time": 1709942400.0, "value": 1932, "color": "rgba(83,141,131,0.8)"}, {"time": 1710028800.0, "value": 10004, "color": "rgba(83,141,131,0.8)"}, {"time": 1710115200.0, "value": 11850, "color": "rgba(200,127,130,0.8)"}, {"time": 1710201600.0, "value": 11409, "color": "rgba(83,141,131,0.8)"}, {"time": 1710288000.0, "value": 1735, "color": "rgba(200,127,130,0.8)"}, {"time": 1710374400.0, "value": 10951, "color": "rgba(200,127,130,0.8)"}, {"time": 1710460800.0, "value": 6048, "color": "rgba(83,141,131,0.8)"}, {"time": 1710547200.0, "value": 8071, "color": "rgba(83,141,131,0.8)"}, {"time": 1710633600.0, "value": 4998, "color": "rgba(200,127,130,0.8)"}, {"time": 1710720000.0, "value": 11588, "color": "rgba(83,141,131,0.8)"}, {"time": 1710806400.0, "value": 10780, "color": "rgba(83,141,131,0.8)"}, {"time": 1710892800.0, "value": 7003, "color": "rgba(200,127,130,0.8)"}, {"time": 1710979200.0, "value": 8592, "color": "rgba(200,127,130,0.8)"}, {"time": 1711065600.0, "value": 10892, "color": "rgba(83,141,131,0.8)"}, {"time": 1711152000.0, "value": 10770, "color": "rgba(83,141,131,0.8)"}, {"time": 1711238400.0, "value": 2906, "color": "rgba(83,141,131,0.8)"}, {"time": 1711324800.0, "value": 1670, "color": "rgba(83,141,131,0.8)"}, {"time": 1711411200.0, "value": 6804, "color": "rgba(200,127,130,0.8)"}, {"time": 1711497600.0, "value": 2621, "color": "rgba(83,141,131,0.8)"}, {"time": 1711584000.0, "value": 8928, "color": "rgba(200,127,130,0.8)"}, {"time": 1711670400.0, "value": 10499, "color": "rgba(200,127,130,0.8)"}, {"time": 1711756800.0, "value": 9878, "color": "rgba(83,141,131,0.8)"}, {"time": 1711843200.0, "value": 5065, "color": "rgba(200,127,130,0.8)"}, {"time": 1711929600.0, "value": 6049, "color": "rgba(200,127,130,0.8)"}, {"time": 1712016000.0, "value": 10484, "color": "rgba(83,141,131,0.8)"}, {"time": 1712102400.0, "value": 7020, "color": "rgba(200,127,130,0.8)"}, {"time": 1712188800.0, "value": 3570, "color": "rgba(200,127,130,0.8)"}, {"time": 1712275200.0, "value": 7589, "color": "rgba(83,141,131,0.8)"}, {"time": 1712361600.0, "value": 4811, "color": "rgba(83,141,131,0.8)"}, {"time": 1712448000.0, "value": 9449, "color": "rgba(83,141,131,0.8)"}, {"time": 1712534400.0, "value": 7082, "color": "rgba(200,127,130,0.8)"}, {"time": 1712620800.0, "value": 1122, "color": "rgba(200,127,130,0.8)"}, {"time": 1712707200.0, "value": 3185, "color": "rgba(200,127,130,0.8)"}, {"time": 1712793600.0, "value": 7407, "color": "rgba(83,141,131,0.8)"}, {"time": 1712880000.0, "value": 4700, "color": "rgba(83,141,131,0.8)"}, {"time": 1712966400.0, "value": 7767, "color": "rgba(200,127,130,0.8)"}, {"time": 1713052800.0, "value": 11177, "color": "rgba(200,127,130,0.8)"}, {"time": 1713139200.0, "value": 11776, "color": "rgba(83,141,131,0.8)"}, {"time": 1713225600.0, "value": 3489, "color": "rgba(83,141,131,0.8)"}, {"time": 1713312000.0, "value": 2501, "color": "rgba(83,141,131,0.8)"}, {"time": 1713398400.0, "value": 4671, "color": "rgba(83,141,131,0.8)"}, {"time": 1713484800.0, "value": 2729, "color": "rgba(200,127,130,0.8)"}, {"time": 1713571200.0, "value": 3920, "color": "rgba(83,141,131,0.8)"}, {"time": 1713657600.0, "value": 5960, "color": "rgba(83,141,131,0.8)"}, {"time": 1713744000.0, "value": 8532, "color": "rgba(83,141,131,0.8)"}, {"time": 1713830400.0, "value": 1715, "color": "rgba(83,141,131,0.8)"}, {"time": 1713916800.0, "value": 3901, "color": "rgba(200,127,130,0.8)"}, {"time": 1714003200.0, "value": 3144, "color": "rgba(200,127,130,0.8)"}, {"time": 1714089600.0, "value": 4931, "color": "rgba(83,141,131,0.8)"}, {"time": 1714176000.0, "value": 3627, "color": "rgba(83,141,131,0.8)"}, {"time": 1714262400.0, "value": 6759, "color": "rgba(200,127,130,0.8)"}, {"time": 1714348800.0, "value": 3515, "color": "rgba(83,141,131,0.8)"}])
+window.HTMLChart_20 = new Lib.Handler("window.HTMLChart_20", 1, 1, 1, 1, 1, true, 0, true);0
 
-            if (!window.HTMLChart_14.chart.priceScale("right").options.autoScale)
-                window.HTMLChart_14.chart.priceScale("right").applyOptions({autoScale: true})
+                window.VolumeSeries_22 = {};
+                window.VolumeSeries_22.series = window.HTMLChart_20.volumeSeries;
+            ;0
+
+                window.OpenInterestSeries_23 = {};
+                window.OpenInterestSeries_23.series = window.HTMLChart_20.openInterestSeries;
+            ;0
+window.HTMLChart_20.series.setData([])
+window.HTMLChart_20.series.setData([{"time": 1704067200.0, "open": 100.57, "high": 102.1, "low": 100.02, "close": 100.99}, {"time": 1704153600.0, "open": 101.06, "high": 101.87, "low": 100.71, "close": 100.84}, {"time": 1704240000.0, "open": 101.83, "high": 102.41, "low": 101.77, "close": 102.12}, {"time": 1704326400.0, "open": 105.32, "high": 105.35, "low": 104.22, "close": 105.02}, {"time": 1704412800.0, "open": 104.93, "high": 105.2, "low": 103.6, "close": 104.68}, {"time": 1704499200.0, "open": 105.08, "high": 105.29, "low": 103.81, "close": 104.35}, {"time": 1704585600.0, "open": 108.15, "high": 109.57, "low": 107.0, "close": 107.42}, {"time": 1704672000.0, "open": 109.56, "high": 110.48, "low": 108.14, "close": 109.01}, {"time": 1704758400.0, "open": 107.49, "high": 109.65, "low": 106.04, "close": 108.2}, {"time": 1704844800.0, "open": 109.08, "high": 109.94, "low": 107.89, "close": 109.36}, {"time": 1704931200.0, "open": 109.23, "high": 110.51, "low": 107.51, "close": 108.56}, {"time": 1705017600.0, "open": 107.17, "high": 109.21, "low": 106.2, "close": 107.76}, {"time": 1705104000.0, "open": 107.64, "high": 109.41, "low": 107.64, "close": 108.33}, {"time": 1705190400.0, "open": 104.79, "high": 105.88, "low": 103.69, "close": 104.71}, {"time": 1705276800.0, "open": 101.91, "high": 102.27, "low": 101.07, "close": 101.57}, {"time": 1705363200.0, "open": 100.88, "high": 102.17, "low": 99.65, "close": 100.64}, {"time": 1705449600.0, "open": 98.26, "high": 99.45, "low": 97.87, "close": 98.91}, {"time": 1705536000.0, "open": 100.32, "high": 100.91, "low": 98.23, "close": 99.56}, {"time": 1705622400.0, "open": 98.5, "high": 99.24, "low": 97.19, "close": 98.04}, {"time": 1705708800.0, "open": 95.18, "high": 96.68, "low": 94.77, "close": 95.64}, {"time": 1705795200.0, "open": 98.49, "high": 98.75, "low": 96.87, "close": 98.26}, {"time": 1705881600.0, "open": 98.61, "high": 99.16, "low": 97.94, "close": 97.96}, {"time": 1705968000.0, "open": 98.06, "high": 99.6, "low": 96.65, "close": 98.18}, {"time": 1706054400.0, "open": 95.44, "high": 96.31, "low": 94.22, "close": 95.76}, {"time": 1706140800.0, "open": 94.41, "high": 95.71, "low": 93.09, "close": 94.91}, {"time": 1706227200.0, "open": 95.31, "high": 95.44, "low": 94.32, "close": 95.2}, {"time": 1706313600.0, "open": 92.78, "high": 94.05, "low": 91.56, "close": 93.32}, {"time": 1706400000.0, "open": 94.34, "high": 95.34, "low": 93.54, "close": 94.05}, {"time": 1706486400.0, "open": 93.58, "high": 94.72, "low": 91.91, "close": 93.12}, {"time": 1706572800.0, "open": 92.74, "high": 93.44, "low": 91.62, "close": 92.73}, {"time": 1706659200.0, "open": 92.11, "high": 93.21, "low": 90.59, "close": 91.82}, {"time": 1706745600.0, "open": 94.78, "high": 95.1, "low": 93.96, "close": 94.97}, {"time": 1706832000.0, "open": 94.99, "high": 95.81, "low": 94.58, "close": 95.04}, {"time": 1706918400.0, "open": 92.63, "high": 93.38, "low": 91.48, "close": 93.33}, {"time": 1707004800.0, "open": 94.24, "high": 95.54, "low": 93.15, "close": 94.8}, {"time": 1707091200.0, "open": 93.0, "high": 93.11, "low": 92.74, "close": 92.81}, {"time": 1707177600.0, "open": 93.32, "high": 94.21, "low": 92.24, "close": 93.25}, {"time": 1707264000.0, "open": 90.08, "high": 90.52, "low": 88.98, "close": 90.06}, {"time": 1707350400.0, "open": 87.91, "high": 88.1, "low": 87.88, "close": 88.0}, {"time": 1707436800.0, "open": 88.87, "high": 89.8, "low": 87.85, "close": 88.4}, {"time": 1707523200.0, "open": 89.17, "high": 90.0, "low": 88.43, "close": 89.66}, {"time": 1707609600.0, "open": 90.26, "high": 90.63, "low": 88.74, "close": 90.03}, {"time": 1707696000.0, "open": 90.01, "high": 90.83, "low": 89.36, "close": 89.93}, {"time": 1707782400.0, "open": 89.32, "high": 90.55, "low": 89.3, "close": 89.53}, {"time": 1707868800.0, "open": 86.6, "high": 87.29, "low": 85.49, "close": 87.24}, {"time": 1707955200.0, "open": 86.16, "high": 86.32, "low": 85.52, "close": 86.19}, {"time": 1708041600.0, "open": 85.12, "high": 86.12, "low": 84.61, "close": 85.57}, {"time": 1708128000.0, "open": 87.47, "high": 87.53, "low": 86.79, "close": 87.28}, {"time": 1708214400.0, "open": 87.91, "high": 89.04, "low": 87.04, "close": 87.91}, {"time": 1708300800.0, "open": 84.62, "high": 86.03, "low": 84.59, "close": 85.2}, {"time": 1708387200.0, "open": 86.39, "high": 87.14, "low": 85.29, "close": 85.79}, {"time": 1708473600.0, "open": 85.22, "high": 85.98, "low": 84.02, "close": 85.28}, {"time": 1708560000.0, "open": 84.95, "high": 86.1, "low": 84.08, "close": 84.32}, {"time": 1708646400.0, "open": 84.79, "high": 85.36, "low": 84.67, "close": 85.34}, {"time": 1708732800.0, "open": 86.41, "high": 87.42, "low": 85.31, "close": 87.01}, {"time": 1708819200.0, "open": 89.0, "high": 89.37, "low": 88.39, "close": 88.55}, {"time": 1708905600.0, "open": 87.48, "high": 88.63, "low": 86.34, "close": 87.3}, {"time": 1708992000.0, "open": 86.6, "high": 87.14, "low": 85.63, "close": 86.9}, {"time": 1709078400.0, "open": 88.2, "high": 88.74, "low": 87.02, "close": 87.51}, {"time": 1709164800.0, "open": 88.91, "high": 90.38, "low": 87.76, "close": 89.13}, {"time": 1709251200.0, "open": 88.81, "high": 89.81, "low": 88.32, "close": 88.45}, {"time": 1709337600.0, "open": 88.25, "high": 89.35, "low": 87.82, "close": 88.25}, {"time": 1709424000.0, "open": 86.42, "high": 86.59, "low": 85.25, "close": 86.58}, {"time": 1709510400.0, "open": 84.55, "high": 86.01, "low": 83.35, "close": 84.8}, {"time": 1709596800.0, "open": 86.31, "high": 86.89, "low": 85.75, "close": 86.12}, {"time": 1709683200.0, "open": 88.56, "high": 89.56, "low": 87.26, "close": 88.31}, {"time": 1709769600.0, "open": 87.71, "high": 88.94, "low": 87.63, "close": 88.29}, {"time": 1709856000.0, "open": 89.89, "high": 91.17, "low": 89.41, "close": 89.97}, {"time": 1709942400.0, "open": 90.13, "high": 91.68, "low": 89.29, "close": 90.65}, {"time": 1710028800.0, "open": 89.09, "high": 90.63, "low": 88.99, "close": 89.68}, {"time": 1710115200.0, "open": 90.65, "high": 90.77, "low": 90.24, "close": 90.36}, {"time": 1710201600.0, "open": 92.76, "high": 93.47, "low": 91.63, "close": 92.95}, {"time": 1710288000.0, "open": 93.7, "high": 94.76, "low": 92.46, "close": 92.98}, {"time": 1710374400.0, "open": 96.12, "high": 96.92, "low": 95.08, "close": 95.69}, {"time": 1710460800.0, "open": 90.71, "high": 91.95, "low": 90.69, "close": 91.28}, {"time": 1710547200.0, "open": 92.06, "high": 92.88, "low": 91.9, "close": 92.72}, {"time": 1710633600.0, "open": 93.32, "high": 94.14, "low": 91.61, "close": 92.96}, {"time": 1710720000.0, "open": 92.23, "high": 93.75, "low": 91.92, "close": 92.55}, {"time": 1710806400.0, "open": 92.07, "high": 94.14, "low": 92.01, "close": 92.79}, {"time": 1710892800.0, "open": 89.61, "high": 90.94, "low": 89.47, "close": 89.57}, {"time": 1710979200.0, "open": 89.97, "high": 90.68, "low": 88.46, "close": 89.3}, {"time": 1711065600.0, "open": 89.9, "high": 90.81, "low": 89.11, "close": 89.97}, {"time": 1711152000.0, "open": 91.78, "high": 92.84, "low": 90.47, "close": 92.45}, {"time": 1711238400.0, "open": 91.61, "high": 92.53, "low": 91.23, "close": 91.68}, {"time": 1711324800.0, "open": 90.38, "high": 90.92, "low": 89.59, "close": 90.44}, {"time": 1711411200.0, "open": 90.39, "high": 91.73, "low": 88.77, "close": 89.71}, {"time": 1711497600.0, "open": 91.0, "high": 92.39, "low": 90.07, "close": 91.28}, {"time": 1711584000.0, "open": 92.51, "high": 93.66, "low": 90.6, "close": 91.91}, {"time": 1711670400.0, "open": 91.29, "high": 91.86, "low": 89.85, "close": 91.13}, {"time": 1711756800.0, "open": 91.39, "high": 92.09, "low": 90.87, "close": 92.06}, {"time": 1711843200.0, "open": 93.03, "high": 93.24, "low": 91.49, "close": 92.31}, {"time": 1711929600.0, "open": 94.72, "high": 95.92, "low": 92.83, "close": 94.01}, {"time": 1712016000.0, "open": 92.79, "high": 93.3, "low": 92.71, "close": 92.92}, {"time": 1712102400.0, "open": 92.93, "high": 94.32, "low": 91.08, "close": 92.46}, {"time": 1712188800.0, "open": 92.3, "high": 93.61, "low": 90.73, "close": 91.9}, {"time": 1712275200.0, "open": 89.5, "high": 89.75, "low": 88.22, "close": 89.57}, {"time": 1712361600.0, "open": 89.75, "high": 91.05, "low": 88.92, "close": 90.14}, {"time": 1712448000.0, "open": 90.09, "high": 91.57, "low": 89.39, "close": 90.66}, {"time": 1712534400.0, "open": 90.78, "high": 91.94, "low": 90.0, "close": 90.75}, {"time": 1712620800.0, "open": 91.01, "high": 91.56, "low": 90.28, "close": 90.46}, {"time": 1712707200.0, "open": 88.61, "high": 89.43, "low": 87.32, "close": 88.25}, {"time": 1712793600.0, "open": 87.16, "high": 87.69, "low": 86.7, "close": 87.67}, {"time": 1712880000.0, "open": 87.06, "high": 87.79, "low": 85.88, "close": 87.21}, {"time": 1712966400.0, "open": 86.06, "high": 87.07, "low": 85.53, "close": 86.04}, {"time": 1713052800.0, "open": 86.38, "high": 87.61, "low": 85.69, "close": 85.88}, {"time": 1713139200.0, "open": 86.58, "high": 86.92, "low": 85.98, "close": 86.59}, {"time": 1713225600.0, "open": 89.6, "high": 90.06, "low": 88.75, "close": 89.62}, {"time": 1713312000.0, "open": 89.38, "high": 90.16, "low": 89.2, "close": 89.99}, {"time": 1713398400.0, "open": 89.97, "high": 91.36, "low": 89.73, "close": 90.49}, {"time": 1713484800.0, "open": 91.04, "high": 91.68, "low": 89.56, "close": 90.46}, {"time": 1713571200.0, "open": 87.0, "high": 87.48, "low": 86.78, "close": 87.43}, {"time": 1713657600.0, "open": 87.02, "high": 87.59, "low": 86.87, "close": 87.47}, {"time": 1713744000.0, "open": 87.25, "high": 88.14, "low": 86.59, "close": 87.66}, {"time": 1713830400.0, "open": 90.96, "high": 92.73, "low": 90.1, "close": 91.63}, {"time": 1713916800.0, "open": 91.95, "high": 93.22, "low": 91.32, "close": 91.41}, {"time": 1714003200.0, "open": 92.44, "high": 93.48, "low": 91.74, "close": 91.99}, {"time": 1714089600.0, "open": 91.84, "high": 92.7, "low": 90.99, "close": 92.03}, {"time": 1714176000.0, "open": 90.13, "high": 91.19, "low": 90.08, "close": 90.18}, {"time": 1714262400.0, "open": 92.44, "high": 93.69, "low": 91.42, "close": 92.13}, {"time": 1714348800.0, "open": 92.88, "high": 94.1, "low": 92.14, "close": 93.47}]); 
+window.VolumeSeries_22.series.setData([{"time": 1704067200.0, "value": 7881, "color": "rgba(83,141,131,0.8)"}, {"time": 1704153600.0, "value": 10155, "color": "rgba(200,127,130,0.8)"}, {"time": 1704240000.0, "value": 7418, "color": "rgba(83,141,131,0.8)"}, {"time": 1704326400.0, "value": 3336, "color": "rgba(200,127,130,0.8)"}, {"time": 1704412800.0, "value": 5131, "color": "rgba(200,127,130,0.8)"}, {"time": 1704499200.0, "value": 2070, "color": "rgba(200,127,130,0.8)"}, {"time": 1704585600.0, "value": 8191, "color": "rgba(200,127,130,0.8)"}, {"time": 1704672000.0, "value": 3508, "color": "rgba(200,127,130,0.8)"}, {"time": 1704758400.0, "value": 7890, "color": "rgba(83,141,131,0.8)"}, {"time": 1704844800.0, "value": 10847, "color": "rgba(83,141,131,0.8)"}, {"time": 1704931200.0, "value": 1742, "color": "rgba(200,127,130,0.8)"}, {"time": 1705017600.0, "value": 903, "color": "rgba(83,141,131,0.8)"}, {"time": 1705104000.0, "value": 2601, "color": "rgba(83,141,131,0.8)"}, {"time": 1705190400.0, "value": 3311, "color": "rgba(200,127,130,0.8)"}, {"time": 1705276800.0, "value": 9160, "color": "rgba(200,127,130,0.8)"}, {"time": 1705363200.0, "value": 7165, "color": "rgba(200,127,130,0.8)"}, {"time": 1705449600.0, "value": 3532, "color": "rgba(83,141,131,0.8)"}, {"time": 1705536000.0, "value": 7868, "color": "rgba(200,127,130,0.8)"}, {"time": 1705622400.0, "value": 6316, "color": "rgba(200,127,130,0.8)"}, {"time": 1705708800.0, "value": 1072, "color": "rgba(83,141,131,0.8)"}, {"time": 1705795200.0, "value": 11484, "color": "rgba(200,127,130,0.8)"}, {"time": 1705881600.0, "value": 11197, "color": "rgba(200,127,130,0.8)"}, {"time": 1705968000.0, "value": 10353, "color": "rgba(83,141,131,0.8)"}, {"time": 1706054400.0, "value": 4349, "color": "rgba(83,141,131,0.8)"}, {"time": 1706140800.0, "value": 8595, "color": "rgba(83,141,131,0.8)"}, {"time": 1706227200.0, "value": 11888, "color": "rgba(200,127,130,0.8)"}, {"time": 1706313600.0, "value": 9096, "color": "rgba(83,141,131,0.8)"}, {"time": 1706400000.0, "value": 4088, "color": "rgba(200,127,130,0.8)"}, {"time": 1706486400.0, "value": 11028, "color": "rgba(200,127,130,0.8)"}, {"time": 1706572800.0, "value": 8079, "color": "rgba(200,127,130,0.8)"}, {"time": 1706659200.0, "value": 4585, "color": "rgba(200,127,130,0.8)"}, {"time": 1706745600.0, "value": 1202, "color": "rgba(83,141,131,0.8)"}, {"time": 1706832000.0, "value": 7417, "color": "rgba(83,141,131,0.8)"}, {"time": 1706918400.0, "value": 4834, "color": "rgba(83,141,131,0.8)"}, {"time": 1707004800.0, "value": 3217, "color": "rgba(83,141,131,0.8)"}, {"time": 1707091200.0, "value": 6751, "color": "rgba(200,127,130,0.8)"}, {"time": 1707177600.0, "value": 11729, "color": "rgba(200,127,130,0.8)"}, {"time": 1707264000.0, "value": 3833, "color": "rgba(200,127,130,0.8)"}, {"time": 1707350400.0, "value": 11581, "color": "rgba(83,141,131,0.8)"}, {"time": 1707436800.0, "value": 2740, "color": "rgba(200,127,130,0.8)"}, {"time": 1707523200.0, "value": 8803, "color": "rgba(83,141,131,0.8)"}, {"time": 1707609600.0, "value": 9064, "color": "rgba(200,127,130,0.8)"}, {"time": 1707696000.0, "value": 3574, "color": "rgba(200,127,130,0.8)"}, {"time": 1707782400.0, "value": 2100, "color": "rgba(83,141,131,0.8)"}, {"time": 1707868800.0, "value": 8680, "color": "rgba(83,141,131,0.8)"}, {"time": 1707955200.0, "value": 6102, "color": "rgba(83,141,131,0.8)"}, {"time": 1708041600.0, "value": 7697, "color": "rgba(83,141,131,0.8)"}, {"time": 1708128000.0, "value": 7809, "color": "rgba(200,127,130,0.8)"}, {"time": 1708214400.0, "value": 2624, "color": "rgba(200,127,130,0.8)"}, {"time": 1708300800.0, "value": 7360, "color": "rgba(83,141,131,0.8)"}, {"time": 1708387200.0, "value": 8004, "color": "rgba(200,127,130,0.8)"}, {"time": 1708473600.0, "value": 5124, "color": "rgba(83,141,131,0.8)"}, {"time": 1708560000.0, "value": 1576, "color": "rgba(200,127,130,0.8)"}, {"time": 1708646400.0, "value": 8449, "color": "rgba(83,141,131,0.8)"}, {"time": 1708732800.0, "value": 1060, "color": "rgba(83,141,131,0.8)"}, {"time": 1708819200.0, "value": 8603, "color": "rgba(200,127,130,0.8)"}, {"time": 1708905600.0, "value": 9798, "color": "rgba(200,127,130,0.8)"}, {"time": 1708992000.0, "value": 9836, "color": "rgba(83,141,131,0.8)"}, {"time": 1709078400.0, "value": 9495, "color": "rgba(200,127,130,0.8)"}, {"time": 1709164800.0, "value": 5604, "color": "rgba(83,141,131,0.8)"}, {"time": 1709251200.0, "value": 10908, "color": "rgba(200,127,130,0.8)"}, {"time": 1709337600.0, "value": 10829, "color": "rgba(200,127,130,0.8)"}, {"time": 1709424000.0, "value": 1822, "color": "rgba(83,141,131,0.8)"}, {"time": 1709510400.0, "value": 7222, "color": "rgba(83,141,131,0.8)"}, {"time": 1709596800.0, "value": 4481, "color": "rgba(200,127,130,0.8)"}, {"time": 1709683200.0, "value": 9643, "color": "rgba(200,127,130,0.8)"}, {"time": 1709769600.0, "value": 6954, "color": "rgba(83,141,131,0.8)"}, {"time": 1709856000.0, "value": 2111, "color": "rgba(83,141,131,0.8)"}, {"time": 1709942400.0, "value": 1932, "color": "rgba(83,141,131,0.8)"}, {"time": 1710028800.0, "value": 10004, "color": "rgba(83,141,131,0.8)"}, {"time": 1710115200.0, "value": 11850, "color": "rgba(200,127,130,0.8)"}, {"time": 1710201600.0, "value": 11409, "color": "rgba(83,141,131,0.8)"}, {"time": 1710288000.0, "value": 1735, "color": "rgba(200,127,130,0.8)"}, {"time": 1710374400.0, "value": 10951, "color": "rgba(200,127,130,0.8)"}, {"time": 1710460800.0, "value": 6048, "color": "rgba(83,141,131,0.8)"}, {"time": 1710547200.0, "value": 8071, "color": "rgba(83,141,131,0.8)"}, {"time": 1710633600.0, "value": 4998, "color": "rgba(200,127,130,0.8)"}, {"time": 1710720000.0, "value": 11588, "color": "rgba(83,141,131,0.8)"}, {"time": 1710806400.0, "value": 10780, "color": "rgba(83,141,131,0.8)"}, {"time": 1710892800.0, "value": 7003, "color": "rgba(200,127,130,0.8)"}, {"time": 1710979200.0, "value": 8592, "color": "rgba(200,127,130,0.8)"}, {"time": 1711065600.0, "value": 10892, "color": "rgba(83,141,131,0.8)"}, {"time": 1711152000.0, "value": 10770, "color": "rgba(83,141,131,0.8)"}, {"time": 1711238400.0, "value": 2906, "color": "rgba(83,141,131,0.8)"}, {"time": 1711324800.0, "value": 1670, "color": "rgba(83,141,131,0.8)"}, {"time": 1711411200.0, "value": 6804, "color": "rgba(200,127,130,0.8)"}, {"time": 1711497600.0, "value": 2621, "color": "rgba(83,141,131,0.8)"}, {"time": 1711584000.0, "value": 8928, "color": "rgba(200,127,130,0.8)"}, {"time": 1711670400.0, "value": 10499, "color": "rgba(200,127,130,0.8)"}, {"time": 1711756800.0, "value": 9878, "color": "rgba(83,141,131,0.8)"}, {"time": 1711843200.0, "value": 5065, "color": "rgba(200,127,130,0.8)"}, {"time": 1711929600.0, "value": 6049, "color": "rgba(200,127,130,0.8)"}, {"time": 1712016000.0, "value": 10484, "color": "rgba(83,141,131,0.8)"}, {"time": 1712102400.0, "value": 7020, "color": "rgba(200,127,130,0.8)"}, {"time": 1712188800.0, "value": 3570, "color": "rgba(200,127,130,0.8)"}, {"time": 1712275200.0, "value": 7589, "color": "rgba(83,141,131,0.8)"}, {"time": 1712361600.0, "value": 4811, "color": "rgba(83,141,131,0.8)"}, {"time": 1712448000.0, "value": 9449, "color": "rgba(83,141,131,0.8)"}, {"time": 1712534400.0, "value": 7082, "color": "rgba(200,127,130,0.8)"}, {"time": 1712620800.0, "value": 1122, "color": "rgba(200,127,130,0.8)"}, {"time": 1712707200.0, "value": 3185, "color": "rgba(200,127,130,0.8)"}, {"time": 1712793600.0, "value": 7407, "color": "rgba(83,141,131,0.8)"}, {"time": 1712880000.0, "value": 4700, "color": "rgba(83,141,131,0.8)"}, {"time": 1712966400.0, "value": 7767, "color": "rgba(200,127,130,0.8)"}, {"time": 1713052800.0, "value": 11177, "color": "rgba(200,127,130,0.8)"}, {"time": 1713139200.0, "value": 11776, "color": "rgba(83,141,131,0.8)"}, {"time": 1713225600.0, "value": 3489, "color": "rgba(83,141,131,0.8)"}, {"time": 1713312000.0, "value": 2501, "color": "rgba(83,141,131,0.8)"}, {"time": 1713398400.0, "value": 4671, "color": "rgba(83,141,131,0.8)"}, {"time": 1713484800.0, "value": 2729, "color": "rgba(200,127,130,0.8)"}, {"time": 1713571200.0, "value": 3920, "color": "rgba(83,141,131,0.8)"}, {"time": 1713657600.0, "value": 5960, "color": "rgba(83,141,131,0.8)"}, {"time": 1713744000.0, "value": 8532, "color": "rgba(83,141,131,0.8)"}, {"time": 1713830400.0, "value": 1715, "color": "rgba(83,141,131,0.8)"}, {"time": 1713916800.0, "value": 3901, "color": "rgba(200,127,130,0.8)"}, {"time": 1714003200.0, "value": 3144, "color": "rgba(200,127,130,0.8)"}, {"time": 1714089600.0, "value": 4931, "color": "rgba(83,141,131,0.8)"}, {"time": 1714176000.0, "value": 3627, "color": "rgba(83,141,131,0.8)"}, {"time": 1714262400.0, "value": 6759, "color": "rgba(200,127,130,0.8)"}, {"time": 1714348800.0, "value": 3515, "color": "rgba(83,141,131,0.8)"}])
+
+        window.HTMLChart_20.legend.div.style.display = 'flex'
+        window.HTMLChart_20.legend.ohlcEnabled = true
+        window.HTMLChart_20.legend.percentEnabled = false
+        window.HTMLChart_20.legend.linesEnabled = true
+        window.HTMLChart_20.legend.colorBasedOnCandle = false
+        window.HTMLChart_20.legend.persistent = false
+        window.HTMLChart_20.legend.shorthand = true
+        window.HTMLChart_20.legend.div.style.color = 'rgb(191, 195, 203)'
+        window.HTMLChart_20.legend.color = 'rgb(191, 195, 203)'
+        window.HTMLChart_20.legend.div.style.fontSize = '11px'
+        window.HTMLChart_20.legend.div.style.fontFamily = 'Monaco'
+        window.HTMLChart_20.legend.text.innerText = ''
         
-window.HTMLChart_14._interval = 86400
-window.HTMLChart_14.toolBox?.clearDrawings()
+window.HTMLChart_20.setPosition(0, 0, 0.5, 0.5)
 
-        window.HTMLChart_14.legend.div.style.display = 'flex'
-        window.HTMLChart_14.legend.ohlcEnabled = true
-        window.HTMLChart_14.legend.percentEnabled = false
-        window.HTMLChart_14.legend.linesEnabled = true
-        window.HTMLChart_14.legend.colorBasedOnCandle = false
-        window.HTMLChart_14.legend.persistent = false
-        window.HTMLChart_14.legend.shorthand = true
-        window.HTMLChart_14.legend.div.style.color = 'rgb(191, 195, 203)'
-        window.HTMLChart_14.legend.color = 'rgb(191, 195, 203)'
-        window.HTMLChart_14.legend.div.style.fontSize = '11px'
-        window.HTMLChart_14.legend.div.style.fontFamily = 'Monaco'
-        window.HTMLChart_14.legend.text.innerText = ''
-        
-window.HTMLChart_14.setPosition(0, 0, 0.5, 0.5)
-
-            window.Line_16 = window.HTMLChart_14.createLineSeries(
+            window.Line_25 = window.HTMLChart_20.createLineSeries(
                 "SMA 10",
                 {
                     color: '#e91e63',
@@ -3447,41 +3690,58 @@ window.HTMLChart_14.setPosition(0, 0, 0.5, 0.5)
                 },
                 0
             );null
-window.Line_16.series.setData([])
-window.Line_16.series.setData([{"time": 1704844800.0, "value": 105.199}, {"time": 1704931200.0, "value": 105.95599999999999}, {"time": 1705017600.0, "value": 106.648}, {"time": 1705104000.0, "value": 107.269}, {"time": 1705190400.0, "value": 107.23799999999999}, {"time": 1705276800.0, "value": 106.92699999999999}, {"time": 1705363200.0, "value": 106.556}, {"time": 1705449600.0, "value": 105.705}, {"time": 1705536000.0, "value": 104.76000000000002}, {"time": 1705622400.0, "value": 103.744}, {"time": 1705708800.0, "value": 102.372}, {"time": 1705795200.0, "value": 101.34200000000001}, {"time": 1705881600.0, "value": 100.362}, {"time": 1705968000.0, "value": 99.34700000000001}, {"time": 1706054400.0, "value": 98.452}, {"time": 1706140800.0, "value": 97.786}, {"time": 1706227200.0, "value": 97.242}, {"time": 1706313600.0, "value": 96.68299999999999}, {"time": 1706400000.0, "value": 96.132}, {"time": 1706486400.0, "value": 95.64}, {"time": 1706572800.0, "value": 95.349}, {"time": 1706659200.0, "value": 94.705}, {"time": 1706745600.0, "value": 94.40599999999999}, {"time": 1706832000.0, "value": 94.092}, {"time": 1706918400.0, "value": 93.849}, {"time": 1707004800.0, "value": 93.838}, {"time": 1707091200.0, "value": 93.599}, {"time": 1707177600.0, "value": 93.59200000000001}, {"time": 1707264000.0, "value": 93.193}, {"time": 1707350400.0, "value": 92.681}, {"time": 1707436800.0, "value": 92.248}, {"time": 1707523200.0, "value": 92.03200000000001}, {"time": 1707609600.0, "value": 91.538}, {"time": 1707696000.0, "value": 91.02700000000002}, {"time": 1707782400.0, "value": 90.647}, {"time": 1707868800.0, "value": 89.891}, {"time": 1707955200.0, "value": 89.229}, {"time": 1708041600.0, "value": 88.461}, {"time": 1708128000.0, "value": 88.183}, {"time": 1708214400.0, "value": 88.174}, {"time": 1708300800.0, "value": 87.854}, {"time": 1708387200.0, "value": 87.467}, {"time": 1708473600.0, "value": 86.992}, {"time": 1708560000.0, "value": 86.431}, {"time": 1708646400.0, "value": 86.012}, {"time": 1708732800.0, "value": 85.989}, {"time": 1708819200.0, "value": 86.225}, {"time": 1708905600.0, "value": 86.398}, {"time": 1708992000.0, "value": 86.36}, {"time": 1709078400.0, "value": 86.32000000000001}, {"time": 1709164800.0, "value": 86.713}, {"time": 1709251200.0, "value": 86.97900000000001}, {"time": 1709337600.0, "value": 87.276}, {"time": 1709424000.0, "value": 87.502}, {"time": 1709510400.0, "value": 87.44800000000001}, {"time": 1709596800.0, "value": 87.35900000000001}, {"time": 1709683200.0, "value": 87.33500000000001}, {"time": 1709769600.0, "value": 87.434}, {"time": 1709856000.0, "value": 87.741}, {"time": 1709942400.0, "value": 88.05499999999999}, {"time": 1710028800.0, "value": 88.11}, {"time": 1710115200.0, "value": 88.301}, {"time": 1710201600.0, "value": 88.771}, {"time": 1710288000.0, "value": 89.411}, {"time": 1710374400.0, "value": 90.5}, {"time": 1710460800.0, "value": 91.01599999999999}, {"time": 1710547200.0, "value": 91.45700000000001}, {"time": 1710633600.0, "value": 91.924}, {"time": 1710720000.0, "value": 92.182}, {"time": 1710806400.0, "value": 92.396}, {"time": 1710892800.0, "value": 92.385}, {"time": 1710979200.0, "value": 92.279}, {"time": 1711065600.0, "value": 91.981}, {"time": 1711152000.0, "value": 91.928}, {"time": 1711238400.0, "value": 91.527}, {"time": 1711324800.0, "value": 91.44300000000001}, {"time": 1711411200.0, "value": 91.142}, {"time": 1711497600.0, "value": 90.974}, {"time": 1711584000.0, "value": 90.91}, {"time": 1711670400.0, "value": 90.744}, {"time": 1711756800.0, "value": 90.993}, {"time": 1711843200.0, "value": 91.29400000000001}, {"time": 1711929600.0, "value": 91.69800000000001}, {"time": 1712016000.0, "value": 91.74499999999999}, {"time": 1712102400.0, "value": 91.82300000000001}, {"time": 1712188800.0, "value": 91.969}, {"time": 1712275200.0, "value": 91.955}, {"time": 1712361600.0, "value": 91.84100000000001}, {"time": 1712448000.0, "value": 91.716}, {"time": 1712534400.0, "value": 91.678}, {"time": 1712620800.0, "value": 91.518}, {"time": 1712707200.0, "value": 91.112}, {"time": 1712793600.0, "value": 90.478}, {"time": 1712880000.0, "value": 89.907}, {"time": 1712966400.0, "value": 89.265}, {"time": 1713052800.0, "value": 88.663}, {"time": 1713139200.0, "value": 88.365}, {"time": 1713225600.0, "value": 88.313}, {"time": 1713312000.0, "value": 88.24600000000001}, {"time": 1713398400.0, "value": 88.22}, {"time": 1713484800.0, "value": 88.22}, {"time": 1713571200.0, "value": 88.138}, {"time": 1713657600.0, "value": 88.118}, {"time": 1713744000.0, "value": 88.16300000000001}, {"time": 1713830400.0, "value": 88.72200000000001}, {"time": 1713916800.0, "value": 89.275}, {"time": 1714003200.0, "value": 89.815}, {"time": 1714089600.0, "value": 90.056}, {"time": 1714176000.0, "value": 90.07499999999999}, {"time": 1714262400.0, "value": 90.239}, {"time": 1714348800.0, "value": 90.53999999999999}]); 
-window.HTMLChart_14.seriesMarkers.setMarkers([{"time": 1709769600, "position": "belowBar", "color": "#e91e63", "shape": "arrowUp", "text": "Buy 88.3"}])
-window.HTMLChart_14.seriesMarkers.setMarkers([{"time": 1709769600, "position": "belowBar", "color": "#e91e63", "shape": "arrowUp", "text": "Buy 88.3"}, {"time": 1712620800, "position": "aboveBar", "color": "#00bcd4", "shape": "arrowDown", "text": "Sell 90.5"}])
-window.HTMLChart_14.seriesMarkers.setMarkers([{"time": 1709769600, "position": "belowBar", "color": "#e91e63", "shape": "arrowUp", "text": "Buy 88.3"}, {"time": 1712620800, "position": "aboveBar", "color": "#00bcd4", "shape": "arrowDown", "text": "Sell 90.5"}, {"time": 1714176000, "position": "belowBar", "color": "#e91e63", "shape": "arrowUp", "text": "Buy 90.2"}])
-window.AbstractChart_20 = new Lib.Handler("window.AbstractChart_20", 1.0, 1.0, 1, 1, 1, true, 0, true);0
+window.Line_25.series.setData([])
+window.Line_25.series.setData([{"time": 1704844800.0, "value": 105.199}, {"time": 1704931200.0, "value": 105.95599999999999}, {"time": 1705017600.0, "value": 106.648}, {"time": 1705104000.0, "value": 107.269}, {"time": 1705190400.0, "value": 107.23799999999999}, {"time": 1705276800.0, "value": 106.92699999999999}, {"time": 1705363200.0, "value": 106.556}, {"time": 1705449600.0, "value": 105.705}, {"time": 1705536000.0, "value": 104.76000000000002}, {"time": 1705622400.0, "value": 103.744}, {"time": 1705708800.0, "value": 102.372}, {"time": 1705795200.0, "value": 101.34200000000001}, {"time": 1705881600.0, "value": 100.362}, {"time": 1705968000.0, "value": 99.34700000000001}, {"time": 1706054400.0, "value": 98.452}, {"time": 1706140800.0, "value": 97.786}, {"time": 1706227200.0, "value": 97.242}, {"time": 1706313600.0, "value": 96.68299999999999}, {"time": 1706400000.0, "value": 96.132}, {"time": 1706486400.0, "value": 95.64}, {"time": 1706572800.0, "value": 95.349}, {"time": 1706659200.0, "value": 94.705}, {"time": 1706745600.0, "value": 94.40599999999999}, {"time": 1706832000.0, "value": 94.092}, {"time": 1706918400.0, "value": 93.849}, {"time": 1707004800.0, "value": 93.838}, {"time": 1707091200.0, "value": 93.599}, {"time": 1707177600.0, "value": 93.59200000000001}, {"time": 1707264000.0, "value": 93.193}, {"time": 1707350400.0, "value": 92.681}, {"time": 1707436800.0, "value": 92.248}, {"time": 1707523200.0, "value": 92.03200000000001}, {"time": 1707609600.0, "value": 91.538}, {"time": 1707696000.0, "value": 91.02700000000002}, {"time": 1707782400.0, "value": 90.647}, {"time": 1707868800.0, "value": 89.891}, {"time": 1707955200.0, "value": 89.229}, {"time": 1708041600.0, "value": 88.461}, {"time": 1708128000.0, "value": 88.183}, {"time": 1708214400.0, "value": 88.174}, {"time": 1708300800.0, "value": 87.854}, {"time": 1708387200.0, "value": 87.467}, {"time": 1708473600.0, "value": 86.992}, {"time": 1708560000.0, "value": 86.431}, {"time": 1708646400.0, "value": 86.012}, {"time": 1708732800.0, "value": 85.989}, {"time": 1708819200.0, "value": 86.225}, {"time": 1708905600.0, "value": 86.398}, {"time": 1708992000.0, "value": 86.36}, {"time": 1709078400.0, "value": 86.32000000000001}, {"time": 1709164800.0, "value": 86.713}, {"time": 1709251200.0, "value": 86.97900000000001}, {"time": 1709337600.0, "value": 87.276}, {"time": 1709424000.0, "value": 87.502}, {"time": 1709510400.0, "value": 87.44800000000001}, {"time": 1709596800.0, "value": 87.35900000000001}, {"time": 1709683200.0, "value": 87.33500000000001}, {"time": 1709769600.0, "value": 87.434}, {"time": 1709856000.0, "value": 87.741}, {"time": 1709942400.0, "value": 88.05499999999999}, {"time": 1710028800.0, "value": 88.11}, {"time": 1710115200.0, "value": 88.301}, {"time": 1710201600.0, "value": 88.771}, {"time": 1710288000.0, "value": 89.411}, {"time": 1710374400.0, "value": 90.5}, {"time": 1710460800.0, "value": 91.01599999999999}, {"time": 1710547200.0, "value": 91.45700000000001}, {"time": 1710633600.0, "value": 91.924}, {"time": 1710720000.0, "value": 92.182}, {"time": 1710806400.0, "value": 92.396}, {"time": 1710892800.0, "value": 92.385}, {"time": 1710979200.0, "value": 92.279}, {"time": 1711065600.0, "value": 91.981}, {"time": 1711152000.0, "value": 91.928}, {"time": 1711238400.0, "value": 91.527}, {"time": 1711324800.0, "value": 91.44300000000001}, {"time": 1711411200.0, "value": 91.142}, {"time": 1711497600.0, "value": 90.974}, {"time": 1711584000.0, "value": 90.91}, {"time": 1711670400.0, "value": 90.744}, {"time": 1711756800.0, "value": 90.993}, {"time": 1711843200.0, "value": 91.29400000000001}, {"time": 1711929600.0, "value": 91.69800000000001}, {"time": 1712016000.0, "value": 91.74499999999999}, {"time": 1712102400.0, "value": 91.82300000000001}, {"time": 1712188800.0, "value": 91.969}, {"time": 1712275200.0, "value": 91.955}, {"time": 1712361600.0, "value": 91.84100000000001}, {"time": 1712448000.0, "value": 91.716}, {"time": 1712534400.0, "value": 91.678}, {"time": 1712620800.0, "value": 91.518}, {"time": 1712707200.0, "value": 91.112}, {"time": 1712793600.0, "value": 90.478}, {"time": 1712880000.0, "value": 89.907}, {"time": 1712966400.0, "value": 89.265}, {"time": 1713052800.0, "value": 88.663}, {"time": 1713139200.0, "value": 88.365}, {"time": 1713225600.0, "value": 88.313}, {"time": 1713312000.0, "value": 88.24600000000001}, {"time": 1713398400.0, "value": 88.22}, {"time": 1713484800.0, "value": 88.22}, {"time": 1713571200.0, "value": 88.138}, {"time": 1713657600.0, "value": 88.118}, {"time": 1713744000.0, "value": 88.16300000000001}, {"time": 1713830400.0, "value": 88.72200000000001}, {"time": 1713916800.0, "value": 89.275}, {"time": 1714003200.0, "value": 89.815}, {"time": 1714089600.0, "value": 90.056}, {"time": 1714176000.0, "value": 90.07499999999999}, {"time": 1714262400.0, "value": 90.239}, {"time": 1714348800.0, "value": 90.53999999999999}]); 
 
-        window.AbstractChart_20.legend.div.style.display = 'flex'
-        window.AbstractChart_20.legend.ohlcEnabled = true
-        window.AbstractChart_20.legend.percentEnabled = false
-        window.AbstractChart_20.legend.linesEnabled = true
-        window.AbstractChart_20.legend.colorBasedOnCandle = false
-        window.AbstractChart_20.legend.persistent = false
-        window.AbstractChart_20.legend.shorthand = true
-        window.AbstractChart_20.legend.div.style.color = 'rgb(191, 195, 203)'
-        window.AbstractChart_20.legend.color = 'rgb(191, 195, 203)'
-        window.AbstractChart_20.legend.div.style.fontSize = '11px'
-        window.AbstractChart_20.legend.div.style.fontFamily = 'Monaco'
-        window.AbstractChart_20.legend.text.innerText = ''
+            try {
+                window.HTMLChart_20.seriesMarkers.setMarkers([{"time": 1709769600, "position": "belowBar", "color": "#e91e63", "shape": "arrowUp", "text": "Buy 88.3"}]);
+            } catch(e) {
+                console.error('setMarkers failed:', e.message);
+            }
         
-window.AbstractChart_20.series.setData([])
-window.AbstractChart_20.volumeSeries.setData([])
-window.AbstractChart_20.openInterestSeries.setData([])
-window.AbstractChart_20.toolBox?.clearDrawings()
-window.AbstractChart_20.series.setData([{"time": 1704067200.0, "open": 100.57, "high": 102.1, "low": 100.02, "close": 100.99}, {"time": 1704153600.0, "open": 101.06, "high": 101.87, "low": 100.71, "close": 100.84}, {"time": 1704240000.0, "open": 101.83, "high": 102.41, "low": 101.77, "close": 102.12}, {"time": 1704326400.0, "open": 105.32, "high": 105.35, "low": 104.22, "close": 105.02}, {"time": 1704412800.0, "open": 104.93, "high": 105.2, "low": 103.6, "close": 104.68}, {"time": 1704499200.0, "open": 105.08, "high": 105.29, "low": 103.81, "close": 104.35}, {"time": 1704585600.0, "open": 108.15, "high": 109.57, "low": 107.0, "close": 107.42}, {"time": 1704672000.0, "open": 109.56, "high": 110.48, "low": 108.14, "close": 109.01}, {"time": 1704758400.0, "open": 107.49, "high": 109.65, "low": 106.04, "close": 108.2}, {"time": 1704844800.0, "open": 109.08, "high": 109.94, "low": 107.89, "close": 109.36}, {"time": 1704931200.0, "open": 109.23, "high": 110.51, "low": 107.51, "close": 108.56}, {"time": 1705017600.0, "open": 107.17, "high": 109.21, "low": 106.2, "close": 107.76}, {"time": 1705104000.0, "open": 107.64, "high": 109.41, "low": 107.64, "close": 108.33}, {"time": 1705190400.0, "open": 104.79, "high": 105.88, "low": 103.69, "close": 104.71}, {"time": 1705276800.0, "open": 101.91, "high": 102.27, "low": 101.07, "close": 101.57}, {"time": 1705363200.0, "open": 100.88, "high": 102.17, "low": 99.65, "close": 100.64}, {"time": 1705449600.0, "open": 98.26, "high": 99.45, "low": 97.87, "close": 98.91}, {"time": 1705536000.0, "open": 100.32, "high": 100.91, "low": 98.23, "close": 99.56}, {"time": 1705622400.0, "open": 98.5, "high": 99.24, "low": 97.19, "close": 98.04}, {"time": 1705708800.0, "open": 95.18, "high": 96.68, "low": 94.77, "close": 95.64}, {"time": 1705795200.0, "open": 98.49, "high": 98.75, "low": 96.87, "close": 98.26}, {"time": 1705881600.0, "open": 98.61, "high": 99.16, "low": 97.94, "close": 97.96}, {"time": 1705968000.0, "open": 98.06, "high": 99.6, "low": 96.65, "close": 98.18}, {"time": 1706054400.0, "open": 95.44, "high": 96.31, "low": 94.22, "close": 95.76}, {"time": 1706140800.0, "open": 94.41, "high": 95.71, "low": 93.09, "close": 94.91}, {"time": 1706227200.0, "open": 95.31, "high": 95.44, "low": 94.32, "close": 95.2}, {"time": 1706313600.0, "open": 92.78, "high": 94.05, "low": 91.56, "close": 93.32}, {"time": 1706400000.0, "open": 94.34, "high": 95.34, "low": 93.54, "close": 94.05}, {"time": 1706486400.0, "open": 93.58, "high": 94.72, "low": 91.91, "close": 93.12}, {"time": 1706572800.0, "open": 92.74, "high": 93.44, "low": 91.62, "close": 92.73}, {"time": 1706659200.0, "open": 92.11, "high": 93.21, "low": 90.59, "close": 91.82}, {"time": 1706745600.0, "open": 94.78, "high": 95.1, "low": 93.96, "close": 94.97}, {"time": 1706832000.0, "open": 94.99, "high": 95.81, "low": 94.58, "close": 95.04}, {"time": 1706918400.0, "open": 92.63, "high": 93.38, "low": 91.48, "close": 93.33}, {"time": 1707004800.0, "open": 94.24, "high": 95.54, "low": 93.15, "close": 94.8}, {"time": 1707091200.0, "open": 93.0, "high": 93.11, "low": 92.74, "close": 92.81}, {"time": 1707177600.0, "open": 93.32, "high": 94.21, "low": 92.24, "close": 93.25}, {"time": 1707264000.0, "open": 90.08, "high": 90.52, "low": 88.98, "close": 90.06}, {"time": 1707350400.0, "open": 87.91, "high": 88.1, "low": 87.88, "close": 88.0}, {"time": 1707436800.0, "open": 88.87, "high": 89.8, "low": 87.85, "close": 88.4}, {"time": 1707523200.0, "open": 89.17, "high": 90.0, "low": 88.43, "close": 89.66}, {"time": 1707609600.0, "open": 90.26, "high": 90.63, "low": 88.74, "close": 90.03}, {"time": 1707696000.0, "open": 90.01, "high": 90.83, "low": 89.36, "close": 89.93}, {"time": 1707782400.0, "open": 89.32, "high": 90.55, "low": 89.3, "close": 89.53}, {"time": 1707868800.0, "open": 86.6, "high": 87.29, "low": 85.49, "close": 87.24}, {"time": 1707955200.0, "open": 86.16, "high": 86.32, "low": 85.52, "close": 86.19}, {"time": 1708041600.0, "open": 85.12, "high": 86.12, "low": 84.61, "close": 85.57}, {"time": 1708128000.0, "open": 87.47, "high": 87.53, "low": 86.79, "close": 87.28}, {"time": 1708214400.0, "open": 87.91, "high": 89.04, "low": 87.04, "close": 87.91}, {"time": 1708300800.0, "open": 84.62, "high": 86.03, "low": 84.59, "close": 85.2}, {"time": 1708387200.0, "open": 86.39, "high": 87.14, "low": 85.29, "close": 85.79}, {"time": 1708473600.0, "open": 85.22, "high": 85.98, "low": 84.02, "close": 85.28}, {"time": 1708560000.0, "open": 84.95, "high": 86.1, "low": 84.08, "close": 84.32}, {"time": 1708646400.0, "open": 84.79, "high": 85.36, "low": 84.67, "close": 85.34}, {"time": 1708732800.0, "open": 86.41, "high": 87.42, "low": 85.31, "close": 87.01}, {"time": 1708819200.0, "open": 89.0, "high": 89.37, "low": 88.39, "close": 88.55}, {"time": 1708905600.0, "open": 87.48, "high": 88.63, "low": 86.34, "close": 87.3}, {"time": 1708992000.0, "open": 86.6, "high": 87.14, "low": 85.63, "close": 86.9}, {"time": 1709078400.0, "open": 88.2, "high": 88.74, "low": 87.02, "close": 87.51}, {"time": 1709164800.0, "open": 88.91, "high": 90.38, "low": 87.76, "close": 89.13}, {"time": 1709251200.0, "open": 88.81, "high": 89.81, "low": 88.32, "close": 88.45}, {"time": 1709337600.0, "open": 88.25, "high": 89.35, "low": 87.82, "close": 88.25}, {"time": 1709424000.0, "open": 86.42, "high": 86.59, "low": 85.25, "close": 86.58}, {"time": 1709510400.0, "open": 84.55, "high": 86.01, "low": 83.35, "close": 84.8}, {"time": 1709596800.0, "open": 86.31, "high": 86.89, "low": 85.75, "close": 86.12}, {"time": 1709683200.0, "open": 88.56, "high": 89.56, "low": 87.26, "close": 88.31}, {"time": 1709769600.0, "open": 87.71, "high": 88.94, "low": 87.63, "close": 88.29}, {"time": 1709856000.0, "open": 89.89, "high": 91.17, "low": 89.41, "close": 89.97}, {"time": 1709942400.0, "open": 90.13, "high": 91.68, "low": 89.29, "close": 90.65}, {"time": 1710028800.0, "open": 89.09, "high": 90.63, "low": 88.99, "close": 89.68}, {"time": 1710115200.0, "open": 90.65, "high": 90.77, "low": 90.24, "close": 90.36}, {"time": 1710201600.0, "open": 92.76, "high": 93.47, "low": 91.63, "close": 92.95}, {"time": 1710288000.0, "open": 93.7, "high": 94.76, "low": 92.46, "close": 92.98}, {"time": 1710374400.0, "open": 96.12, "high": 96.92, "low": 95.08, "close": 95.69}, {"time": 1710460800.0, "open": 90.71, "high": 91.95, "low": 90.69, "close": 91.28}, {"time": 1710547200.0, "open": 92.06, "high": 92.88, "low": 91.9, "close": 92.72}, {"time": 1710633600.0, "open": 93.32, "high": 94.14, "low": 91.61, "close": 92.96}, {"time": 1710720000.0, "open": 92.23, "high": 93.75, "low": 91.92, "close": 92.55}, {"time": 1710806400.0, "open": 92.07, "high": 94.14, "low": 92.01, "close": 92.79}, {"time": 1710892800.0, "open": 89.61, "high": 90.94, "low": 89.47, "close": 89.57}, {"time": 1710979200.0, "open": 89.97, "high": 90.68, "low": 88.46, "close": 89.3}, {"time": 1711065600.0, "open": 89.9, "high": 90.81, "low": 89.11, "close": 89.97}, {"time": 1711152000.0, "open": 91.78, "high": 92.84, "low": 90.47, "close": 92.45}, {"time": 1711238400.0, "open": 91.61, "high": 92.53, "low": 91.23, "close": 91.68}, {"time": 1711324800.0, "open": 90.38, "high": 90.92, "low": 89.59, "close": 90.44}, {"time": 1711411200.0, "open": 90.39, "high": 91.73, "low": 88.77, "close": 89.71}, {"time": 1711497600.0, "open": 91.0, "high": 92.39, "low": 90.07, "close": 91.28}, {"time": 1711584000.0, "open": 92.51, "high": 93.66, "low": 90.6, "close": 91.91}, {"time": 1711670400.0, "open": 91.29, "high": 91.86, "low": 89.85, "close": 91.13}, {"time": 1711756800.0, "open": 91.39, "high": 92.09, "low": 90.87, "close": 92.06}, {"time": 1711843200.0, "open": 93.03, "high": 93.24, "low": 91.49, "close": 92.31}, {"time": 1711929600.0, "open": 94.72, "high": 95.92, "low": 92.83, "close": 94.01}, {"time": 1712016000.0, "open": 92.79, "high": 93.3, "low": 92.71, "close": 92.92}, {"time": 1712102400.0, "open": 92.93, "high": 94.32, "low": 91.08, "close": 92.46}, {"time": 1712188800.0, "open": 92.3, "high": 93.61, "low": 90.73, "close": 91.9}, {"time": 1712275200.0, "open": 89.5, "high": 89.75, "low": 88.22, "close": 89.57}, {"time": 1712361600.0, "open": 89.75, "high": 91.05, "low": 88.92, "close": 90.14}, {"time": 1712448000.0, "open": 90.09, "high": 91.57, "low": 89.39, "close": 90.66}, {"time": 1712534400.0, "open": 90.78, "high": 91.94, "low": 90.0, "close": 90.75}, {"time": 1712620800.0, "open": 91.01, "high": 91.56, "low": 90.28, "close": 90.46}, {"time": 1712707200.0, "open": 88.61, "high": 89.43, "low": 87.32, "close": 88.25}, {"time": 1712793600.0, "open": 87.16, "high": 87.69, "low": 86.7, "close": 87.67}, {"time": 1712880000.0, "open": 87.06, "high": 87.79, "low": 85.88, "close": 87.21}, {"time": 1712966400.0, "open": 86.06, "high": 87.07, "low": 85.53, "close": 86.04}, {"time": 1713052800.0, "open": 86.38, "high": 87.61, "low": 85.69, "close": 85.88}, {"time": 1713139200.0, "open": 86.58, "high": 86.92, "low": 85.98, "close": 86.59}, {"time": 1713225600.0, "open": 89.6, "high": 90.06, "low": 88.75, "close": 89.62}, {"time": 1713312000.0, "open": 89.38, "high": 90.16, "low": 89.2, "close": 89.99}, {"time": 1713398400.0, "open": 89.97, "high": 91.36, "low": 89.73, "close": 90.49}, {"time": 1713484800.0, "open": 91.04, "high": 91.68, "low": 89.56, "close": 90.46}, {"time": 1713571200.0, "open": 87.0, "high": 87.48, "low": 86.78, "close": 87.43}, {"time": 1713657600.0, "open": 87.02, "high": 87.59, "low": 86.87, "close": 87.47}, {"time": 1713744000.0, "open": 87.25, "high": 88.14, "low": 86.59, "close": 87.66}, {"time": 1713830400.0, "open": 90.96, "high": 92.73, "low": 90.1, "close": 91.63}, {"time": 1713916800.0, "open": 91.95, "high": 93.22, "low": 91.32, "close": 91.41}, {"time": 1714003200.0, "open": 92.44, "high": 93.48, "low": 91.74, "close": 91.99}, {"time": 1714089600.0, "open": 91.84, "high": 92.7, "low": 90.99, "close": 92.03}, {"time": 1714176000.0, "open": 90.13, "high": 91.19, "low": 90.08, "close": 90.18}, {"time": 1714262400.0, "open": 92.44, "high": 93.69, "low": 91.42, "close": 92.13}, {"time": 1714348800.0, "open": 92.88, "high": 94.1, "low": 92.14, "close": 93.47}])
-window.AbstractChart_20.volumeSeries.setData([{"time": 1704067200.0, "value": 7881, "color": "rgba(83,141,131,0.8)"}, {"time": 1704153600.0, "value": 10155, "color": "rgba(200,127,130,0.8)"}, {"time": 1704240000.0, "value": 7418, "color": "rgba(83,141,131,0.8)"}, {"time": 1704326400.0, "value": 3336, "color": "rgba(200,127,130,0.8)"}, {"time": 1704412800.0, "value": 5131, "color": "rgba(200,127,130,0.8)"}, {"time": 1704499200.0, "value": 2070, "color": "rgba(200,127,130,0.8)"}, {"time": 1704585600.0, "value": 8191, "color": "rgba(200,127,130,0.8)"}, {"time": 1704672000.0, "value": 3508, "color": "rgba(200,127,130,0.8)"}, {"time": 1704758400.0, "value": 7890, "color": "rgba(83,141,131,0.8)"}, {"time": 1704844800.0, "value": 10847, "color": "rgba(83,141,131,0.8)"}, {"time": 1704931200.0, "value": 1742, "color": "rgba(200,127,130,0.8)"}, {"time": 1705017600.0, "value": 903, "color": "rgba(83,141,131,0.8)"}, {"time": 1705104000.0, "value": 2601, "color": "rgba(83,141,131,0.8)"}, {"time": 1705190400.0, "value": 3311, "color": "rgba(200,127,130,0.8)"}, {"time": 1705276800.0, "value": 9160, "color": "rgba(200,127,130,0.8)"}, {"time": 1705363200.0, "value": 7165, "color": "rgba(200,127,130,0.8)"}, {"time": 1705449600.0, "value": 3532, "color": "rgba(83,141,131,0.8)"}, {"time": 1705536000.0, "value": 7868, "color": "rgba(200,127,130,0.8)"}, {"time": 1705622400.0, "value": 6316, "color": "rgba(200,127,130,0.8)"}, {"time": 1705708800.0, "value": 1072, "color": "rgba(83,141,131,0.8)"}, {"time": 1705795200.0, "value": 11484, "color": "rgba(200,127,130,0.8)"}, {"time": 1705881600.0, "value": 11197, "color": "rgba(200,127,130,0.8)"}, {"time": 1705968000.0, "value": 10353, "color": "rgba(83,141,131,0.8)"}, {"time": 1706054400.0, "value": 4349, "color": "rgba(83,141,131,0.8)"}, {"time": 1706140800.0, "value": 8595, "color": "rgba(83,141,131,0.8)"}, {"time": 1706227200.0, "value": 11888, "color": "rgba(200,127,130,0.8)"}, {"time": 1706313600.0, "value": 9096, "color": "rgba(83,141,131,0.8)"}, {"time": 1706400000.0, "value": 4088, "color": "rgba(200,127,130,0.8)"}, {"time": 1706486400.0, "value": 11028, "color": "rgba(200,127,130,0.8)"}, {"time": 1706572800.0, "value": 8079, "color": "rgba(200,127,130,0.8)"}, {"time": 1706659200.0, "value": 4585, "color": "rgba(200,127,130,0.8)"}, {"time": 1706745600.0, "value": 1202, "color": "rgba(83,141,131,0.8)"}, {"time": 1706832000.0, "value": 7417, "color": "rgba(83,141,131,0.8)"}, {"time": 1706918400.0, "value": 4834, "color": "rgba(83,141,131,0.8)"}, {"time": 1707004800.0, "value": 3217, "color": "rgba(83,141,131,0.8)"}, {"time": 1707091200.0, "value": 6751, "color": "rgba(200,127,130,0.8)"}, {"time": 1707177600.0, "value": 11729, "color": "rgba(200,127,130,0.8)"}, {"time": 1707264000.0, "value": 3833, "color": "rgba(200,127,130,0.8)"}, {"time": 1707350400.0, "value": 11581, "color": "rgba(83,141,131,0.8)"}, {"time": 1707436800.0, "value": 2740, "color": "rgba(200,127,130,0.8)"}, {"time": 1707523200.0, "value": 8803, "color": "rgba(83,141,131,0.8)"}, {"time": 1707609600.0, "value": 9064, "color": "rgba(200,127,130,0.8)"}, {"time": 1707696000.0, "value": 3574, "color": "rgba(200,127,130,0.8)"}, {"time": 1707782400.0, "value": 2100, "color": "rgba(83,141,131,0.8)"}, {"time": 1707868800.0, "value": 8680, "color": "rgba(83,141,131,0.8)"}, {"time": 1707955200.0, "value": 6102, "color": "rgba(83,141,131,0.8)"}, {"time": 1708041600.0, "value": 7697, "color": "rgba(83,141,131,0.8)"}, {"time": 1708128000.0, "value": 7809, "color": "rgba(200,127,130,0.8)"}, {"time": 1708214400.0, "value": 2624, "color": "rgba(200,127,130,0.8)"}, {"time": 1708300800.0, "value": 7360, "color": "rgba(83,141,131,0.8)"}, {"time": 1708387200.0, "value": 8004, "color": "rgba(200,127,130,0.8)"}, {"time": 1708473600.0, "value": 5124, "color": "rgba(83,141,131,0.8)"}, {"time": 1708560000.0, "value": 1576, "color": "rgba(200,127,130,0.8)"}, {"time": 1708646400.0, "value": 8449, "color": "rgba(83,141,131,0.8)"}, {"time": 1708732800.0, "value": 1060, "color": "rgba(83,141,131,0.8)"}, {"time": 1708819200.0, "value": 8603, "color": "rgba(200,127,130,0.8)"}, {"time": 1708905600.0, "value": 9798, "color": "rgba(200,127,130,0.8)"}, {"time": 1708992000.0, "value": 9836, "color": "rgba(83,141,131,0.8)"}, {"time": 1709078400.0, "value": 9495, "color": "rgba(200,127,130,0.8)"}, {"time": 1709164800.0, "value": 5604, "color": "rgba(83,141,131,0.8)"}, {"time": 1709251200.0, "value": 10908, "color": "rgba(200,127,130,0.8)"}, {"time": 1709337600.0, "value": 10829, "color": "rgba(200,127,130,0.8)"}, {"time": 1709424000.0, "value": 1822, "color": "rgba(83,141,131,0.8)"}, {"time": 1709510400.0, "value": 7222, "color": "rgba(83,141,131,0.8)"}, {"time": 1709596800.0, "value": 4481, "color": "rgba(200,127,130,0.8)"}, {"time": 1709683200.0, "value": 9643, "color": "rgba(200,127,130,0.8)"}, {"time": 1709769600.0, "value": 6954, "color": "rgba(83,141,131,0.8)"}, {"time": 1709856000.0, "value": 2111, "color": "rgba(83,141,131,0.8)"}, {"time": 1709942400.0, "value": 1932, "color": "rgba(83,141,131,0.8)"}, {"time": 1710028800.0, "value": 10004, "color": "rgba(83,141,131,0.8)"}, {"time": 1710115200.0, "value": 11850, "color": "rgba(200,127,130,0.8)"}, {"time": 1710201600.0, "value": 11409, "color": "rgba(83,141,131,0.8)"}, {"time": 1710288000.0, "value": 1735, "color": "rgba(200,127,130,0.8)"}, {"time": 1710374400.0, "value": 10951, "color": "rgba(200,127,130,0.8)"}, {"time": 1710460800.0, "value": 6048, "color": "rgba(83,141,131,0.8)"}, {"time": 1710547200.0, "value": 8071, "color": "rgba(83,141,131,0.8)"}, {"time": 1710633600.0, "value": 4998, "color": "rgba(200,127,130,0.8)"}, {"time": 1710720000.0, "value": 11588, "color": "rgba(83,141,131,0.8)"}, {"time": 1710806400.0, "value": 10780, "color": "rgba(83,141,131,0.8)"}, {"time": 1710892800.0, "value": 7003, "color": "rgba(200,127,130,0.8)"}, {"time": 1710979200.0, "value": 8592, "color": "rgba(200,127,130,0.8)"}, {"time": 1711065600.0, "value": 10892, "color": "rgba(83,141,131,0.8)"}, {"time": 1711152000.0, "value": 10770, "color": "rgba(83,141,131,0.8)"}, {"time": 1711238400.0, "value": 2906, "color": "rgba(83,141,131,0.8)"}, {"time": 1711324800.0, "value": 1670, "color": "rgba(83,141,131,0.8)"}, {"time": 1711411200.0, "value": 6804, "color": "rgba(200,127,130,0.8)"}, {"time": 1711497600.0, "value": 2621, "color": "rgba(83,141,131,0.8)"}, {"time": 1711584000.0, "value": 8928, "color": "rgba(200,127,130,0.8)"}, {"time": 1711670400.0, "value": 10499, "color": "rgba(200,127,130,0.8)"}, {"time": 1711756800.0, "value": 9878, "color": "rgba(83,141,131,0.8)"}, {"time": 1711843200.0, "value": 5065, "color": "rgba(200,127,130,0.8)"}, {"time": 1711929600.0, "value": 6049, "color": "rgba(200,127,130,0.8)"}, {"time": 1712016000.0, "value": 10484, "color": "rgba(83,141,131,0.8)"}, {"time": 1712102400.0, "value": 7020, "color": "rgba(200,127,130,0.8)"}, {"time": 1712188800.0, "value": 3570, "color": "rgba(200,127,130,0.8)"}, {"time": 1712275200.0, "value": 7589, "color": "rgba(83,141,131,0.8)"}, {"time": 1712361600.0, "value": 4811, "color": "rgba(83,141,131,0.8)"}, {"time": 1712448000.0, "value": 9449, "color": "rgba(83,141,131,0.8)"}, {"time": 1712534400.0, "value": 7082, "color": "rgba(200,127,130,0.8)"}, {"time": 1712620800.0, "value": 1122, "color": "rgba(200,127,130,0.8)"}, {"time": 1712707200.0, "value": 3185, "color": "rgba(200,127,130,0.8)"}, {"time": 1712793600.0, "value": 7407, "color": "rgba(83,141,131,0.8)"}, {"time": 1712880000.0, "value": 4700, "color": "rgba(83,141,131,0.8)"}, {"time": 1712966400.0, "value": 7767, "color": "rgba(200,127,130,0.8)"}, {"time": 1713052800.0, "value": 11177, "color": "rgba(200,127,130,0.8)"}, {"time": 1713139200.0, "value": 11776, "color": "rgba(83,141,131,0.8)"}, {"time": 1713225600.0, "value": 3489, "color": "rgba(83,141,131,0.8)"}, {"time": 1713312000.0, "value": 2501, "color": "rgba(83,141,131,0.8)"}, {"time": 1713398400.0, "value": 4671, "color": "rgba(83,141,131,0.8)"}, {"time": 1713484800.0, "value": 2729, "color": "rgba(200,127,130,0.8)"}, {"time": 1713571200.0, "value": 3920, "color": "rgba(83,141,131,0.8)"}, {"time": 1713657600.0, "value": 5960, "color": "rgba(83,141,131,0.8)"}, {"time": 1713744000.0, "value": 8532, "color": "rgba(83,141,131,0.8)"}, {"time": 1713830400.0, "value": 1715, "color": "rgba(83,141,131,0.8)"}, {"time": 1713916800.0, "value": 3901, "color": "rgba(200,127,130,0.8)"}, {"time": 1714003200.0, "value": 3144, "color": "rgba(200,127,130,0.8)"}, {"time": 1714089600.0, "value": 4931, "color": "rgba(83,141,131,0.8)"}, {"time": 1714176000.0, "value": 3627, "color": "rgba(83,141,131,0.8)"}, {"time": 1714262400.0, "value": 6759, "color": "rgba(200,127,130,0.8)"}, {"time": 1714348800.0, "value": 3515, "color": "rgba(83,141,131,0.8)"}])
 
-            if (!window.AbstractChart_20.chart.priceScale("right").options.autoScale)
-                window.AbstractChart_20.chart.priceScale("right").applyOptions({autoScale: true})
+            try {
+                window.HTMLChart_20.seriesMarkers.setMarkers([{"time": 1709769600, "position": "belowBar", "color": "#e91e63", "shape": "arrowUp", "text": "Buy 88.3"}, {"time": 1712620800, "position": "aboveBar", "color": "#00bcd4", "shape": "arrowDown", "text": "Sell 90.5"}]);
+            } catch(e) {
+                console.error('setMarkers failed:', e.message);
+            }
         
-window.AbstractChart_20._interval = 86400
-window.AbstractChart_20.toolBox?.clearDrawings()
-window.AbstractChart_20.setPosition(0.5, 0.5, 0.5, 0.5)
 
-        window.Histogram_22 = window.AbstractChart_20.createHistogramSeries(
+            try {
+                window.HTMLChart_20.seriesMarkers.setMarkers([{"time": 1709769600, "position": "belowBar", "color": "#e91e63", "shape": "arrowUp", "text": "Buy 88.3"}, {"time": 1712620800, "position": "aboveBar", "color": "#00bcd4", "shape": "arrowDown", "text": "Sell 90.5"}, {"time": 1714176000, "position": "belowBar", "color": "#e91e63", "shape": "arrowUp", "text": "Buy 90.2"}]);
+            } catch(e) {
+                console.error('setMarkers failed:', e.message);
+            }
+        
+window.AbstractChart_29 = new Lib.Handler("window.AbstractChart_29", 1.0, 1.0, 1, 1, 1, true, 0, true);0
+
+                window.VolumeSeries_31 = {};
+                window.VolumeSeries_31.series = window.AbstractChart_29.volumeSeries;
+            ;0
+
+                window.OpenInterestSeries_32 = {};
+                window.OpenInterestSeries_32.series = window.AbstractChart_29.openInterestSeries;
+            ;0
+
+        window.AbstractChart_29.legend.div.style.display = 'flex'
+        window.AbstractChart_29.legend.ohlcEnabled = true
+        window.AbstractChart_29.legend.percentEnabled = false
+        window.AbstractChart_29.legend.linesEnabled = true
+        window.AbstractChart_29.legend.colorBasedOnCandle = false
+        window.AbstractChart_29.legend.persistent = false
+        window.AbstractChart_29.legend.shorthand = true
+        window.AbstractChart_29.legend.div.style.color = 'rgb(191, 195, 203)'
+        window.AbstractChart_29.legend.color = 'rgb(191, 195, 203)'
+        window.AbstractChart_29.legend.div.style.fontSize = '11px'
+        window.AbstractChart_29.legend.div.style.fontFamily = 'Monaco'
+        window.AbstractChart_29.legend.text.innerText = ''
+        
+window.AbstractChart_29.series.setData([])
+window.AbstractChart_29.series.setData([{"time": 1704067200.0, "open": 100.57, "high": 102.1, "low": 100.02, "close": 100.99}, {"time": 1704153600.0, "open": 101.06, "high": 101.87, "low": 100.71, "close": 100.84}, {"time": 1704240000.0, "open": 101.83, "high": 102.41, "low": 101.77, "close": 102.12}, {"time": 1704326400.0, "open": 105.32, "high": 105.35, "low": 104.22, "close": 105.02}, {"time": 1704412800.0, "open": 104.93, "high": 105.2, "low": 103.6, "close": 104.68}, {"time": 1704499200.0, "open": 105.08, "high": 105.29, "low": 103.81, "close": 104.35}, {"time": 1704585600.0, "open": 108.15, "high": 109.57, "low": 107.0, "close": 107.42}, {"time": 1704672000.0, "open": 109.56, "high": 110.48, "low": 108.14, "close": 109.01}, {"time": 1704758400.0, "open": 107.49, "high": 109.65, "low": 106.04, "close": 108.2}, {"time": 1704844800.0, "open": 109.08, "high": 109.94, "low": 107.89, "close": 109.36}, {"time": 1704931200.0, "open": 109.23, "high": 110.51, "low": 107.51, "close": 108.56}, {"time": 1705017600.0, "open": 107.17, "high": 109.21, "low": 106.2, "close": 107.76}, {"time": 1705104000.0, "open": 107.64, "high": 109.41, "low": 107.64, "close": 108.33}, {"time": 1705190400.0, "open": 104.79, "high": 105.88, "low": 103.69, "close": 104.71}, {"time": 1705276800.0, "open": 101.91, "high": 102.27, "low": 101.07, "close": 101.57}, {"time": 1705363200.0, "open": 100.88, "high": 102.17, "low": 99.65, "close": 100.64}, {"time": 1705449600.0, "open": 98.26, "high": 99.45, "low": 97.87, "close": 98.91}, {"time": 1705536000.0, "open": 100.32, "high": 100.91, "low": 98.23, "close": 99.56}, {"time": 1705622400.0, "open": 98.5, "high": 99.24, "low": 97.19, "close": 98.04}, {"time": 1705708800.0, "open": 95.18, "high": 96.68, "low": 94.77, "close": 95.64}, {"time": 1705795200.0, "open": 98.49, "high": 98.75, "low": 96.87, "close": 98.26}, {"time": 1705881600.0, "open": 98.61, "high": 99.16, "low": 97.94, "close": 97.96}, {"time": 1705968000.0, "open": 98.06, "high": 99.6, "low": 96.65, "close": 98.18}, {"time": 1706054400.0, "open": 95.44, "high": 96.31, "low": 94.22, "close": 95.76}, {"time": 1706140800.0, "open": 94.41, "high": 95.71, "low": 93.09, "close": 94.91}, {"time": 1706227200.0, "open": 95.31, "high": 95.44, "low": 94.32, "close": 95.2}, {"time": 1706313600.0, "open": 92.78, "high": 94.05, "low": 91.56, "close": 93.32}, {"time": 1706400000.0, "open": 94.34, "high": 95.34, "low": 93.54, "close": 94.05}, {"time": 1706486400.0, "open": 93.58, "high": 94.72, "low": 91.91, "close": 93.12}, {"time": 1706572800.0, "open": 92.74, "high": 93.44, "low": 91.62, "close": 92.73}, {"time": 1706659200.0, "open": 92.11, "high": 93.21, "low": 90.59, "close": 91.82}, {"time": 1706745600.0, "open": 94.78, "high": 95.1, "low": 93.96, "close": 94.97}, {"time": 1706832000.0, "open": 94.99, "high": 95.81, "low": 94.58, "close": 95.04}, {"time": 1706918400.0, "open": 92.63, "high": 93.38, "low": 91.48, "close": 93.33}, {"time": 1707004800.0, "open": 94.24, "high": 95.54, "low": 93.15, "close": 94.8}, {"time": 1707091200.0, "open": 93.0, "high": 93.11, "low": 92.74, "close": 92.81}, {"time": 1707177600.0, "open": 93.32, "high": 94.21, "low": 92.24, "close": 93.25}, {"time": 1707264000.0, "open": 90.08, "high": 90.52, "low": 88.98, "close": 90.06}, {"time": 1707350400.0, "open": 87.91, "high": 88.1, "low": 87.88, "close": 88.0}, {"time": 1707436800.0, "open": 88.87, "high": 89.8, "low": 87.85, "close": 88.4}, {"time": 1707523200.0, "open": 89.17, "high": 90.0, "low": 88.43, "close": 89.66}, {"time": 1707609600.0, "open": 90.26, "high": 90.63, "low": 88.74, "close": 90.03}, {"time": 1707696000.0, "open": 90.01, "high": 90.83, "low": 89.36, "close": 89.93}, {"time": 1707782400.0, "open": 89.32, "high": 90.55, "low": 89.3, "close": 89.53}, {"time": 1707868800.0, "open": 86.6, "high": 87.29, "low": 85.49, "close": 87.24}, {"time": 1707955200.0, "open": 86.16, "high": 86.32, "low": 85.52, "close": 86.19}, {"time": 1708041600.0, "open": 85.12, "high": 86.12, "low": 84.61, "close": 85.57}, {"time": 1708128000.0, "open": 87.47, "high": 87.53, "low": 86.79, "close": 87.28}, {"time": 1708214400.0, "open": 87.91, "high": 89.04, "low": 87.04, "close": 87.91}, {"time": 1708300800.0, "open": 84.62, "high": 86.03, "low": 84.59, "close": 85.2}, {"time": 1708387200.0, "open": 86.39, "high": 87.14, "low": 85.29, "close": 85.79}, {"time": 1708473600.0, "open": 85.22, "high": 85.98, "low": 84.02, "close": 85.28}, {"time": 1708560000.0, "open": 84.95, "high": 86.1, "low": 84.08, "close": 84.32}, {"time": 1708646400.0, "open": 84.79, "high": 85.36, "low": 84.67, "close": 85.34}, {"time": 1708732800.0, "open": 86.41, "high": 87.42, "low": 85.31, "close": 87.01}, {"time": 1708819200.0, "open": 89.0, "high": 89.37, "low": 88.39, "close": 88.55}, {"time": 1708905600.0, "open": 87.48, "high": 88.63, "low": 86.34, "close": 87.3}, {"time": 1708992000.0, "open": 86.6, "high": 87.14, "low": 85.63, "close": 86.9}, {"time": 1709078400.0, "open": 88.2, "high": 88.74, "low": 87.02, "close": 87.51}, {"time": 1709164800.0, "open": 88.91, "high": 90.38, "low": 87.76, "close": 89.13}, {"time": 1709251200.0, "open": 88.81, "high": 89.81, "low": 88.32, "close": 88.45}, {"time": 1709337600.0, "open": 88.25, "high": 89.35, "low": 87.82, "close": 88.25}, {"time": 1709424000.0, "open": 86.42, "high": 86.59, "low": 85.25, "close": 86.58}, {"time": 1709510400.0, "open": 84.55, "high": 86.01, "low": 83.35, "close": 84.8}, {"time": 1709596800.0, "open": 86.31, "high": 86.89, "low": 85.75, "close": 86.12}, {"time": 1709683200.0, "open": 88.56, "high": 89.56, "low": 87.26, "close": 88.31}, {"time": 1709769600.0, "open": 87.71, "high": 88.94, "low": 87.63, "close": 88.29}, {"time": 1709856000.0, "open": 89.89, "high": 91.17, "low": 89.41, "close": 89.97}, {"time": 1709942400.0, "open": 90.13, "high": 91.68, "low": 89.29, "close": 90.65}, {"time": 1710028800.0, "open": 89.09, "high": 90.63, "low": 88.99, "close": 89.68}, {"time": 1710115200.0, "open": 90.65, "high": 90.77, "low": 90.24, "close": 90.36}, {"time": 1710201600.0, "open": 92.76, "high": 93.47, "low": 91.63, "close": 92.95}, {"time": 1710288000.0, "open": 93.7, "high": 94.76, "low": 92.46, "close": 92.98}, {"time": 1710374400.0, "open": 96.12, "high": 96.92, "low": 95.08, "close": 95.69}, {"time": 1710460800.0, "open": 90.71, "high": 91.95, "low": 90.69, "close": 91.28}, {"time": 1710547200.0, "open": 92.06, "high": 92.88, "low": 91.9, "close": 92.72}, {"time": 1710633600.0, "open": 93.32, "high": 94.14, "low": 91.61, "close": 92.96}, {"time": 1710720000.0, "open": 92.23, "high": 93.75, "low": 91.92, "close": 92.55}, {"time": 1710806400.0, "open": 92.07, "high": 94.14, "low": 92.01, "close": 92.79}, {"time": 1710892800.0, "open": 89.61, "high": 90.94, "low": 89.47, "close": 89.57}, {"time": 1710979200.0, "open": 89.97, "high": 90.68, "low": 88.46, "close": 89.3}, {"time": 1711065600.0, "open": 89.9, "high": 90.81, "low": 89.11, "close": 89.97}, {"time": 1711152000.0, "open": 91.78, "high": 92.84, "low": 90.47, "close": 92.45}, {"time": 1711238400.0, "open": 91.61, "high": 92.53, "low": 91.23, "close": 91.68}, {"time": 1711324800.0, "open": 90.38, "high": 90.92, "low": 89.59, "close": 90.44}, {"time": 1711411200.0, "open": 90.39, "high": 91.73, "low": 88.77, "close": 89.71}, {"time": 1711497600.0, "open": 91.0, "high": 92.39, "low": 90.07, "close": 91.28}, {"time": 1711584000.0, "open": 92.51, "high": 93.66, "low": 90.6, "close": 91.91}, {"time": 1711670400.0, "open": 91.29, "high": 91.86, "low": 89.85, "close": 91.13}, {"time": 1711756800.0, "open": 91.39, "high": 92.09, "low": 90.87, "close": 92.06}, {"time": 1711843200.0, "open": 93.03, "high": 93.24, "low": 91.49, "close": 92.31}, {"time": 1711929600.0, "open": 94.72, "high": 95.92, "low": 92.83, "close": 94.01}, {"time": 1712016000.0, "open": 92.79, "high": 93.3, "low": 92.71, "close": 92.92}, {"time": 1712102400.0, "open": 92.93, "high": 94.32, "low": 91.08, "close": 92.46}, {"time": 1712188800.0, "open": 92.3, "high": 93.61, "low": 90.73, "close": 91.9}, {"time": 1712275200.0, "open": 89.5, "high": 89.75, "low": 88.22, "close": 89.57}, {"time": 1712361600.0, "open": 89.75, "high": 91.05, "low": 88.92, "close": 90.14}, {"time": 1712448000.0, "open": 90.09, "high": 91.57, "low": 89.39, "close": 90.66}, {"time": 1712534400.0, "open": 90.78, "high": 91.94, "low": 90.0, "close": 90.75}, {"time": 1712620800.0, "open": 91.01, "high": 91.56, "low": 90.28, "close": 90.46}, {"time": 1712707200.0, "open": 88.61, "high": 89.43, "low": 87.32, "close": 88.25}, {"time": 1712793600.0, "open": 87.16, "high": 87.69, "low": 86.7, "close": 87.67}, {"time": 1712880000.0, "open": 87.06, "high": 87.79, "low": 85.88, "close": 87.21}, {"time": 1712966400.0, "open": 86.06, "high": 87.07, "low": 85.53, "close": 86.04}, {"time": 1713052800.0, "open": 86.38, "high": 87.61, "low": 85.69, "close": 85.88}, {"time": 1713139200.0, "open": 86.58, "high": 86.92, "low": 85.98, "close": 86.59}, {"time": 1713225600.0, "open": 89.6, "high": 90.06, "low": 88.75, "close": 89.62}, {"time": 1713312000.0, "open": 89.38, "high": 90.16, "low": 89.2, "close": 89.99}, {"time": 1713398400.0, "open": 89.97, "high": 91.36, "low": 89.73, "close": 90.49}, {"time": 1713484800.0, "open": 91.04, "high": 91.68, "low": 89.56, "close": 90.46}, {"time": 1713571200.0, "open": 87.0, "high": 87.48, "low": 86.78, "close": 87.43}, {"time": 1713657600.0, "open": 87.02, "high": 87.59, "low": 86.87, "close": 87.47}, {"time": 1713744000.0, "open": 87.25, "high": 88.14, "low": 86.59, "close": 87.66}, {"time": 1713830400.0, "open": 90.96, "high": 92.73, "low": 90.1, "close": 91.63}, {"time": 1713916800.0, "open": 91.95, "high": 93.22, "low": 91.32, "close": 91.41}, {"time": 1714003200.0, "open": 92.44, "high": 93.48, "low": 91.74, "close": 91.99}, {"time": 1714089600.0, "open": 91.84, "high": 92.7, "low": 90.99, "close": 92.03}, {"time": 1714176000.0, "open": 90.13, "high": 91.19, "low": 90.08, "close": 90.18}, {"time": 1714262400.0, "open": 92.44, "high": 93.69, "low": 91.42, "close": 92.13}, {"time": 1714348800.0, "open": 92.88, "high": 94.1, "low": 92.14, "close": 93.47}]); 
+window.VolumeSeries_31.series.setData([{"time": 1704067200.0, "value": 7881, "color": "rgba(83,141,131,0.8)"}, {"time": 1704153600.0, "value": 10155, "color": "rgba(200,127,130,0.8)"}, {"time": 1704240000.0, "value": 7418, "color": "rgba(83,141,131,0.8)"}, {"time": 1704326400.0, "value": 3336, "color": "rgba(200,127,130,0.8)"}, {"time": 1704412800.0, "value": 5131, "color": "rgba(200,127,130,0.8)"}, {"time": 1704499200.0, "value": 2070, "color": "rgba(200,127,130,0.8)"}, {"time": 1704585600.0, "value": 8191, "color": "rgba(200,127,130,0.8)"}, {"time": 1704672000.0, "value": 3508, "color": "rgba(200,127,130,0.8)"}, {"time": 1704758400.0, "value": 7890, "color": "rgba(83,141,131,0.8)"}, {"time": 1704844800.0, "value": 10847, "color": "rgba(83,141,131,0.8)"}, {"time": 1704931200.0, "value": 1742, "color": "rgba(200,127,130,0.8)"}, {"time": 1705017600.0, "value": 903, "color": "rgba(83,141,131,0.8)"}, {"time": 1705104000.0, "value": 2601, "color": "rgba(83,141,131,0.8)"}, {"time": 1705190400.0, "value": 3311, "color": "rgba(200,127,130,0.8)"}, {"time": 1705276800.0, "value": 9160, "color": "rgba(200,127,130,0.8)"}, {"time": 1705363200.0, "value": 7165, "color": "rgba(200,127,130,0.8)"}, {"time": 1705449600.0, "value": 3532, "color": "rgba(83,141,131,0.8)"}, {"time": 1705536000.0, "value": 7868, "color": "rgba(200,127,130,0.8)"}, {"time": 1705622400.0, "value": 6316, "color": "rgba(200,127,130,0.8)"}, {"time": 1705708800.0, "value": 1072, "color": "rgba(83,141,131,0.8)"}, {"time": 1705795200.0, "value": 11484, "color": "rgba(200,127,130,0.8)"}, {"time": 1705881600.0, "value": 11197, "color": "rgba(200,127,130,0.8)"}, {"time": 1705968000.0, "value": 10353, "color": "rgba(83,141,131,0.8)"}, {"time": 1706054400.0, "value": 4349, "color": "rgba(83,141,131,0.8)"}, {"time": 1706140800.0, "value": 8595, "color": "rgba(83,141,131,0.8)"}, {"time": 1706227200.0, "value": 11888, "color": "rgba(200,127,130,0.8)"}, {"time": 1706313600.0, "value": 9096, "color": "rgba(83,141,131,0.8)"}, {"time": 1706400000.0, "value": 4088, "color": "rgba(200,127,130,0.8)"}, {"time": 1706486400.0, "value": 11028, "color": "rgba(200,127,130,0.8)"}, {"time": 1706572800.0, "value": 8079, "color": "rgba(200,127,130,0.8)"}, {"time": 1706659200.0, "value": 4585, "color": "rgba(200,127,130,0.8)"}, {"time": 1706745600.0, "value": 1202, "color": "rgba(83,141,131,0.8)"}, {"time": 1706832000.0, "value": 7417, "color": "rgba(83,141,131,0.8)"}, {"time": 1706918400.0, "value": 4834, "color": "rgba(83,141,131,0.8)"}, {"time": 1707004800.0, "value": 3217, "color": "rgba(83,141,131,0.8)"}, {"time": 1707091200.0, "value": 6751, "color": "rgba(200,127,130,0.8)"}, {"time": 1707177600.0, "value": 11729, "color": "rgba(200,127,130,0.8)"}, {"time": 1707264000.0, "value": 3833, "color": "rgba(200,127,130,0.8)"}, {"time": 1707350400.0, "value": 11581, "color": "rgba(83,141,131,0.8)"}, {"time": 1707436800.0, "value": 2740, "color": "rgba(200,127,130,0.8)"}, {"time": 1707523200.0, "value": 8803, "color": "rgba(83,141,131,0.8)"}, {"time": 1707609600.0, "value": 9064, "color": "rgba(200,127,130,0.8)"}, {"time": 1707696000.0, "value": 3574, "color": "rgba(200,127,130,0.8)"}, {"time": 1707782400.0, "value": 2100, "color": "rgba(83,141,131,0.8)"}, {"time": 1707868800.0, "value": 8680, "color": "rgba(83,141,131,0.8)"}, {"time": 1707955200.0, "value": 6102, "color": "rgba(83,141,131,0.8)"}, {"time": 1708041600.0, "value": 7697, "color": "rgba(83,141,131,0.8)"}, {"time": 1708128000.0, "value": 7809, "color": "rgba(200,127,130,0.8)"}, {"time": 1708214400.0, "value": 2624, "color": "rgba(200,127,130,0.8)"}, {"time": 1708300800.0, "value": 7360, "color": "rgba(83,141,131,0.8)"}, {"time": 1708387200.0, "value": 8004, "color": "rgba(200,127,130,0.8)"}, {"time": 1708473600.0, "value": 5124, "color": "rgba(83,141,131,0.8)"}, {"time": 1708560000.0, "value": 1576, "color": "rgba(200,127,130,0.8)"}, {"time": 1708646400.0, "value": 8449, "color": "rgba(83,141,131,0.8)"}, {"time": 1708732800.0, "value": 1060, "color": "rgba(83,141,131,0.8)"}, {"time": 1708819200.0, "value": 8603, "color": "rgba(200,127,130,0.8)"}, {"time": 1708905600.0, "value": 9798, "color": "rgba(200,127,130,0.8)"}, {"time": 1708992000.0, "value": 9836, "color": "rgba(83,141,131,0.8)"}, {"time": 1709078400.0, "value": 9495, "color": "rgba(200,127,130,0.8)"}, {"time": 1709164800.0, "value": 5604, "color": "rgba(83,141,131,0.8)"}, {"time": 1709251200.0, "value": 10908, "color": "rgba(200,127,130,0.8)"}, {"time": 1709337600.0, "value": 10829, "color": "rgba(200,127,130,0.8)"}, {"time": 1709424000.0, "value": 1822, "color": "rgba(83,141,131,0.8)"}, {"time": 1709510400.0, "value": 7222, "color": "rgba(83,141,131,0.8)"}, {"time": 1709596800.0, "value": 4481, "color": "rgba(200,127,130,0.8)"}, {"time": 1709683200.0, "value": 9643, "color": "rgba(200,127,130,0.8)"}, {"time": 1709769600.0, "value": 6954, "color": "rgba(83,141,131,0.8)"}, {"time": 1709856000.0, "value": 2111, "color": "rgba(83,141,131,0.8)"}, {"time": 1709942400.0, "value": 1932, "color": "rgba(83,141,131,0.8)"}, {"time": 1710028800.0, "value": 10004, "color": "rgba(83,141,131,0.8)"}, {"time": 1710115200.0, "value": 11850, "color": "rgba(200,127,130,0.8)"}, {"time": 1710201600.0, "value": 11409, "color": "rgba(83,141,131,0.8)"}, {"time": 1710288000.0, "value": 1735, "color": "rgba(200,127,130,0.8)"}, {"time": 1710374400.0, "value": 10951, "color": "rgba(200,127,130,0.8)"}, {"time": 1710460800.0, "value": 6048, "color": "rgba(83,141,131,0.8)"}, {"time": 1710547200.0, "value": 8071, "color": "rgba(83,141,131,0.8)"}, {"time": 1710633600.0, "value": 4998, "color": "rgba(200,127,130,0.8)"}, {"time": 1710720000.0, "value": 11588, "color": "rgba(83,141,131,0.8)"}, {"time": 1710806400.0, "value": 10780, "color": "rgba(83,141,131,0.8)"}, {"time": 1710892800.0, "value": 7003, "color": "rgba(200,127,130,0.8)"}, {"time": 1710979200.0, "value": 8592, "color": "rgba(200,127,130,0.8)"}, {"time": 1711065600.0, "value": 10892, "color": "rgba(83,141,131,0.8)"}, {"time": 1711152000.0, "value": 10770, "color": "rgba(83,141,131,0.8)"}, {"time": 1711238400.0, "value": 2906, "color": "rgba(83,141,131,0.8)"}, {"time": 1711324800.0, "value": 1670, "color": "rgba(83,141,131,0.8)"}, {"time": 1711411200.0, "value": 6804, "color": "rgba(200,127,130,0.8)"}, {"time": 1711497600.0, "value": 2621, "color": "rgba(83,141,131,0.8)"}, {"time": 1711584000.0, "value": 8928, "color": "rgba(200,127,130,0.8)"}, {"time": 1711670400.0, "value": 10499, "color": "rgba(200,127,130,0.8)"}, {"time": 1711756800.0, "value": 9878, "color": "rgba(83,141,131,0.8)"}, {"time": 1711843200.0, "value": 5065, "color": "rgba(200,127,130,0.8)"}, {"time": 1711929600.0, "value": 6049, "color": "rgba(200,127,130,0.8)"}, {"time": 1712016000.0, "value": 10484, "color": "rgba(83,141,131,0.8)"}, {"time": 1712102400.0, "value": 7020, "color": "rgba(200,127,130,0.8)"}, {"time": 1712188800.0, "value": 3570, "color": "rgba(200,127,130,0.8)"}, {"time": 1712275200.0, "value": 7589, "color": "rgba(83,141,131,0.8)"}, {"time": 1712361600.0, "value": 4811, "color": "rgba(83,141,131,0.8)"}, {"time": 1712448000.0, "value": 9449, "color": "rgba(83,141,131,0.8)"}, {"time": 1712534400.0, "value": 7082, "color": "rgba(200,127,130,0.8)"}, {"time": 1712620800.0, "value": 1122, "color": "rgba(200,127,130,0.8)"}, {"time": 1712707200.0, "value": 3185, "color": "rgba(200,127,130,0.8)"}, {"time": 1712793600.0, "value": 7407, "color": "rgba(83,141,131,0.8)"}, {"time": 1712880000.0, "value": 4700, "color": "rgba(83,141,131,0.8)"}, {"time": 1712966400.0, "value": 7767, "color": "rgba(200,127,130,0.8)"}, {"time": 1713052800.0, "value": 11177, "color": "rgba(200,127,130,0.8)"}, {"time": 1713139200.0, "value": 11776, "color": "rgba(83,141,131,0.8)"}, {"time": 1713225600.0, "value": 3489, "color": "rgba(83,141,131,0.8)"}, {"time": 1713312000.0, "value": 2501, "color": "rgba(83,141,131,0.8)"}, {"time": 1713398400.0, "value": 4671, "color": "rgba(83,141,131,0.8)"}, {"time": 1713484800.0, "value": 2729, "color": "rgba(200,127,130,0.8)"}, {"time": 1713571200.0, "value": 3920, "color": "rgba(83,141,131,0.8)"}, {"time": 1713657600.0, "value": 5960, "color": "rgba(83,141,131,0.8)"}, {"time": 1713744000.0, "value": 8532, "color": "rgba(83,141,131,0.8)"}, {"time": 1713830400.0, "value": 1715, "color": "rgba(83,141,131,0.8)"}, {"time": 1713916800.0, "value": 3901, "color": "rgba(200,127,130,0.8)"}, {"time": 1714003200.0, "value": 3144, "color": "rgba(200,127,130,0.8)"}, {"time": 1714089600.0, "value": 4931, "color": "rgba(83,141,131,0.8)"}, {"time": 1714176000.0, "value": 3627, "color": "rgba(83,141,131,0.8)"}, {"time": 1714262400.0, "value": 6759, "color": "rgba(200,127,130,0.8)"}, {"time": 1714348800.0, "value": 3515, "color": "rgba(83,141,131,0.8)"}])
+window.AbstractChart_29.setPosition(0.5, 0.5, 0.5, 0.5)
+
+        window.Histogram_34 = window.AbstractChart_29.createHistogramSeries(
             "Volume",
             {
                 color: '#ff9800',
@@ -3492,10 +3752,10 @@ window.AbstractChart_20.setPosition(0.5, 0.5, 0.5, 0.5)
             },
             1
         )
-        window.Histogram_22.series.priceScale().applyOptions({
+        window.Histogram_34.series.priceScale().applyOptions({
             scaleMargins: {top:0.0, bottom: 0.0}
         });0
-window.Histogram_22.series.setData([])
-window.Histogram_22.series.setData([{"time": 1704067200.0, "value": 7881}, {"time": 1704153600.0, "value": 10155}, {"time": 1704240000.0, "value": 7418}, {"time": 1704326400.0, "value": 3336}, {"time": 1704412800.0, "value": 5131}, {"time": 1704499200.0, "value": 2070}, {"time": 1704585600.0, "value": 8191}, {"time": 1704672000.0, "value": 3508}, {"time": 1704758400.0, "value": 7890}, {"time": 1704844800.0, "value": 10847}, {"time": 1704931200.0, "value": 1742}, {"time": 1705017600.0, "value": 903}, {"time": 1705104000.0, "value": 2601}, {"time": 1705190400.0, "value": 3311}, {"time": 1705276800.0, "value": 9160}, {"time": 1705363200.0, "value": 7165}, {"time": 1705449600.0, "value": 3532}, {"time": 1705536000.0, "value": 7868}, {"time": 1705622400.0, "value": 6316}, {"time": 1705708800.0, "value": 1072}, {"time": 1705795200.0, "value": 11484}, {"time": 1705881600.0, "value": 11197}, {"time": 1705968000.0, "value": 10353}, {"time": 1706054400.0, "value": 4349}, {"time": 1706140800.0, "value": 8595}, {"time": 1706227200.0, "value": 11888}, {"time": 1706313600.0, "value": 9096}, {"time": 1706400000.0, "value": 4088}, {"time": 1706486400.0, "value": 11028}, {"time": 1706572800.0, "value": 8079}, {"time": 1706659200.0, "value": 4585}, {"time": 1706745600.0, "value": 1202}, {"time": 1706832000.0, "value": 7417}, {"time": 1706918400.0, "value": 4834}, {"time": 1707004800.0, "value": 3217}, {"time": 1707091200.0, "value": 6751}, {"time": 1707177600.0, "value": 11729}, {"time": 1707264000.0, "value": 3833}, {"time": 1707350400.0, "value": 11581}, {"time": 1707436800.0, "value": 2740}, {"time": 1707523200.0, "value": 8803}, {"time": 1707609600.0, "value": 9064}, {"time": 1707696000.0, "value": 3574}, {"time": 1707782400.0, "value": 2100}, {"time": 1707868800.0, "value": 8680}, {"time": 1707955200.0, "value": 6102}, {"time": 1708041600.0, "value": 7697}, {"time": 1708128000.0, "value": 7809}, {"time": 1708214400.0, "value": 2624}, {"time": 1708300800.0, "value": 7360}, {"time": 1708387200.0, "value": 8004}, {"time": 1708473600.0, "value": 5124}, {"time": 1708560000.0, "value": 1576}, {"time": 1708646400.0, "value": 8449}, {"time": 1708732800.0, "value": 1060}, {"time": 1708819200.0, "value": 8603}, {"time": 1708905600.0, "value": 9798}, {"time": 1708992000.0, "value": 9836}, {"time": 1709078400.0, "value": 9495}, {"time": 1709164800.0, "value": 5604}, {"time": 1709251200.0, "value": 10908}, {"time": 1709337600.0, "value": 10829}, {"time": 1709424000.0, "value": 1822}, {"time": 1709510400.0, "value": 7222}, {"time": 1709596800.0, "value": 4481}, {"time": 1709683200.0, "value": 9643}, {"time": 1709769600.0, "value": 6954}, {"time": 1709856000.0, "value": 2111}, {"time": 1709942400.0, "value": 1932}, {"time": 1710028800.0, "value": 10004}, {"time": 1710115200.0, "value": 11850}, {"time": 1710201600.0, "value": 11409}, {"time": 1710288000.0, "value": 1735}, {"time": 1710374400.0, "value": 10951}, {"time": 1710460800.0, "value": 6048}, {"time": 1710547200.0, "value": 8071}, {"time": 1710633600.0, "value": 4998}, {"time": 1710720000.0, "value": 11588}, {"time": 1710806400.0, "value": 10780}, {"time": 1710892800.0, "value": 7003}, {"time": 1710979200.0, "value": 8592}, {"time": 1711065600.0, "value": 10892}, {"time": 1711152000.0, "value": 10770}, {"time": 1711238400.0, "value": 2906}, {"time": 1711324800.0, "value": 1670}, {"time": 1711411200.0, "value": 6804}, {"time": 1711497600.0, "value": 2621}, {"time": 1711584000.0, "value": 8928}, {"time": 1711670400.0, "value": 10499}, {"time": 1711756800.0, "value": 9878}, {"time": 1711843200.0, "value": 5065}, {"time": 1711929600.0, "value": 6049}, {"time": 1712016000.0, "value": 10484}, {"time": 1712102400.0, "value": 7020}, {"time": 1712188800.0, "value": 3570}, {"time": 1712275200.0, "value": 7589}, {"time": 1712361600.0, "value": 4811}, {"time": 1712448000.0, "value": 9449}, {"time": 1712534400.0, "value": 7082}, {"time": 1712620800.0, "value": 1122}, {"time": 1712707200.0, "value": 3185}, {"time": 1712793600.0, "value": 7407}, {"time": 1712880000.0, "value": 4700}, {"time": 1712966400.0, "value": 7767}, {"time": 1713052800.0, "value": 11177}, {"time": 1713139200.0, "value": 11776}, {"time": 1713225600.0, "value": 3489}, {"time": 1713312000.0, "value": 2501}, {"time": 1713398400.0, "value": 4671}, {"time": 1713484800.0, "value": 2729}, {"time": 1713571200.0, "value": 3920}, {"time": 1713657600.0, "value": 5960}, {"time": 1713744000.0, "value": 8532}, {"time": 1713830400.0, "value": 1715}, {"time": 1713916800.0, "value": 3901}, {"time": 1714003200.0, "value": 3144}, {"time": 1714089600.0, "value": 4931}, {"time": 1714176000.0, "value": 3627}, {"time": 1714262400.0, "value": 6759}, {"time": 1714348800.0, "value": 3515}]); 
+window.Histogram_34.series.setData([])
+window.Histogram_34.series.setData([{"time": 1704067200.0, "value": 7881}, {"time": 1704153600.0, "value": 10155}, {"time": 1704240000.0, "value": 7418}, {"time": 1704326400.0, "value": 3336}, {"time": 1704412800.0, "value": 5131}, {"time": 1704499200.0, "value": 2070}, {"time": 1704585600.0, "value": 8191}, {"time": 1704672000.0, "value": 3508}, {"time": 1704758400.0, "value": 7890}, {"time": 1704844800.0, "value": 10847}, {"time": 1704931200.0, "value": 1742}, {"time": 1705017600.0, "value": 903}, {"time": 1705104000.0, "value": 2601}, {"time": 1705190400.0, "value": 3311}, {"time": 1705276800.0, "value": 9160}, {"time": 1705363200.0, "value": 7165}, {"time": 1705449600.0, "value": 3532}, {"time": 1705536000.0, "value": 7868}, {"time": 1705622400.0, "value": 6316}, {"time": 1705708800.0, "value": 1072}, {"time": 1705795200.0, "value": 11484}, {"time": 1705881600.0, "value": 11197}, {"time": 1705968000.0, "value": 10353}, {"time": 1706054400.0, "value": 4349}, {"time": 1706140800.0, "value": 8595}, {"time": 1706227200.0, "value": 11888}, {"time": 1706313600.0, "value": 9096}, {"time": 1706400000.0, "value": 4088}, {"time": 1706486400.0, "value": 11028}, {"time": 1706572800.0, "value": 8079}, {"time": 1706659200.0, "value": 4585}, {"time": 1706745600.0, "value": 1202}, {"time": 1706832000.0, "value": 7417}, {"time": 1706918400.0, "value": 4834}, {"time": 1707004800.0, "value": 3217}, {"time": 1707091200.0, "value": 6751}, {"time": 1707177600.0, "value": 11729}, {"time": 1707264000.0, "value": 3833}, {"time": 1707350400.0, "value": 11581}, {"time": 1707436800.0, "value": 2740}, {"time": 1707523200.0, "value": 8803}, {"time": 1707609600.0, "value": 9064}, {"time": 1707696000.0, "value": 3574}, {"time": 1707782400.0, "value": 2100}, {"time": 1707868800.0, "value": 8680}, {"time": 1707955200.0, "value": 6102}, {"time": 1708041600.0, "value": 7697}, {"time": 1708128000.0, "value": 7809}, {"time": 1708214400.0, "value": 2624}, {"time": 1708300800.0, "value": 7360}, {"time": 1708387200.0, "value": 8004}, {"time": 1708473600.0, "value": 5124}, {"time": 1708560000.0, "value": 1576}, {"time": 1708646400.0, "value": 8449}, {"time": 1708732800.0, "value": 1060}, {"time": 1708819200.0, "value": 8603}, {"time": 1708905600.0, "value": 9798}, {"time": 1708992000.0, "value": 9836}, {"time": 1709078400.0, "value": 9495}, {"time": 1709164800.0, "value": 5604}, {"time": 1709251200.0, "value": 10908}, {"time": 1709337600.0, "value": 10829}, {"time": 1709424000.0, "value": 1822}, {"time": 1709510400.0, "value": 7222}, {"time": 1709596800.0, "value": 4481}, {"time": 1709683200.0, "value": 9643}, {"time": 1709769600.0, "value": 6954}, {"time": 1709856000.0, "value": 2111}, {"time": 1709942400.0, "value": 1932}, {"time": 1710028800.0, "value": 10004}, {"time": 1710115200.0, "value": 11850}, {"time": 1710201600.0, "value": 11409}, {"time": 1710288000.0, "value": 1735}, {"time": 1710374400.0, "value": 10951}, {"time": 1710460800.0, "value": 6048}, {"time": 1710547200.0, "value": 8071}, {"time": 1710633600.0, "value": 4998}, {"time": 1710720000.0, "value": 11588}, {"time": 1710806400.0, "value": 10780}, {"time": 1710892800.0, "value": 7003}, {"time": 1710979200.0, "value": 8592}, {"time": 1711065600.0, "value": 10892}, {"time": 1711152000.0, "value": 10770}, {"time": 1711238400.0, "value": 2906}, {"time": 1711324800.0, "value": 1670}, {"time": 1711411200.0, "value": 6804}, {"time": 1711497600.0, "value": 2621}, {"time": 1711584000.0, "value": 8928}, {"time": 1711670400.0, "value": 10499}, {"time": 1711756800.0, "value": 9878}, {"time": 1711843200.0, "value": 5065}, {"time": 1711929600.0, "value": 6049}, {"time": 1712016000.0, "value": 10484}, {"time": 1712102400.0, "value": 7020}, {"time": 1712188800.0, "value": 3570}, {"time": 1712275200.0, "value": 7589}, {"time": 1712361600.0, "value": 4811}, {"time": 1712448000.0, "value": 9449}, {"time": 1712534400.0, "value": 7082}, {"time": 1712620800.0, "value": 1122}, {"time": 1712707200.0, "value": 3185}, {"time": 1712793600.0, "value": 7407}, {"time": 1712880000.0, "value": 4700}, {"time": 1712966400.0, "value": 7767}, {"time": 1713052800.0, "value": 11177}, {"time": 1713139200.0, "value": 11776}, {"time": 1713225600.0, "value": 3489}, {"time": 1713312000.0, "value": 2501}, {"time": 1713398400.0, "value": 4671}, {"time": 1713484800.0, "value": 2729}, {"time": 1713571200.0, "value": 3920}, {"time": 1713657600.0, "value": 5960}, {"time": 1713744000.0, "value": 8532}, {"time": 1713830400.0, "value": 1715}, {"time": 1713916800.0, "value": 3901}, {"time": 1714003200.0, "value": 3144}, {"time": 1714089600.0, "value": 4931}, {"time": 1714176000.0, "value": 3627}, {"time": 1714262400.0, "value": 6759}, {"time": 1714348800.0, "value": 3515}]); 
 })();
  </script></body></html>

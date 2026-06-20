@@ -26,8 +26,14 @@ if __name__ == '__main__':
     # You can also use pd.Timestamp or datetime objects
     chart.vertical_span(
         start_time=pd.Timestamp('2020-03-01'),
-        end_time=pd.Timestamp('2023-08-15'),
+        end_time=pd.Timestamp('2021-08-15'),
         color='rgba(100, 200, 255, 0.15)',
+    )
+
+    # single-time highlights
+    chart.vertical_span(
+        start_time=pd.Timestamp('2022-03-01'),
+        color='rgba(250, 30, 128, 0.7)',
     )
 
     chart.show(block=True)

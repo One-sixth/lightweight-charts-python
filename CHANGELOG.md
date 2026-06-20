@@ -6,48 +6,78 @@
 
 ## [v2.7.0] - 2026-06-20
 
-### Changed
+### 架构重构：AbstractChart 组合模式
 
-- **AbstractChart 组合架构重构**: `AbstractChart` 从继承 `Candlestick` 改为组合模式（仅继承 `Pane`），所有序列和工具作为实例变量
+- **`AbstractChart` 从继承改为组合**：`class AbstractChart(Candlestick, Pane)` → `class AbstractChart(Pane)`
   - `self.candle: CandleSeries` — 主 K 线（通过 `CandleSeries._wrap_handler()` 共享 Handler JS 对象）
-  - `self.volume: Optional[VolumeSeries]` — 成交量（可选 attach）
-  - `self.oi: Optional[OpenInterestSeries]` — 持仓量（可选 attach）
-  - 26 个显式委托方法（`set`/`update`/`marker`/`candle_style`/`volume_config` 等）+ `__getattr__` 兜底，API 完全向后兼容
+  - `self.volume: VolumeSeries` — 成交量（默认创建，复用 Handler 已有的 volumeSeries）
+  - `self.oi: OpenInterestSeries` — 持仓量（默认创建，复用 Handler 已有的 openInterestSeries）
+  - 6 个 `@property` 代理（`candle_data`/`data`/`markers`/`_last_bar`/`_interval`/`offset`）
+  - 4 个内部方法委托（`_single_datetime_format`/`_normal_df`/`_time_to_bar_time`/`_set_interval`）
+  - 不再使用 `__getattr__`，所有代理显式定义，IDE 友好
 
-- **新增 `VolumeSeries`**: 成交量柱状图系列，继承 `SeriesCommon`，绑定到 CandleSeries，自动根据 OHLC 涨跌着色
-  - `set(df)` / `update(series)` / `update_batch(df)` — 支持自动着色
+- **`Candlestick` 完全移除**：旧 341 行类代码删除，不再保留别名
+
+### 新增类
+
+- **`VolumeSeries`**：成交量柱状图，继承 `SeriesCommon`
+  - `set(df)` / `update(series)` / `update_batch(df)` — 自动根据 OHLC 涨跌着色
   - `config(up_color, down_color, scale_margin_top, scale_margin_bottom)` — 样式配置
-  - `delete()` — 独立删除
+  - `delete()` / `_toggle_data()` / `_update_markers()`
   - `_wrap_existing` 模式 — 主图表复用 Handler 已有的 volumeSeries，避免重复创建
+  - `self._wrap_existing` 属性已保存（用于 `clear_data()` 判断是否删除）
 
-- **新增 `OpenInterestSeries`**: 持仓量折线系列，继承 `SeriesCommon`，绑定到 CandleSeries
+- **`OpenInterestSeries`**：持仓量折线，继承 `SeriesCommon`
   - `set(df)` / `update(series)` / `update_batch(df)`
   - `config(color, line_width, scale_margin_top, scale_margin_bottom)`
-  - `delete()` — 独立删除
+  - `delete()` / `_toggle_data()`
   - `_wrap_existing` 模式同上
 
-- **CandleSeries 增强**: 补齐所有原 Candlestick 方法（29 个公共方法）
-  - `_wrap_handler(chart)` 类方法 — 组合模式包装 Handler 主 series
-  - `clear_data()` — 清空 candle + volume + OI
-  - `attach_volume()` / `attach_open_interest()` — 创建并绑定附属 series（主图表自动 `_wrap_existing`）
-  - `candle_style()` / `volume_config()` / `open_interest_config()` / `price_scale()` / `set_price_format()`
-  - `update_from_tick()` / `update_from_ticks()` — tick → bar 聚合更新
-  - `set()` / `update_batch()` 增强 — 自动检测 volume/OI 列并转发给附属 series
-  - `delete()` 增强 — 级联删除附属 series（VolumeSeries / OpenInterestSeries）
+### CandleSeries 增强
 
-- **Candlestick 降级为别名**: `Candlestick = CandleSeries`，旧 341 行类代码删除，abstract.py 精简 ~340 行
+- `_wrap_handler(chart)` 类方法 — 组合模式包装 Handler 主 series
+- `clear_data()` — 清空 candle + volume + OI；`_wrap_existing` 的附属 series 只清数据不删除
+- `attach_volume()` / `attach_open_interest()` — 创建并绑定附属 series（主图表自动 `_wrap_existing`）
+- `candle_style()` — K 线样式配置（从 SeriesCommon 移入）
+- `volume_config()` — 薄委托，找到 VolumeSeries 调 `config()`
+- `open_interest_config()` — 薄委托，找到 OpenInterestSeries 调 `config()`
+- `price_scale()` / `set_price_format()` — 价格坐标轴配置
+- `update_from_tick()` / `update_from_ticks()` — OHLC 聚合 + volume/OI 处理（覆盖 SeriesCommon 通用版）
+- `set()` / `update_batch()` — 自动检测 volume/OI 列并转发给附属 series
+- `delete()` — 级联删除附属 series
+- `_toggle_data()` — 覆盖基类，遍历 `self._attached` 同步显隐
 
-- **Handler JS 端**: `GLOBALS_RE` 正则新增 `VolumeSeries_\d` 和 `OpenInterestSeries_\d` 匹配
+### SeriesCommon 精简
 
-### Added
+- **移至 AbstractChart**：`horizontal_line`/`trend_line`/`box`/`ray_line`/`vertical_line`/`vertical_span`/`create_price_line`（绘图方法）
+- **移至 CandleSeries**：`candle_style`/`volume_config`/`open_interest_config`/`update_from_tick`/`update_from_ticks`（K 线特化方法）
+- **保留**：数据工具（`_normal_df`/`_time_to_bar_time`/`_merge_value_by_time`/`_set_interval`）、标记（`marker`/`remove_marker`/`marker_list`/`clear_markers`）、精度（`precision`）、显隐（`hide_data`/`show_data`）
+- **新增通用版**：`update_from_tick(series)` / `update_from_ticks(df)` — 按 time 分组取 last，无 `cumulative_volume` 参数
+- **`_update_markers`** 升级为 try-catch 版本（防止 JS 错误中断 async IIFE）
 
-- **`AbstractChart.attach_volume(**kwargs)`** — 创建并绑定成交量系列
-- **`AbstractChart.attach_open_interest(**kwargs)`** — 创建并绑定持仓量系列
-- **`AbstractChart.marker_list(marker_list)`** — 批量创建标记（显式委托）
+### AbstractChart 新增
 
-### Fixed
+- `attach_volume(**kwargs)` / `attach_open_interest(**kwargs)` — 创建并绑定附属 series
+- `_is_subchart` 属性 — 标识是否为子图（`create_subchart()` 设为 True）
+- `reset()` — 限制仅主图表可调用，子图抛 `RuntimeError`
+- `clear_handlers()` — 限制仅主图表可调用，子图抛 `RuntimeError`
+- `remove_subchart()` — 增强：清理子图表的 VolumeSeries/OI JS 全局变量
+- `watermark()` — 修复：`self._chart.id` → `self.id`
 
-- **`CandleSeries.delete()` 级联清理**: 删除 CandleSeries 时自动删除其附属的 VolumeSeries / OpenInterestSeries，避免 `_seriesList` 残留
+### drawings.py 修复
+
+- **`VerticalSpan`**：参数 `series` → `chart`（与其他 Drawing 类一致）
+- **`VerticalSpan`**：时间处理统一用 `_single_datetime_format()`（修复数字时间戳误解、bar 时间对齐缺失）
+- **`VerticalSpan`**：新增参数校验 — `start_time` 为多值时 `end_time` 必须为 None
+- 删除 AbstractChart 上的 `_chart` property（不再需要）
+
+### test_cleanup.py 适配
+
+- 泄漏检测排除 VolumeSeries/OpenInterestSeries（Chart 固有组件，默认创建）
+
+### Handler JS 端
+
+- `GLOBALS_RE` 正则新增 `VolumeSeries_\d` 和 `OpenInterestSeries_\d` 匹配
 
 ---
 
