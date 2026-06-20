@@ -810,6 +810,7 @@ class VolumeSeries(SeriesCommon):
                  down_color: str = 'rgba(200,127,130,0.8)',
                  scale_margin_top: float = 0.8,
                  scale_margin_bottom: float = 0.0,
+                 price_scale_id: str = 'volume_scale',
                  _wrap_existing: bool = False):
         """
         :param candle: 绑定的 CandleSeries 实例，用于获取 OHLC 着色
@@ -818,6 +819,7 @@ class VolumeSeries(SeriesCommon):
         :param down_color: 下跌颜色（close <= open）
         :param scale_margin_top: 价格轴顶部边距（0-1）
         :param scale_margin_bottom: 价格轴底部边距（0-1）
+        :param price_scale_id: 价格尺度 ID，相同 ID 的 series 共享价格尺度。默认 'volume_scale'
         :param _wrap_existing: 内部参数，True 时包装 Handler 已有的 volumeSeries（不创建新 JS 对象）
         """
         pane = pane_index if pane_index is not None else candle.pane_index
@@ -844,7 +846,7 @@ class VolumeSeries(SeriesCommon):
                         color: '{down_color}',
                         lastValueVisible: false,
                         priceLineVisible: false,
-                        priceScaleId: 'volume_scale',
+                        priceScaleId: '{price_scale_id}',
                         priceFormat: {{type: "volume"}},
                     }},
                     {pane}
@@ -972,6 +974,7 @@ class OpenInterestSeries(SeriesCommon):
                  line_width: int = 1,
                  scale_margin_top: float = 0.8,
                  scale_margin_bottom: float = 0.0,
+                 price_scale_id: str = 'oi_scale',
                  _wrap_existing: bool = False):
         """
         :param candle: 绑定的 CandleSeries 实例
@@ -980,6 +983,7 @@ class OpenInterestSeries(SeriesCommon):
         :param line_width: 线宽
         :param scale_margin_top: 价格轴顶部边距
         :param scale_margin_bottom: 价格轴底部边距
+        :param price_scale_id: 价格尺度 ID，相同 ID 的 series 共享价格尺度。默认 'oi_scale'
         :param _wrap_existing: 内部参数，True 时包装 Handler 已有的 openInterestSeries
         """
         pane = pane_index if pane_index is not None else candle.pane_index
@@ -1000,7 +1004,7 @@ class OpenInterestSeries(SeriesCommon):
                     {{
                         color: '{color}',
                         lineWidth: {line_width},
-                        priceScaleId: 'oi_scale',
+                        priceScaleId: '{price_scale_id}',
                         lastValueVisible: false,
                         priceLineVisible: false,
                         crosshairMarkerVisible: true,
