@@ -4,7 +4,6 @@ import inspect
 import warnings
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from tzlocal import get_localzone_name
 from typing import Literal, Union, Tuple
 import pandas as pd
 
@@ -38,7 +37,6 @@ def format_datetime(dt: datetime, tz: Union[str, ZoneInfo] = None) -> str:
     :param tz: 目标时区（IANA 名称或 ZoneInfo 对象），None 则不做时区转换
     :return: 格式如 '2026-05-11 14:30' 或 '2026-05-11 14:30 GMT+0800'"""
     if tz is None:
-        # tz = ZoneInfo(get_localzone_name())
         return dt.strftime('%Y-%m-%d %H:%M')
     elif isinstance(tz, str):
         tz = ZoneInfo(tz)
@@ -162,7 +160,7 @@ def _validate_grid(nrows: int, ncols: int, index: int) -> None:
 def parse_position(pos: Position) -> dict:
     """
     解析 position 参数为统一格式
-    
+
     :param pos: 位置参数，支持三种格式：
                 - 字符串: 'left', 'right', 'top', 'bottom'
                 - 元组: (nrows, ncols, index)
@@ -176,12 +174,12 @@ def parse_position(pos: Position) -> dict:
             stacklevel=3
         )
         return _convert_string_to_grid(pos)
-    
+
     if isinstance(pos, tuple) and len(pos) == 3:
         nrows, ncols, index = pos
         _validate_grid(nrows, ncols, index)
         return {'nrows': nrows, 'ncols': ncols, 'index': index}
-    
+
     if isinstance(pos, int):
         s = str(pos)
         if len(s) != 3:
@@ -189,7 +187,7 @@ def parse_position(pos: Position) -> dict:
         nrows, ncols, index = int(s[0]), int(s[1]), int(s[2])
         _validate_grid(nrows, ncols, index)
         return {'nrows': nrows, 'ncols': ncols, 'index': index}
-    
+
     raise ValueError(f"无效的 position 格式: {pos}")
 
 
