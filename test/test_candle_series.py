@@ -70,7 +70,6 @@ def test_basic_create_delete():
 
     try:
         chart.show(block=False)
-        chart.clear_handlers()
 
         df_main = make_ohlcv(30, 100, 42)
         df_ref = make_ohlcv(30, 200, 123)
@@ -166,7 +165,6 @@ def test_update_operations():
 
     try:
         chart.show(block=False)
-        chart.clear_handlers()
 
         df_init = make_ohlcv(20, 100, 42)
         chart.set(df_init)
@@ -251,7 +249,6 @@ def test_markers():
 
     try:
         chart.show(block=False)
-        chart.clear_handlers()
 
         df = make_ohlcv(30, 100, 42)
         chart.set(df)
@@ -341,7 +338,6 @@ def test_multi_pane():
 
     try:
         chart.show(block=False)
-        chart.clear_handlers()
 
         df_main = make_ohlcv(30, 100, 42)
         chart.set(df_main)
@@ -442,7 +438,6 @@ def test_candle_with_main():
 
     try:
         chart.show(block=False)
-        chart.clear_handlers()
 
         df_main = make_ohlcv(30, 100, 42)
         df_ref = make_ohlcv(30, 200, 123)
@@ -530,7 +525,6 @@ def test_options():
 
     try:
         chart.show(block=False)
-        chart.clear_handlers()
 
         df = make_ohlcv(10, 100, 42)
         chart.set(df)

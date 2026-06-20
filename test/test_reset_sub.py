@@ -171,7 +171,6 @@ def main():
     try:
         print("\n[1] Launch chart ...")
         chart.show(block=False)
-        chart.clear_handlers()
         print("      [OK]")
 
         # 基线 JS 审计

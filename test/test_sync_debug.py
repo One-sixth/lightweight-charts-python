@@ -22,7 +22,6 @@ def main():
     chart.legend(visible=True); sub.legend(visible=True)
 
     chart.show(block=False)
-    chart.clear_handlers()
     time.sleep(1)
 
     # 检查 sync 前的状态

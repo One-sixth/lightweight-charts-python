@@ -4,87 +4,58 @@
 
 ---
 
-## [v2.7.0] - 2026-06-20
+## [v2.7.0] - 2026-06-21
 
-### 新功能
+### 核心架构变更
 
-- **所有 Series 支持标记（markers）**: Line、Histogram、VolumeSeries、OpenInterestSeries 现在都可以使用 `marker()` / `marker_list()` / `remove_marker()` / `clear_markers()` 创建和管理标记
-  - `_update_markers()` 动态创建 `seriesMarkers`（如果不存在则自动调用 `LightweightCharts.createSeriesMarkers`）
-  - 原本只有 CandleSeries 和主图表支持标记，现在所有系列都支持
-  - 新增示例 `examples/35_line_markers/` 展示 Line 和 Histogram 上的标记
+#### 固定 ID + 按需重建
+- **主 series 使用固定 ID**：`window.Chart_1_candle` / `window.Chart_1_volume` / `window.Chart_1_oi`
+  - ID 不由 IDGen 自动生成，但 audit 的 `GLOBALS_RE`（`Chart_\d` 前缀）能正确捕获
+  - 删除后按同名重建，JS 全局变量名一致
+- **Handler 构造函数惰性创建**：`this.series`/`this.volumeSeries`/`this.openInterestSeries`/`this.seriesMarkers` 全部设为 `null`
+  - 由 Python 端 AbstractChart.__init__ 创建后通过 JS 脚本设置 Handler 引用
+- **`reset()` 彻底清理**：删除 candle/volume/oi 的 JS 对象和 Python 状态，Handler 引用设为 null
+- **`set()` 按需重建**：检测 `self.candle`/`self.volume`/`self.oi` 为 None 时按固定 ID 重建
+- **`_wrap_handler` 删除**：不再需要，直接用 `_fixed_id` 参数创建
 
-### 架构重构：AbstractChart 组合模式
+#### VolumeSeries / OpenInterestSeries 独立化
+- **构造函数参数 `candle` → `chart`**：不再绑定 CandleSeries，只依赖 AbstractChart
+- **`_wrap_existing` 参数删除**：不再区分"包装"和"独立"模式
+- **`self._candle` 依赖移除**：`self._candle._normal_df()` → `self._normal_df()`（继承自 SeriesCommon）
+- **OHLC 着色保留**：有 `open`/`close` 列时自动着色，否则用默认 `_down_color`
+- **`price_scale_id` 参数暴露**：VolumeSeries/OI Series 的 `__init__` 支持自定义价格尺度 ID
+- **AbstractChart 直接管理**：`self.volume`/`self.oi` 由 AbstractChart 创建和管理，不再通过 `candle.attach_volume()`
 
-- **`AbstractChart` 从继承改为组合**：`class AbstractChart(Candlestick, Pane)` → `class AbstractChart(Pane)`
-  - `self.candle: CandleSeries` — 主 K 线（通过 `CandleSeries._wrap_handler()` 共享 Handler JS 对象）
-  - `self.volume: VolumeSeries` — 成交量（默认创建，复用 Handler 已有的 volumeSeries）
-  - `self.oi: OpenInterestSeries` — 持仓量（默认创建，复用 Handler 已有的 openInterestSeries）
-  - 6 个 `@property` 代理（`candle_data`/`data`/`markers`/`_last_bar`/`_interval`/`offset`）
-  - 4 个内部方法委托（`_single_datetime_format`/`_normal_df`/`_time_to_bar_time`/`_set_interval`）
-  - 不再使用 `__getattr__`，所有代理显式定义，IDE 友好
+#### CandleSeries 清理附属逻辑
+- **`_attached` 列表删除**：CandleSeries 不再管理附属 series
+- **`attach_volume`/`attach_open_interest` 删除**：由 AbstractChart 直接管理
+- **`delete()` 不再级联**：只删除自身，不删除 volume/oi
+- **`clear_data()` 不再级联**：只清自身数据
+- **`_toggle_data()` 不再遍历**：只控制自身显隐
+- **`set()` 不再自动转发**：volume/oi 数据由 AbstractChart.set() 转发
+- **`volume_config()`/`open_interest_config()` 委托**：改为委托到 `self._chart.volume`/`self._chart.oi`
 
-- **`Candlestick` 完全移除**：旧 341 行类代码删除，不再保留别名
+#### SeriesCommon 纯函数提取
+- `_normal_df` / `merge_value_by_time` / `get_df_interval_offset` / `time_to_bar_time` 提取到 `util.py`
+- SeriesCommon 中保留薄委托
 
-### 新增类
+#### 时间级别迁移至 AbstractChart
+- `_interval`/`offset`/`_period_locked` 从 SeriesCommon 迁移到 AbstractChart
+- `_set_interval`/`_time_to_bar_time`/`_single_datetime_format`/`set_period` 只在 AbstractChart 定义
+- SeriesCommon 中的 `_time_to_bar_time`/`_single_datetime_format` 委托到 `self._chart`
+- `set()` 中 `_set_interval` 在 `normal_df` 之后调用
+- SeriesCommon.set() 增加初始化检查
 
-- **`VolumeSeries`**：成交量柱状图，继承 `SeriesCommon`
-  - `set(df)` / `update(series)` / `update_batch(df)` — 自动根据 OHLC 涨跌着色
-  - `config(up_color, down_color, scale_margin_top, scale_margin_bottom)` — 样式配置
-  - `delete()` / `_toggle_data()` / `_update_markers()`
-  - `_wrap_existing` 模式 — 主图表复用 Handler 已有的 volumeSeries，避免重复创建
-  - `self._wrap_existing` 属性已保存（用于 `clear_data()` 判断是否删除）
+#### 其他改进
+- **`_update_markers` 统一 try-catch**：SeriesCommon 中升级，CandleSeries 删除冗余覆盖
+- **`VerticalSpan` 修复**：参数 `series` → `chart`，时间处理统一用 `_single_datetime_format`，新增参数校验
+- **`_is_subchart` 属性**：`reset()`/`clear_handlers()` 限制仅主图可调用
+- **`remove_subchart` 清理**：JS 端遍历 window 全局变量，删除引用子图表 series 的 VolumeSeries/OI
+- **`@property` None 保护**：`candle_data`/`data`/`markers`/`_last_bar` 在 `self.candle` 为 None 时返回安全默认值
+- **test_cleanup.py**：新增 `test_reset_cleanup()` 验证 reset 后 series 全部删除再重建；WARN 改为 FAIL
 
-- **`OpenInterestSeries`**：持仓量折线，继承 `SeriesCommon`
-  - `set(df)` / `update(series)` / `update_batch(df)`
-  - `config(color, line_width, scale_margin_top, scale_margin_bottom)`
-  - `delete()` / `_toggle_data()`
-  - `_wrap_existing` 模式同上
-
-### CandleSeries 增强
-
-- `_wrap_handler(chart)` 类方法 — 组合模式包装 Handler 主 series
-- `clear_data()` — 清空 candle + volume + OI；`_wrap_existing` 的附属 series 只清数据不删除
-- `attach_volume()` / `attach_open_interest()` — 创建并绑定附属 series（主图表自动 `_wrap_existing`）
-- `candle_style()` — K 线样式配置（从 SeriesCommon 移入）
-- `volume_config()` — 薄委托，找到 VolumeSeries 调 `config()`
-- `open_interest_config()` — 薄委托，找到 OpenInterestSeries 调 `config()`
-- `price_scale()` / `set_price_format()` — 价格坐标轴配置
-- `update_from_tick()` / `update_from_ticks()` — OHLC 聚合 + volume/OI 处理（覆盖 SeriesCommon 通用版）
-- `set()` / `update_batch()` — 自动检测 volume/OI 列并转发给附属 series
-- `delete()` — 级联删除附属 series
-- `_toggle_data()` — 覆盖基类，遍历 `self._attached` 同步显隐
-
-### SeriesCommon 精简
-
-- **移至 AbstractChart**：`horizontal_line`/`trend_line`/`box`/`ray_line`/`vertical_line`/`vertical_span`/`create_price_line`（绘图方法）
-- **移至 CandleSeries**：`candle_style`/`volume_config`/`open_interest_config`/`update_from_tick`/`update_from_ticks`（K 线特化方法）
-- **保留**：数据工具（`_normal_df`/`_time_to_bar_time`/`_merge_value_by_time`/`_set_interval`）、标记（`marker`/`remove_marker`/`marker_list`/`clear_markers`）、精度（`precision`）、显隐（`hide_data`/`show_data`）
-- **新增通用版**：`update_from_tick(series)` / `update_from_ticks(df)` — 按 time 分组取 last，无 `cumulative_volume` 参数
-- **`_update_markers`** 升级为 try-catch 版本（防止 JS 错误中断 async IIFE）
-
-### AbstractChart 新增
-
-- `attach_volume(**kwargs)` / `attach_open_interest(**kwargs)` — 创建并绑定附属 series
-- `_is_subchart` 属性 — 标识是否为子图（`create_subchart()` 设为 True）
-- `reset()` — 限制仅主图表可调用，子图抛 `RuntimeError`
-- `clear_handlers()` — 限制仅主图表可调用，子图抛 `RuntimeError`
-- `remove_subchart()` — 增强：清理子图表的 VolumeSeries/OI JS 全局变量
-- `watermark()` — 修复：`self._chart.id` → `self.id`
-
-### drawings.py 修复
-
-- **`VerticalSpan`**：参数 `series` → `chart`（与其他 Drawing 类一致）
-- **`VerticalSpan`**：时间处理统一用 `_single_datetime_format()`（修复数字时间戳误解、bar 时间对齐缺失）
-- **`VerticalSpan`**：新增参数校验 — `start_time` 为多值时 `end_time` 必须为 None
-- 删除 AbstractChart 上的 `_chart` property（不再需要）
-
-### test_cleanup.py 适配
-
-- 泄漏检测排除 VolumeSeries/OpenInterestSeries（Chart 固有组件，默认创建）
-
-### Handler JS 端
-
-- `GLOBALS_RE` 正则新增 `VolumeSeries_\d` 和 `OpenInterestSeries_\d` 匹配
+### 新增示例
+- `examples/35_line_markers/` — Line 和 Histogram 上的标记演示
 
 ---
 

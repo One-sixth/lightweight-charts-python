@@ -252,11 +252,15 @@ class Window:
 
 class SeriesCommon(Pane):
     """图表的系列数据基类，管理数据更新、标记、绘图和价格线。"""
-    def __init__(self, chart: 'AbstractChart', name: str = '', pane_index: int = 0):
+    def __init__(self, chart: 'AbstractChart', name: str = '', pane_index: int = 0, _fixed_id: str = None):
         """
         :param chart: 所属的 AbstractChart 实例
         :param name: 系列名称（用于图例标识）
-        :param pane_index: 所属面板索引"""
+        :param pane_index: 所属面板索引
+        :param _fixed_id: 固定 ID（如 'window.Chart_1_candle'），跳过 IDGen 自动生成
+        """
+        if _fixed_id:
+            self.id = _fixed_id
         super().__init__(chart.win)
         self._chart = chart
         self._last_bar = None
@@ -622,11 +626,7 @@ class SeriesCommon(Pane):
         self._toggle_data(True)
 
     def _toggle_data(self, arg):
-        self.run_script(f'''
-        {self.id}.series.applyOptions({{visible: {jbool(arg)}}});
-        if ('volumeSeries' in {self.id}) {self.id}.volumeSeries.applyOptions({{visible: {jbool(arg)}}});
-        if ('openInterestSeries' in {self.id}) {self.id}.openInterestSeries.applyOptions({{visible: {jbool(arg)}}});
-        ''')
+        self.run_script(f'{self.id}.series.applyOptions({{visible: {jbool(arg)}}})')
 
 
 class PriceLine(Pane):
@@ -784,17 +784,13 @@ class Histogram(SeriesCommon):
 
 
 class VolumeSeries(SeriesCommon):
-    """成交量柱状图，绑定到 CandleSeries，自动根据 K 线涨跌着色。
+    """成交量柱状图，独立系列，自动根据 K 线涨跌着色。
 
-    通常通过 ``CandleSeries.attach_volume()`` 或 ``AbstractChart.attach_volume()``
-    创建，也可以独立创建后手动 ``set()``。
+    通常通过 ``AbstractChart.attach_volume()`` 创建，也可以独立创建后手动 ``set()``。
 
     用法示例::
 
-        # 通过 chart 自动 attach（set 检测到 volume 列时自动创建）
-        chart.set(df_with_volume)
-
-        # 手动 attach
+        # 通过 chart 创建
         vol = chart.attach_volume(up_color='green', down_color='red')
         vol.set(df)
 
@@ -805,60 +801,56 @@ class VolumeSeries(SeriesCommon):
         vol.delete()
     """
 
-    def __init__(self, candle: 'CandleSeries', pane_index: int = None,
+    def __init__(self, chart: 'AbstractChart', pane_index: int = None,
                  up_color: str = 'rgba(83,141,131,0.8)',
                  down_color: str = 'rgba(200,127,130,0.8)',
                  scale_margin_top: float = 0.8,
                  scale_margin_bottom: float = 0.0,
                  price_scale_id: str = 'volume_scale',
-                 _wrap_existing: bool = False):
+                 _fixed_id: str = None,
+                 _dont_add_list: bool = False):
         """
-        :param candle: 绑定的 CandleSeries 实例，用于获取 OHLC 着色
-        :param pane_index: 面板索引，None 则跟随 candle 的 pane_index
+        :param chart: 所属的 AbstractChart 实例
+        :param pane_index: 面板索引，None 则为 0
         :param up_color: 上涨颜色（close > open）
         :param down_color: 下跌颜色（close <= open）
         :param scale_margin_top: 价格轴顶部边距（0-1）
         :param scale_margin_bottom: 价格轴底部边距（0-1）
         :param price_scale_id: 价格尺度 ID，相同 ID 的 series 共享价格尺度。默认 'volume_scale'
-        :param _wrap_existing: 内部参数，True 时包装 Handler 已有的 volumeSeries（不创建新 JS 对象）
+        :param _fixed_id: 固定 ID，跳过 IDGen 自动生成
+        :param _dont_add_list: 是否跳过 JS 端 _seriesList 注册。
+            默认 False（加入列表）。
+            设为 True 时，创建的 series 不会进入 Handler._seriesList，
+            audit() 的 extraSeriesCount 不会将其计入。
+            AbstractChart 默认创建时传 True，因为成交量是图表固有组件，
+            不应被视为"额外系列"。用户独立创建时保持默认 False 即可。
         """
-        pane = pane_index if pane_index is not None else candle.pane_index
-        super().__init__(candle._chart, name='', pane_index=pane)
-        self._candle = candle
+        pane = pane_index if pane_index is not None else 0
+        super().__init__(chart, name='', pane_index=pane, _fixed_id=_fixed_id)
         self._up_color = up_color
         self._down_color = down_color
-        self._wrap_existing = _wrap_existing
 
-        if _wrap_existing:
-            # 包装模式：复用 Handler 已有的 volumeSeries，不创建新 JS 对象
-            # self.id 已由 Pane.__init__ 自动生成，我们需要指向 Handler 的 volumeSeries
-            # 创建一个轻量包装对象
-            self.run_script(f'''
-                {self.id} = {{}};
-                {self.id}.series = {candle.id}.volumeSeries;
-            ;0''')
-        else:
-            # 独立模式：创建新的 HistogramSeries
-            self.run_script(f'''
-                {self.id} = {self._chart.id}.createHistogramSeries(
-                    "",
-                    {{
-                        color: '{down_color}',
-                        lastValueVisible: false,
-                        priceLineVisible: false,
-                        priceScaleId: '{price_scale_id}',
-                        priceFormat: {{type: "volume"}},
-                    }},
-                    {pane}
-                )
-                {self.id}.series.priceScale().applyOptions({{
-                    scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}}
-                }});0''')
+        self.run_script(f'''
+            {self.id} = {self._chart.id}.createHistogramSeries(
+                "",
+                {{
+                    color: '{down_color}',
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                    priceScaleId: '{price_scale_id}',
+                    priceFormat: {{type: "volume"}},
+                }},
+                {pane},
+                {jbool(_dont_add_list)}
+            )
+            {self.id}.series.priceScale().applyOptions({{
+                scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}}
+            }});0''')
 
     def set(self, df: pd.DataFrame):
-        """设置成交量数据。自动根据绑定的 candle 的 OHLC 着色。
+        """设置成交量数据。自动根据 OHLC 着色。
 
-        :param df: DataFrame，需要包含 time 和 volume 列。如果包含 open/close 列则自动着色。
+        :param df: DataFrame，需要包含 time 和 volume 列。如果包含 open/close 列则自动着色，否则使用默认色。
         """
         if df is None or df.empty:
             self.run_script(f'{self.id}.series.setData([])')
@@ -867,7 +859,7 @@ class VolumeSeries(SeriesCommon):
         if 'volume' not in df.columns:
             return
 
-        df = self._candle._normal_df(df)
+        df = self._normal_df(df)
         df = self._chart._time_to_bar_time(df)
 
         vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
@@ -896,7 +888,7 @@ class VolumeSeries(SeriesCommon):
         if df is None or df.empty:
             return
 
-        df = self._candle._normal_df(df)
+        df = self._normal_df(df)
         df = self._chart._time_to_bar_time(df)
 
         if 'volume' not in df.columns:
@@ -950,16 +942,12 @@ class VolumeSeries(SeriesCommon):
             delete {self.id}
         ''')
 
-    def _toggle_data(self, arg):
-        """显示/隐藏成交量系列。"""
-        self.run_script(f'{self.id}.series.applyOptions({{visible: {jbool(arg)}}})')
 
 
 class OpenInterestSeries(SeriesCommon):
-    """持仓量折线，绑定到 CandleSeries。
+    """持仓量折线，独立系列。
 
-    通常通过 ``CandleSeries.attach_open_interest()`` 或
-    ``AbstractChart.attach_open_interest()`` 创建。
+    通常通过 ``AbstractChart.attach_open_interest()`` 创建。
 
     用法示例::
 
@@ -969,52 +957,52 @@ class OpenInterestSeries(SeriesCommon):
         oi.delete()
     """
 
-    def __init__(self, candle: 'CandleSeries', pane_index: int = None,
+    def __init__(self, chart: 'AbstractChart', pane_index: int = None,
                  color: str = '#F5A623',
                  line_width: int = 1,
                  scale_margin_top: float = 0.8,
                  scale_margin_bottom: float = 0.0,
                  price_scale_id: str = 'oi_scale',
-                 _wrap_existing: bool = False):
+                 _fixed_id: str = None,
+                 _dont_add_list: bool = False):
         """
-        :param candle: 绑定的 CandleSeries 实例
-        :param pane_index: 面板索引，None 则跟随 candle
+        :param chart: 所属的 AbstractChart 实例
+        :param pane_index: 面板索引，None 则为 0
         :param color: 线条颜色
         :param line_width: 线宽
         :param scale_margin_top: 价格轴顶部边距
         :param scale_margin_bottom: 价格轴底部边距
         :param price_scale_id: 价格尺度 ID，相同 ID 的 series 共享价格尺度。默认 'oi_scale'
-        :param _wrap_existing: 内部参数，True 时包装 Handler 已有的 openInterestSeries
+        :param _fixed_id: 固定 ID，跳过 IDGen 自动生成
+        :param _dont_add_list: 是否跳过 JS 端 _seriesList 注册。
+            默认 False（加入列表）。
+            设为 True 时，创建的 series 不会进入 Handler._seriesList，
+            audit() 的 extraSeriesCount 不会将其计入。
+            AbstractChart 默认创建时传 True，因为持仓量是图表固有组件，
+            不应被视为"额外系列"。用户独立创建时保持默认 False 即可。
         """
-        pane = pane_index if pane_index is not None else candle.pane_index
-        super().__init__(candle._chart, name='', pane_index=pane)
-        self._candle = candle
+        pane = pane_index if pane_index is not None else 0
+        super().__init__(chart, name='', pane_index=pane, _fixed_id=_fixed_id)
         self._color = color
-        self._wrap_existing = _wrap_existing
 
-        if _wrap_existing:
-            self.run_script(f'''
-                {self.id} = {{}};
-                {self.id}.series = {candle.id}.openInterestSeries;
-            ;0''')
-        else:
-            self.run_script(f'''
-                {self.id} = {self._chart.id}.createLineSeries(
-                    "",
-                    {{
-                        color: '{color}',
-                        lineWidth: {line_width},
-                        priceScaleId: '{price_scale_id}',
-                        lastValueVisible: false,
-                        priceLineVisible: false,
-                        crosshairMarkerVisible: true,
-                    }},
-                    {pane}
-                )
-                {self.id}.series.priceScale().applyOptions({{
-                    scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}},
-                    autoScale: true,
-                }});0''')
+        self.run_script(f'''
+            {self.id} = {self._chart.id}.createLineSeries(
+                "",
+                {{
+                    color: '{color}',
+                    lineWidth: {line_width},
+                    priceScaleId: '{price_scale_id}',
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                    crosshairMarkerVisible: true,
+                }},
+                {pane},
+                {jbool(_dont_add_list)}
+            )
+            {self.id}.series.priceScale().applyOptions({{
+                scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}},
+                autoScale: true,
+            }});0''')
 
     def set(self, df: pd.DataFrame):
         """设置持仓量数据。
@@ -1028,7 +1016,7 @@ class OpenInterestSeries(SeriesCommon):
         if 'open_interest' not in df.columns:
             return
 
-        df = self._candle._normal_df(df)
+        df = self._normal_df(df)
         df = self._chart._time_to_bar_time(df)
 
         oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
@@ -1043,7 +1031,7 @@ class OpenInterestSeries(SeriesCommon):
         if df is None or df.empty:
             return
 
-        df = self._candle._normal_df(df)
+        df = self._normal_df(df)
         df = self._chart._time_to_bar_time(df)
 
         if 'open_interest' not in df.columns:
@@ -1089,9 +1077,6 @@ class OpenInterestSeries(SeriesCommon):
             delete {self.id}
         ''')
 
-    def _toggle_data(self, arg):
-        """显示/隐藏持仓量系列。"""
-        self.run_script(f'{self.id}.series.applyOptions({{visible: {jbool(arg)}}})')
 
 
 class CandleSeries(SeriesCommon):
@@ -1117,12 +1102,33 @@ class CandleSeries(SeriesCommon):
                  border_visible: bool = True, wick_visible: bool = True,
                  price_line: bool = False, price_label: bool = True,
                  price_scale_id: Optional[str] = None,
-                 crosshair_marker: bool = True):
-        super().__init__(chart, name, pane_index)
+                 crosshair_marker: bool = True,
+                 _fixed_id: str = None,
+                 _dont_add_list: bool = False):
+        """
+        :param chart: 所属的 AbstractChart 实例
+        :param name: 系列名称
+        :param pane_index: 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
+        :param up_color: 上涨颜色
+        :param down_color: 下跌颜色
+        :param border_visible: 是否显示边框
+        :param wick_visible: 是否显示影线
+        :param price_line: 是否显示价格线
+        :param price_label: 是否显示价格标签
+        :param price_scale_id: 价格尺度 ID
+        :param crosshair_marker: 十字光标标记
+        :param _fixed_id: 固定 ID，跳过 IDGen 自动生成
+        :param _dont_add_list: 是否跳过 JS 端 _seriesList 注册和 legend 图例行创建。
+            默认 False（加入列表 + 创建图例行）。
+            设为 True 时：
+            - 不进入 _seriesList（audit 的 extraSeriesCount 不计入）
+            - 不创建 legend 图例行（不会显示独立的颜色方块图例）
+            AbstractChart 默认创建时传 True，因为 K 线是图表固有组件，
+            不应被视为"额外系列"，也不应在 legend 中显示独立条目。
+            用户独立创建时保持默认 False 即可。
+        """
+        super().__init__(chart, name, pane_index, _fixed_id=_fixed_id)
         self.candle_data = pd.DataFrame()
-        self._has_volume = False
-        self._has_open_interest = False
-        self._attached: list = []  # 附属 series（VolumeSeries, OpenInterestSeries）
 
         border_up_color = up_color
         border_down_color = down_color
@@ -1146,89 +1152,23 @@ class CandleSeries(SeriesCommon):
                     crosshairMarkerVisible: {jbool(crosshair_marker)},
                     priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
                 }},
-                {pane_index}
+                {pane_index},
+                {jbool(_dont_add_list)}
             );0''')
 
-    @classmethod
-    def _wrap_handler(cls, chart: 'AbstractChart') -> 'CandleSeries':
-        """创建包装 Handler 主 series 的 CandleSeries（不创建新 JS 对象）。
-
-        用于组合模式：AbstractChart 通过此方法创建 self.candle，
-        共享 Handler 的 JS 对象引用（self.candle.id == chart.id）。
-        """
-        obj = cls.__new__(cls)
-        Pane.__init__(obj, chart.win)
-        obj._chart = chart
-        obj.id = chart.id  # 共享 Handler JS 对象
-        obj.name = ''
-        obj.pane_index = 0
-        obj._last_bar = None
-        obj.data = pd.DataFrame()
-        obj.candle_data = pd.DataFrame()
-        obj._has_volume = False
-        obj._has_open_interest = False
-        obj._attached = []
-        obj.markers = {}
-        obj.num_decimals = 2
-        return obj
-
     def clear_data(self):
-        """清空所有 K 线数据（candle + volume + OI）。
-
-        _wrap_existing 的附属 series 只清数据不删除（它们是 Handler 的固有组件），
-        非 _wrap_existing 的附属 series 完全删除（它们是独立创建的 JS 对象）。
-        """
+        """清空所有 K 线数据。"""
         self.run_script(f'{self.id}.series.setData([])')
         self.candle_data = pd.DataFrame()
         self.data = pd.DataFrame()
         self._last_bar = None
-        for attached in list(self._attached):
-            if getattr(attached, '_wrap_existing', False):
-                # 只清数据，不删除 JS 对象
-                self.run_script(f'{attached.id}.series.setData([])')
-            else:
-                # 独立创建的 series，完全删除
-                attached.delete()
-                self._attached.remove(attached)
-        self._has_volume = any(isinstance(a, VolumeSeries) for a in self._attached)
-        self._has_open_interest = any(isinstance(a, OpenInterestSeries) for a in self._attached)
-
-    def attach_volume(self, **kwargs) -> 'VolumeSeries':
-        """创建并绑定成交量系列。
-
-        主图表（_wrap_handler 模式）复用 Handler 已有的 volumeSeries，
-        独立 CandleSeries 创建新的 HistogramSeries。
-
-        :return: VolumeSeries 实例
-        """
-        # 检测是否为主图表（id 与 chart.id 相同 → _wrap_handler 模式）
-        is_main = (self.id == self._chart.id)
-        vol = VolumeSeries(self, _wrap_existing=is_main, **kwargs)
-        self._attached.append(vol)
-        self._has_volume = True
-        return vol
-
-    def attach_open_interest(self, **kwargs) -> 'OpenInterestSeries':
-        """创建并绑定持仓量系列。
-
-        主图表复用 Handler 已有的 openInterestSeries，
-        独立 CandleSeries 创建新的 LineSeries。
-
-        :return: OpenInterestSeries 实例
-        """
-        is_main = (self.id == self._chart.id)
-        oi = OpenInterestSeries(self, _wrap_existing=is_main, **kwargs)
-        self._attached.append(oi)
-        self._has_open_interest = True
-        return oi
 
     def set(self, df: Optional[pd.DataFrame] = None, keep_drawings=False):
         """
         设置 K 线初始数据。
 
         :param df: DataFrame，必须包含 time/date 列和 open, high, low, close 列。
-            如果包含 volume 列且未 attach VolumeSeries，会自动创建。
-            如果包含 open_interest 列且未 attach OpenInterestSeries，会自动创建。
+            如果为 None 或空 DataFrame，则清空数据。
             如果为 None 或空 DataFrame，则清空数据。
         """
         self.run_script(f"{self.id}.series.setData([])")
@@ -1254,19 +1194,6 @@ class CandleSeries(SeriesCommon):
 
         ohlc_js_data = js_data(ohlc)
         self.run_script(f'{self.id}.series.setData({ohlc_js_data}); ')
-
-        # 检测并自动 attach volume/OI
-        if 'volume' in df.columns and not any(isinstance(a, VolumeSeries) for a in self._attached):
-            self.attach_volume()
-        if 'open_interest' in df.columns and not any(isinstance(a, OpenInterestSeries) for a in self._attached):
-            self.attach_open_interest()
-
-        # 转发数据给附属 series
-        for attached in self._attached:
-            if isinstance(attached, VolumeSeries):
-                attached.set(df)
-            elif isinstance(attached, OpenInterestSeries):
-                attached.set(df)
 
         if self.markers:
             self._update_markers()
@@ -1331,23 +1258,8 @@ class CandleSeries(SeriesCommon):
 
         self.run_script(' '.join(js_commands))
 
-        # 转发给附属 series
-        for attached in self._attached:
-            if isinstance(attached, VolumeSeries) and 'volume' in df.columns:
-                attached.update_batch(df)
-            elif isinstance(attached, OpenInterestSeries) and 'open_interest' in df.columns:
-                attached.update_batch(df)
-
     def delete(self):
-        """删除此 K 线系列及其附属 series（volume/OI）。"""
-        # 先删除附属 series（VolumeSeries / OpenInterestSeries）
-        for attached in list(self._attached):
-            attached.delete()
-        self._attached.clear()
-        self._has_volume = False
-        self._has_open_interest = False
-
-        # 再删除自身
+        """删除此 K 线系列。"""
         self._chart._lines.remove(self) if self in self._chart._lines else None
         self.run_script(f'''
             {self._chart.id}.chart.removeSeries({self.id}.series)
@@ -1360,12 +1272,6 @@ class CandleSeries(SeriesCommon):
             delete {self.id}legendItem
             delete {self.id}
         ''')
-
-    def _toggle_data(self, arg):
-        """显示/隐藏 K 线及其附属 series（volume/OI）。"""
-        self.run_script(f'{self.id}.series.applyOptions({{visible: {jbool(arg)}}})')
-        for attached in self._attached:
-            attached._toggle_data(arg)
 
     def candle_style(
             self, up_color: str = 'rgba(39, 157, 130, 100)', down_color: str = 'rgba(200, 97, 100, 100)',
@@ -1384,24 +1290,19 @@ class CandleSeries(SeriesCommon):
     def volume_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0,
                       up_color=None, down_color=None):
         """
-        Configure volume settings.
-        Numbers for scaling must be greater than 0 and less than 1.
-        Volume colors must be applied prior to setting/updating the bars.
+        Configure volume settings. Delegates to chart.volume.
         """
-        vol = next((a for a in self._attached if isinstance(a, VolumeSeries)), None)
-        if vol:
-            vol.config(scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom,
+        if self._chart.volume:
+            self._chart.volume.config(scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom,
                        up_color=up_color, down_color=down_color)
 
     def open_interest_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0,
                              color=None):
         """
-        Configure open interest settings.
-        Numbers for scaling must be greater than 0 and less than 1.
+        Configure open interest settings. Delegates to chart.oi.
         """
-        oi = next((a for a in self._attached if isinstance(a, OpenInterestSeries)), None)
-        if oi:
-            oi.config(scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom,
+        if self._chart.oi:
+            self._chart.oi.config(scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom,
                       color=color)
 
     def price_scale(
@@ -1569,11 +1470,28 @@ class AbstractChart(Pane):
         )
         self.run_script(self._html_chart_init + ';0')
 
-        # ── 组合模式：主 K 线作为 CandleSeries 包装 Handler ──
-        self.candle = CandleSeries._wrap_handler(self)
-        # volume 和 oi 默认创建（复用 Handler 已有的 JS series）
-        self.volume: 'VolumeSeries' = self.candle.attach_volume()
-        self.oi: 'OpenInterestSeries' = self.candle.attach_open_interest()
+        # ── 组合模式：主 series 使用固定 ID 创建 ──
+        base = self.id.replace('window.', '')  # 如 'Chart_1'
+        self.candle = CandleSeries(self, _fixed_id=f'window.{base}_candle', _dont_add_list=True)
+        self.volume: 'VolumeSeries' = VolumeSeries(self, _fixed_id=f'window.{base}_volume', _dont_add_list=True)
+        self.oi: 'OpenInterestSeries' = OpenInterestSeries(self, _fixed_id=f'window.{base}_oi', _dont_add_list=True)
+
+        # 设置 Handler 的 series 引用（audit 和 _toggle_data 需要）
+        self.run_script(f'''
+            {self.id}.series = {self.candle.id}.series;
+            {self.id}.seriesMarkers = {self.candle.id}.seriesMarkers;
+            {self.id}.volumeSeries = {self.volume.id}.series;
+            {self.id}.openInterestSeries = {self.oi.id}.series;
+            // 主 candle 不应出现在 _seriesList 中（它属于 Handler 主 series）
+            // volume/oi 保留在 _seriesList（它们是独立 series）
+            var _ci = {self.id}._seriesList.indexOf({self.candle.id}.series);
+            if (_ci >= 0) {self.id}._seriesList.splice(_ci, 1);
+            var _li = {self.id}.legend._lines.find(l => l.series === {self.candle.id}.series);
+            if (_li) {{
+                {self.id}.legend._lines = {self.id}.legend._lines.filter(l => l !== _li);
+                try {{ {self.id}.legend.div.removeChild(_li.row) }} catch(e) {{}}
+            }}
+        ;0''')
 
         self.subcharts.append(self.id)
 
@@ -1590,22 +1508,22 @@ class AbstractChart(Pane):
     @property
     def candle_data(self):
         """K 线数据 DataFrame。"""
-        return self.candle.candle_data
+        return self.candle.candle_data if self.candle else pd.DataFrame()
 
     @property
     def data(self):
         """系列数据 DataFrame。"""
-        return self.candle.data
+        return self.candle.data if self.candle else pd.DataFrame()
 
     @property
     def markers(self):
         """标记字典。"""
-        return self.candle.markers
+        return self.candle.markers if self.candle else {}
 
     @property
     def _last_bar(self):
         """最后一根 bar 的数据。"""
-        return self.candle._last_bar
+        return self.candle._last_bar if self.candle else None
 
     # ── 时间级别方法（图表级，不再委托到 candle）──
 
@@ -1660,10 +1578,33 @@ class AbstractChart(Pane):
     # ── 高频数据方法（显式委托，IDE 友好）──
 
     def set(self, df=None, keep_drawings=False):
-        """设置 K 线数据。自动检测 volume/OI 列并转发数据。"""
+        """设置 K 线数据。自动检测 volume/OI 列并转发数据给独立 series。"""
         if df is not None and not df.empty:
             df = self._normal_df(df)
             self._set_interval(df)
+
+            # 检测并重建被 reset() 删除的 series
+            base = self.id.replace('window.', '')
+            if self.candle is None:
+                self.candle = CandleSeries(self, _fixed_id=f'window.{base}_candle', _dont_add_list=True)
+                self.run_script(f'''
+                    {self.id}.series = {self.candle.id}.series;
+                    {self.id}.seriesMarkers = {self.candle.id}.seriesMarkers;
+                    var _ci = {self.id}._seriesList.indexOf({self.candle.id}.series);
+                    if (_ci >= 0) {self.id}._seriesList.splice(_ci, 1);
+                ;0''')
+            if 'volume' in df.columns and self.volume is None:
+                self.volume = VolumeSeries(self, _fixed_id=f'window.{base}_volume', _dont_add_list=True)
+                self.run_script(f'{self.id}.volumeSeries = {self.volume.id}.series;0')
+            if 'open_interest' in df.columns and self.oi is None:
+                self.oi = OpenInterestSeries(self, _fixed_id=f'window.{base}_oi', _dont_add_list=True)
+                self.run_script(f'{self.id}.openInterestSeries = {self.oi.id}.series;0')
+
+            # 转发给 volume/oi
+            if self.volume and 'volume' in df.columns:
+                self.volume.set(df)
+            if self.oi and 'open_interest' in df.columns:
+                self.oi.set(df)
         return self.candle.set(df, keep_drawings)
 
     def update(self, series):
@@ -1687,28 +1628,12 @@ class AbstractChart(Pane):
         return self.candle.update_from_ticks(df, cumulative_volume)
 
     def clear_data(self):
-        """清空所有 K 线数据。"""
-        return self.candle.clear_data()
-
-    # ── 附属 series 管理 ──
-
-    def attach_volume(self, **kwargs) -> 'VolumeSeries':
-        """创建并绑定成交量系列。
-
-        :return: VolumeSeries 实例
-        """
-        vol = self.candle.attach_volume(**kwargs)
-        self.volume = vol
-        return vol
-
-    def attach_open_interest(self, **kwargs) -> 'OpenInterestSeries':
-        """创建并绑定持仓量系列。
-
-        :return: OpenInterestSeries 实例
-        """
-        oi = self.candle.attach_open_interest(**kwargs)
-        self.oi = oi
-        return oi
+        """清空所有 K 线数据（K线 + 成交量 + 持仓量）。"""
+        self.candle.clear_data()
+        if self.volume:
+            self.volume.run_script(f'{self.volume.id}.series.setData([])')
+        if self.oi:
+            self.oi.run_script(f'{self.oi.id}.series.setData([])')
 
     # ── 标记方法（显式委托）──
 
@@ -1800,12 +1725,20 @@ class AbstractChart(Pane):
         return self.candle.pop(count)
 
     def hide_data(self):
-        """隐藏数据。"""
-        return self.candle.hide_data()
+        """隐藏所有数据（candle + volume + oi）。"""
+        self.candle.hide_data()
+        if self.volume:
+            self.volume.hide_data()
+        if self.oi:
+            self.oi.hide_data()
 
     def show_data(self):
-        """显示数据。"""
-        return self.candle.show_data()
+        """显示所有数据（candle + volume + oi）。"""
+        self.candle.show_data()
+        if self.volume:
+            self.volume.show_data()
+        if self.oi:
+            self.oi.show_data()
 
     # ═══════════════════════════════════════════════════════
 
@@ -1852,13 +1785,21 @@ class AbstractChart(Pane):
             )
         ''')
 
-    def clear_handlers(self):
+    def _clear_handlers(self):
         """
-        Clears all registered event/message handlers in the Window.
-        Only available on the main chart (not subcharts).
+        清空 Window 上所有图表的全部 handler 回调。
+
+        ⚠️ 内部方法，仅供 reset() 调用。不应手动调用！
+
+        原因：
+        - 会清掉 ToolBox 的 save_drawings 回调、TopBar 控件回调、
+          JSEmitter 事件回调、hotkey 回调等所有已注册的 handler
+        - reset() 调用后会立即恢复主图的 ToolBox handler，
+          但其他 handler（如 events.search/click/crosshair 等）不会恢复
+        - 如果确实需要清理特定图表的 handler，应使用 _remove_my_handlers()
         """
         if self._is_subchart:
-            raise RuntimeError("clear_handlers() 只能在主图表上调用，不能在子图上调用。")
+            raise RuntimeError("_clear_handlers() 只能在主图表上调用，不能在子图上调用。")
         self.win.handlers.clear()
 
     def reset(self):
@@ -1866,32 +1807,66 @@ class AbstractChart(Pane):
         Resets the chart to a clean initial state without destroying the WebView.
         Only available on the main chart (not subcharts).
 
-        Performs:
-        1. Clears all OHLCV data (candle + volume series)
-        2. Deletes all extra Line and Histogram series
-        3. Clears all price markers
-        4. Clears all toolbox drawings (JS + Python)
-        5. Resets the subcharts list
-        6. Clears event handlers to prevent accumulation
-
-        After reset(), the chart is ready for new data via set().
+        Deletes candle/volume/oi JS objects and resets Python state.
+        After reset(), call set() to recreate and repopulate.
         TopBar widgets and styling options are preserved.
         """
         if self._is_subchart:
             raise RuntimeError("reset() 只能在主图表上调用。子图请使用 reset_sub()。")
-        self.clear_data()
+
+        # 1. 删除 candle/volume/oi 的 JS 对象和 Python 数据
+        for series in [self.candle, self.volume, self.oi]:
+            if series is not None:
+                self.run_script(f'''
+                    {self.id}.chart.removeSeries({series.id}.series);
+                    var _idx = {self.id}._seriesList.indexOf({series.id}.series);
+                    if (_idx >= 0) {self.id}._seriesList.splice(_idx, 1);
+                    delete {series.id};
+                ''')
+                series.candle_data = pd.DataFrame()
+                series.data = pd.DataFrame()
+                series._last_bar = None
+
+        # 2. 重置 Handler 引用和 Python 状态
+        self.run_script(f'''
+            {self.id}.series = null;
+            {self.id}.volumeSeries = null;
+            {self.id}.openInterestSeries = null;
+            if ({self.id}.seriesMarkers) {self.id}.seriesMarkers.setMarkers([]);
+            {self.id}.seriesMarkers = null;
+        ''')
+        self.candle.data = pd.DataFrame()
+        self.candle.candle_data = pd.DataFrame()
+        self.candle._last_bar = None
+        self.candle.markers.clear()
+        self.candle = None
+        self.volume = None
+        self.oi = None
+        self._interval = None
+        self.offset = 0
+        self._period_locked = False
+
+        # 3. 删除所有附属 Line/Histogram 系列
         for line in list(self._lines):
             line.delete()
-        self.clear_markers()
+
+        # 4. 清理绘图
         self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.clearDrawings()')
         if hasattr(self, 'toolbox'):
             self.toolbox.drawings.clear()
-        # clean up subcharts (skip the main chart itself)
+
+        # 6. 清理子图表
         for sub_id in list(self.subcharts):
             if sub_id != self.id:
                 self.remove_subchart(sub_id)
         self.subcharts = [self.id]
-        self.clear_handlers()
+
+        # 7. 清理事件处理器（包括子图的 ToolBox/topbar/events 等回调）
+        self._clear_handlers()
+
+        # 8. 恢复主图 ToolBox handler（_clear_handlers 把它也清了，但 ToolBox 对象还在）
+        if hasattr(self, 'toolbox'):
+            self.win.handlers[f'save_drawings{self.id}'] = self.toolbox._save_drawings
 
     def remove_subchart(self, subchart_id: str):
         """

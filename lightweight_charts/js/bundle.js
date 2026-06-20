@@ -2204,8 +2204,8 @@ var Lib = (function (exports, lightweightCharts) {
         chart;
         scale;
         precision = 2;
-        series;
-        volumeSeries;
+        series = null;
+        volumeSeries = null;
         openInterestSeries = null;
         _interval = 86400;
         legend;
@@ -2288,10 +2288,10 @@ var Lib = (function (exports, lightweightCharts) {
                 requestAnimationFrame(() => this.reSize());
             });
             this.chart = this._createChart();
-            this.series = this.createCandlestickSeries(paneIndex);
-            this.volumeSeries = this.createVolumeSeries(paneIndex);
-            this.openInterestSeries = this.createOpenInterestSeries(paneIndex);
-            this.seriesMarkers = lightweightCharts.createSeriesMarkers(this.series, [], { autoScale: marker_auto_scale });
+            this.series = null;
+            this.volumeSeries = null;
+            this.openInterestSeries = null;
+            this.seriesMarkers = null;
             this.legend = new Legend(this);
             Handler._all.push(this);
             document.addEventListener('keydown', (event) => {
@@ -2575,28 +2575,82 @@ var Lib = (function (exports, lightweightCharts) {
             });
             return oiSeries;
         }
-        createLineSeries(name, options, paneIndex = 0) {
+        /**
+         * 创建折线系列。
+         *
+         * @param name - 系列名称，显示在图例中
+         * @param options - 折线样式配置（颜色、线宽等）
+         * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
+         * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建。
+         *   默认 false（加入列表 + 创建图例行）。
+         *   设为 true 时：
+         *   - 不进入 _seriesList（audit 的 extraSeriesCount 不计入）
+         *   - 不创建 legend 图例行（不会显示独立的颜色方块图例）
+         *   适用场景：主图表的持仓量（OpenInterest）系列。
+         *   它是图表的固有组件，生命周期由 AbstractChart 管理，
+         *   不应被视为"额外系列"，也不应在 legend 中显示独立条目。
+         *   持仓量数据通过 legendHandler 在 OHLC 文本中显示。
+         */
+        createLineSeries(name, options, paneIndex = 0, dontAddList = false) {
             const line = this.chart.addSeries(lightweightCharts.LineSeries, { ...options }, paneIndex);
-            this._seriesList.push(line);
-            this.legend.makeSeriesRow(name, line, paneIndex);
+            if (!dontAddList) {
+                this._seriesList.push(line);
+                this.legend.makeSeriesRow(name, line, paneIndex);
+            }
             return {
                 name: name,
                 series: line,
             };
         }
-        createHistogramSeries(name, options, paneIndex = 0) {
+        /**
+         * 创建柱状图系列。
+         *
+         * @param name - 系列名称，显示在图例中
+         * @param options - 柱状图样式配置（颜色、价格格式等）
+         * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
+         * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建。
+         *   默认 false（加入列表 + 创建图例行）。
+         *   设为 true 时：
+         *   - 不进入 _seriesList（audit 的 extraSeriesCount 不计入）
+         *   - 不创建 legend 图例行（不会显示独立的颜色方块图例）
+         *   适用场景：主图表的成交量（Volume）系列。
+         *   它是图表的固有组件，生命周期由 AbstractChart 管理，
+         *   不应被视为"额外系列"，也不应在 legend 中显示独立条目。
+         *   成交量数据通过 legendHandler 在 OHLC 文本中显示。
+         */
+        createHistogramSeries(name, options, paneIndex = 0, dontAddList = false) {
             const line = this.chart.addSeries(lightweightCharts.HistogramSeries, { ...options }, paneIndex);
-            this._seriesList.push(line);
-            this.legend.makeSeriesRow(name, line, paneIndex);
+            if (!dontAddList) {
+                this._seriesList.push(line);
+                this.legend.makeSeriesRow(name, line, paneIndex);
+            }
             return {
                 name: name,
                 series: line,
             };
         }
-        createCandleSeries(name, options, paneIndex = 0) {
+        /**
+         * 创建独立 K 线系列。
+         *
+         * @param name - 系列名称，显示在图例中
+         * @param options - K 线样式配置（颜色等）
+         * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
+         * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建。
+         *   默认 false（加入列表 + 创建图例行）。
+         *   设为 true 时：
+         *   - 不进入 _seriesList（audit 的 extraSeriesCount 不计入）
+         *   - 不创建 legend 图例行（不会显示独立的颜色方块图例）
+         *   适用场景：主图表的默认 K 线系列。
+         *   它是图表的固有组件，生命周期由 AbstractChart 管理，
+         *   不应被视为"额外系列"，也不应在 legend 中显示独立条目。
+         *   K 线数据通过 legendHandler 在 OHLC 文本中显示。
+         */
+        createCandleSeries(name, options, paneIndex = 0, dontAddList = false) {
             const candle = this.chart.addSeries(lightweightCharts.CandlestickSeries, { ...options }, paneIndex);
-            this._seriesList.push(candle);
-            this.legend.makeSeriesRow(name, candle, paneIndex);
+            if (!dontAddList) {
+                this._seriesList.push(candle);
+                this.legend.makeSeriesRow(name, candle, paneIndex);
+            }
             const seriesMarkers = lightweightCharts.createSeriesMarkers(candle, [], { autoScale: true });
             return {
                 name: name,

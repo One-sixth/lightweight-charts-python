@@ -50,7 +50,7 @@ def js_audit(chart, timeout=5):
     """
     Safely call JS Handler.audit(), with exception protection.
     Returns TOML-parsed dict, or None on failure.
-    
+
     IMPORTANT: This function MUST succeed for the test to be valid.
     If js_audit returns None (timeout or execution failure), it indicates a critical issue:
     - JS runtime may be unresponsive
@@ -64,7 +64,7 @@ def js_audit(chart, timeout=5):
             return None
         return tomllib.loads(result)
     except Exception as e:
-        print(f"      [WARN] JS audit failed: {e}")
+        print(f"      [FAIL] JS audit failed: {e}")
         return None
 
 
@@ -92,7 +92,6 @@ def test_resource_full_cleanup():
     try:
         print("\n[1] Launch chart ...")
         chart.show(block=False)
-        chart.clear_handlers()
         print("      [OK]")
 
         # --- Baseline JS state ---
@@ -107,7 +106,7 @@ def test_resource_full_cleanup():
             for k in sorted(baseline_keys):
                 print(f"        {k}")
         else:
-            print("      [WARN] baseline audit unavailable")
+            print("      [FAIL] baseline audit unavailable")
 
         all_clean &= log_check(
             baseline_audit is not None, "baseline audit reachable", errors, "baseline_audit_unreachable"
@@ -175,7 +174,7 @@ def test_resource_full_cleanup():
             print(f"      sections: {len(mid)}")
             main = chart_section(chart, mid)
             all_clean &= log_check(
-                main.get('hasOpenInterest'), "OI present in JS", errors, "mid_oi_missing"
+                chart.oi is not None, "OI series present (Python side)", errors, "mid_oi_missing"
             )
             all_clean &= log_check(
                 main.get('extraSeriesCount', 0) >= 3,  # 2 lines + 1 hist
@@ -183,7 +182,7 @@ def test_resource_full_cleanup():
             )
             print(f"      extraSeriesCount: {main.get('extraSeriesCount', 0)}")
         else:
-            print("      [WARN] mid-state JS audit unavailable")
+            print("      [FAIL] mid-state JS audit unavailable")
 
         # Python-side mid-state
         print("\n[3a] Python audit mid-state ...")
@@ -289,14 +288,16 @@ def test_resource_full_cleanup():
                 "extraSeriesCount back to baseline", errors, "extraSeries_leak"
             )
             all_clean &= log_check(
-                main_final.get('hasOpenInterest'),
-                "OI series always present (hidden when empty)", errors, "oi_js_missing"
+                chart.oi is not None,
+                "OI series present (Python side)", errors, "oi_js_missing"
             )
 
             # Non-handler leak check
+            # VolumeSeries/OpenInterestSeries 是主图表默认创建的，不算泄漏
             def _non_handler_keys(d):
                 return {k for k, v in d.items()
-                        if isinstance(v, dict) and v.get('type') != 'Handler'}
+                        if isinstance(v, dict) and v.get('type') != 'Handler'
+                        and not k.startswith(('VolumeSeries_', 'OpenInterestSeries_'))}
 
             wg_baseline = _non_handler_keys(baseline_audit)
             wg_final = _non_handler_keys(final)
@@ -403,7 +404,7 @@ def test_multi_chart_cleanup():
         line1.delete()
         hl1.delete()
         tbl1.delete()
-        chart1.clear_handlers()
+        chart1._clear_handlers()
         print(f"      chart1: lines={len(chart1._lines)}, drawings={len(chart1._drawings)}, tables={len(chart1._tables)}")
         all_clean &= log_check(len(chart1._lines) == 0, "chart1 _lines cleared", errors, "mc1_clean_lines")
         all_clean &= log_check(len(chart1._drawings) == 0, "chart1 _drawings cleared", errors, "mc1_clean_draw")
@@ -434,7 +435,7 @@ def test_multi_chart_cleanup():
         line2a.delete()
         line2b.delete()
         vl2.delete()
-        chart2.clear_handlers()
+        chart2._clear_handlers()
         print(f"      chart2: lines={len(chart2._lines)}, drawings={len(chart2._drawings)}, tables={len(chart2._tables)}")
         all_clean &= log_check(len(chart2._lines) == 0, "chart2 _lines cleared", errors, "mc2_clean_lines")
         all_clean &= log_check(len(chart2._drawings) == 0, "chart2 _drawings cleared", errors, "mc2_clean_draw")
@@ -463,7 +464,145 @@ def test_multi_chart_cleanup():
         sys.exit(1)
 
 
+def test_reset_cleanup():
+    """验证 reset() 后 candle/volume/oi 全部被删除，再 set() 能正确重建。"""
+    sep = "=" * 60
+    print(sep)
+    print("  test_reset_cleanup")
+    print(sep)
+
+    bars = make_oi_data(30)
+    errors = []
+    all_clean = True
+
+    chart = Chart(title='Reset Test', toolbox=True)
+    chart.show(block=False)
+    time.sleep(1)
+
+    try:
+        # --- Step 1: set data (should auto-create volume/oi) ---
+        print("\n[1] set() ...")
+        chart.set(bars)
+        all_clean &= log_check(
+            chart.candle is not None, "candle exists", errors, "r_candle"
+        )
+        all_clean &= log_check(
+            chart.volume is not None, "volume created", errors, "r_vol"
+        )
+        all_clean &= log_check(
+            chart.oi is not None, "oi created", errors, "r_oi"
+        )
+        all_clean &= log_check(
+            not chart.candle.candle_data.empty, "candle has data", errors, "r_candle_data"
+        )
+        all_clean &= log_check(
+            len(chart.candle.markers) == 0, "no markers yet", errors, "r_markers_init"
+        )
+        print(f"      candle id: {chart.candle.id}")
+        print(f"      volume id: {chart.volume.id}")
+        print(f"      oi id:     {chart.oi.id}")
+
+        # --- Step 2: add markers and lines ---
+        print("\n[2] Add markers + lines ...")
+        chart.marker(bars['date'].iloc[5], 'above', 'circle', 'red', 'm1')
+        line1 = chart.create_line('line1', color='#ff0000')
+        line1.set(bars[['date', 'close']].rename(columns={'date': 'time', 'close': 'line1'}))
+        all_clean &= log_check(len(chart.candle.markers) == 1, "1 marker", errors, "r_marker_added")
+        all_clean &= log_check(len(chart._lines) == 1, "1 line", errors, "r_line_added")
+
+        # --- Step 3: verify JS side has the series ---
+        print("\n[3] Verify JS series exist ...")
+        js_check = chart.win.run_script_and_get(
+            f'({chart.candle.id}.series !== null) && ({chart.volume.id}.series !== null) && ({chart.oi.id}.series !== null)',
+            timeout=5
+        )
+        all_clean &= log_check(js_check == True, "all 3 JS series exist", errors, "r_js_series_exist")
+        print(f"      JS check: {js_check}")
+
+        # --- Step 4: reset() ---
+        print("\n[4] reset() ...")
+        chart.reset()
+        all_clean &= log_check(
+            chart.candle_data.empty, "candle_data empty", errors, "r_reset_candle_empty"
+        )
+        all_clean &= log_check(
+            chart.volume is None, "volume is None", errors, "r_reset_vol_none"
+        )
+        all_clean &= log_check(
+            chart.oi is None, "oi is None", errors, "r_reset_oi_none"
+        )
+        all_clean &= log_check(
+            len(chart.markers) == 0, "markers cleared", errors, "r_reset_markers"
+        )
+        all_clean &= log_check(
+            len(chart._lines) == 0, "lines cleared", errors, "r_reset_lines"
+        )
+        all_clean &= log_check(
+            chart._interval is None, "interval reset to None", errors, "r_reset_interval"
+        )
+        print("      [OK] Python state verified")
+
+        # --- Step 5: verify JS side series are deleted ---
+        print("\n[5] Verify JS series deleted ...")
+        handler_id = chart.id
+        js_check2 = chart.win.run_script_and_get(
+            f'({handler_id}.series === null) && ({handler_id}.volumeSeries === null) && ({handler_id}.openInterestSeries === null)',
+            timeout=5
+        )
+        all_clean &= log_check(js_check2 == True, "Handler refs are null", errors, "r_js_handler_null")
+        print(f"      JS check: {js_check2}")
+
+        # --- Step 6: set() again (should recreate volume/oi) ---
+        print("\n[6] set() again ...")
+        chart.set(bars)
+        all_clean &= log_check(
+            chart.volume is not None, "volume recreated", errors, "r_recreate_vol"
+        )
+        all_clean &= log_check(
+            chart.oi is not None, "oi recreated", errors, "r_recreate_oi"
+        )
+        all_clean &= log_check(
+            not chart.candle.candle_data.empty, "candle has data again", errors, "r_recreate_candle_data"
+        )
+        print(f"      volume id: {chart.volume.id}")
+        print(f"      oi id:     {chart.oi.id}")
+
+        # --- Step 7: verify fixed IDs are preserved ---
+        print("\n[7] Verify fixed IDs preserved ...")
+        base = chart.id.replace('window.', '')
+        all_clean &= log_check(
+            chart.candle.id == f'window.{base}_candle',
+            f"candle id = window.{base}_candle", errors, "r_id_candle"
+        )
+        all_clean &= log_check(
+            chart.volume.id == f'window.{base}_volume',
+            f"volume id = window.{base}_volume", errors, "r_id_volume"
+        )
+        all_clean &= log_check(
+            chart.oi.id == f'window.{base}_oi',
+            f"oi id = window.{base}_oi", errors, "r_id_oi"
+        )
+
+        print()
+        print(sep)
+        if all_clean:
+            print("  RESULT: PASS")
+        else:
+            print(f"  RESULT: FAIL ({len(errors)} errors)")
+            for e in errors:
+                print(f"    - {e}")
+        print(sep)
+
+    finally:
+        chart.exit()
+
+    if not all_clean:
+        sys.exit(1)
+
+
 if __name__ == '__main__':
     test_resource_full_cleanup()
     print("\n")
     test_multi_chart_cleanup()
+    print("\n")
+    test_reset_cleanup()
