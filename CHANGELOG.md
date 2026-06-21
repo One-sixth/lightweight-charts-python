@@ -4,6 +4,29 @@
 
 ---
 
+## [v2.7.2] - 2026-06-21 - 🔧 正在改进中
+
+### Fixed
+
+- **`update()`/`update_batch()`/`update_from_ticks()` 不转发 volume/OI 给独立 series**：v2.7.0 组合架构重构后，`AbstractChart.update_batch(df)` 只委托给 `self.candle.update_batch(df)`，后者只处理 OHLC 列，volume/OI 数据被静默丢弃。`set()` 正确转发了 volume/OI，但更新方法遗漏了
+  - **`update()`**：新增 volume/OI 转发给 `self.volume`/`self.oi`
+  - **`update_batch()`**：新增 volume/OI 转发给 `self.volume`/`self.oi`
+  - **`update_from_ticks()`**：重写——先在 AbstractChart 层聚合 volume/OI 转发给独立 series，再将不含 volume/OI 的 DataFrame 交给 CandleSeries 处理 OHLC，避免 volume 被重复聚合
+  - **`update_from_tick()`**：委托给 `update_from_ticks()` 统一处理，避免重复转发
+  - **`update_bar`/`update_bars` 别名**：从 `property(lambda: self.candle.xxx)` 改为普通方法，委托给 `update()`/`update_batch()`，确保 volume/OI 转发不被绕过
+
+- **`CandleSeries.set()` 调用 `time_to_bar_time()` 缺少参数**：直接调用模块级函数缺少 `offset`/`interval`，改为 `self._chart._time_to_bar_time(df)`
+
+- **TypeScript 编译警告消除（11 → 0）**：v2.7.0 重构将 `Handler.series` 改为 `ISeriesApi | null`（惰性创建），但使用处缺少 null guard，导致 11 个 TS2345/TS2531 警告
+  - **`createToolBox()`**：添加 `if (!this.series) return` 提前返回
+  - **`syncChartsAll` ×2**：crosshair 回调中对 `source.series` 和 `target.series` 添加 null guard
+  - **`syncCharts`**：`crosshairHandler()` 顶部加 `if (!chart.series) return`；`getPoint()` 签名改为 `series: ISeriesApi | null`，内部 guard
+  - **`_syncCharts`**：crosshair 回调中对 `chart.series` 和 `target.series` 添加 null guard
+  - **`legend.ts legendHandler()`**：顶部加 `if (!this.handler.series) return`
+  - 所有 guard 均为防御性编程——运行时 series 一定已设置（Python 端先创建，用户交互在后）
+
+---
+
 ## [v2.7.1] - 2026-06-21
 
 ### 清理

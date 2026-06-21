@@ -18,6 +18,29 @@
 
 ---
 
+## 🔧 v2.7.2 TS 编译警告消除（2026-06-21）
+
+### 问题
+v2.7.0 重构将 `Handler.series` 改为 `ISeriesApi | null`（惰性创建），导致 11 个 TS2345/TS2531 警告。使用处传入 `this.series` 但 TS 认为它可能是 `null`。
+
+### 修复策略：Null Guard
+所有使用 `series` 的地方添加 null guard（`if (!series) return/continue`），而非 `!` 非空断言。原因：series 确实可能是 null（构造函数初始化为 null），防御性编程更安全。
+
+### 修改位置
+| 文件 | 函数 | 改动 |
+|------|------|------|
+| handler.ts | `createToolBox()` | 顶部 `if (!this.series) return` |
+| handler.ts | `syncChartsAll` ×2 | `srcSeries` / `target.series` null guard |
+| handler.ts | `syncCharts` | `crosshairHandler` 顶部 guard；`getPoint` 签名 `series: ISeriesApi \| null` + 内部 guard |
+| handler.ts | `_syncCharts` | `srcSeries` / `target.series` null guard |
+| legend.ts | `legendHandler()` | 顶部 `if (!this.handler.series) return` |
+
+### 教训
+- `Handler.series` 初始化为 `null` 后，所有引用点都必须考虑 null 情况
+- `continue` 只能用于循环内，回调函数中用 `return`
+
+---
+
 ## 🏗️ v2.7.0 架构：组合模式 + 固定 ID
 
 ### 类层次
@@ -223,4 +246,26 @@ chart.win.handlers[f'save_drawings{self.id}'] = self._save_drawings
 
 ---
 
-*最后更新：2026-06-21 晚间（v2.7.1 Handler 清理）*
+## 🐛 update_batch/update_from_ticks 不转发 volume/OI（2026-06-21 修复）
+
+### 问题
+v2.7.0 组合架构重构后，`AbstractChart.update_batch(df)` 只委托给 `self.candle.update_batch(df)`，后者只处理 OHLC 列，volume/OI 数据被静默丢弃。`set()` 正确转发了 volume/OI，但 `update()`/`update_batch()`/`update_from_ticks()` 遗漏了。
+
+### 影响
+- `chart.update_bars(df)` — volume 不更新（用户在 examples/34_candle_series/3_batch_update.py 中发现）
+- `chart.update_from_ticks(df)` — volume 不更新
+- `chart.update_from_tick(series)` — volume 不更新
+
+### 修复
+1. **`update()`/`update_batch()`**：新增 volume/OI 转发给 `self.volume`/`self.oi`
+2. **`update_from_ticks()`**：重写——先聚合 volume/OI 转发给独立 series，再剥离 volume/OI 列交给 CandleSeries 处理 OHLC（避免重复聚合）
+3. **`update_from_tick()`**：委托给 `update_from_ticks()` 统一处理
+4. **`update_bar`/`update_bars` 别名**：从 `property(lambda: self.candle.xxx)` 改为普通方法，委托给 `update()`/`update_batch()`
+
+### 教训
+- **property 别名陷阱**：`update_bars = property(lambda self: self.candle.update_batch)` 直接绑定 CandleSeries 方法，绕过了 AbstractChart 的转发逻辑。改为普通方法委托更安全
+- **`update_from_ticks` 不可简单转发**：CandleSeries 内部已有 tick→bar 聚合逻辑（含 volume），直接转发会导致 volume 重复聚合。必须剥离 volume/OI 列后再交给 CandleSeries
+
+---
+
+*最后更新：2026-06-21 晚间（v2.7.2 volume 转发修复）*
