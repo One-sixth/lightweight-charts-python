@@ -336,17 +336,11 @@ class SeriesCommon(Pane):
         if self.markers:
             self._update_markers()
 
-    def update(self, series: pd.Series):
-        """
-        更新系列的最后一个数据点或添加新数据点。
-
-        :param series: 包含单个数据点的 Series，必须包含 'time' 索引。
-            如果时间与最后一个数据点相同，则更新该数据点；否则添加为新数据点。
-        :raises AssertionError: 如果尚未调用 set() 设置初始数据
-        """
-        if self._last_bar is None:
-            raise AssertionError("set() must be called first.")
+    def update_bar(self, series: pd.Series):
+        """更新最新一根 bar 或追加新 bar。"""
         self.update_bars(series.to_frame().T)
+
+    update = update_bar
 
     def _clean_df(self, df, _df_cleaned=False):
         """清洗 DataFrame（normal_df + _time_to_bar_time + merge_value_by_time）。
@@ -873,8 +867,10 @@ class VolumeSeries(SeriesCommon):
         :param df: DataFrame，需要包含 time 和 volume 列。如果包含 open/close 列则自动着色，否则使用默认色。
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
+        self.run_script(f'{self.id}.series.setData([])')
+        self.data = pd.DataFrame()
+
         if df is None or df.empty:
-            self.run_script(f'{self.id}.series.setData([])')
             return
 
         if 'volume' not in df.columns:
@@ -891,16 +887,17 @@ class VolumeSeries(SeriesCommon):
         else:
             vol_df['color'] = self._down_color
 
+        self.data = vol_df.copy()
+        self._last_bar = vol_df.iloc[-1]
         self.run_script(f'{self.id}.series.setData({js_data(vol_df)})')
 
-    def update(self, series: pd.Series):
-        """更新最新一根 bar 的成交量或追加新 bar。
-
-        :param series: 包含 time, volume 的 Series（可选 open, close 用于着色）
-        """
+    def update_bar(self, series: pd.Series):
+        """更新最新一根 bar 的成交量或追加新 bar。"""
         self.update_bars(series.to_frame().T)
 
-    def update_bars(self, df: pd.DataFrame):
+    update = update_bar
+
+    def update_bars(self, df: pd.DataFrame, _df_cleaned=False):
         """批量更新成交量。
 
         :param df: DataFrame，需要包含 time 和 volume 列
@@ -922,10 +919,26 @@ class VolumeSeries(SeriesCommon):
         else:
             vol_df['color'] = self._down_color
 
+        # 过滤旧数据（与 CandleSeries/SeriesCommon 一致）
+        if self._last_bar is not None:
+            mask = vol_df['time'] >= self._last_bar['time']
+            vol_df = vol_df[mask]
+            if vol_df.empty:
+                return
+
         js_commands = []
         for _, row in vol_df.iterrows():
             js_commands.append(f'{self.id}.series.update({js_data(row)})')
         self.run_script('; '.join(js_commands))
+
+        # 维护 Python 端数据（与 SeriesCommon 一致）
+        if self.data is None or self.data.empty:
+            self.data = vol_df[['time', 'value']].copy()
+        elif self.data['time'].iloc[-1] == vol_df['time'].iloc[0]:
+            self.data = pd.concat([self.data.iloc[:-1], vol_df[['time', 'value']]], ignore_index=True)
+        else:
+            self.data = pd.concat([self.data, vol_df[['time', 'value']]], ignore_index=True)
+        self._last_bar = vol_df.iloc[-1]
 
     def update_from_ticks(self, df, cumulative_volume=False, _df_cleaned=False):
         """tick 数据聚合为 bar 后更新成交量。
@@ -1055,8 +1068,10 @@ class OpenInterestSeries(SeriesCommon):
         :param df: DataFrame，需要包含 time 和 open_interest 列
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
+        self.run_script(f'{self.id}.series.setData([])')
+        self.data = pd.DataFrame()
+
         if df is None or df.empty:
-            self.run_script(f'{self.id}.series.setData([])')
             return
 
         if 'open_interest' not in df.columns:
@@ -1065,11 +1080,15 @@ class OpenInterestSeries(SeriesCommon):
         df = self._clean_df(df, _df_cleaned)
 
         oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
+        self.data = oi_df.copy()
+        self._last_bar = oi_df.iloc[-1]
         self.run_script(f'{self.id}.series.setData({js_data(oi_df)})')
 
-    def update(self, series: pd.Series):
+    def update_bar(self, series: pd.Series):
         """更新最新一根 bar 的持仓量或追加新 bar。"""
         self.update_bars(series.to_frame().T)
+
+    update = update_bar
 
     def update_bars(self, df: pd.DataFrame, _df_cleaned=False):
         """批量更新持仓量。
@@ -1085,10 +1104,27 @@ class OpenInterestSeries(SeriesCommon):
             return
 
         oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
+
+        # 过滤旧数据（与 CandleSeries/SeriesCommon 一致）
+        if self._last_bar is not None:
+            mask = oi_df['time'] >= self._last_bar['time']
+            oi_df = oi_df[mask]
+            if oi_df.empty:
+                return
+
         js_commands = []
         for _, row in oi_df.iterrows():
             js_commands.append(f'{self.id}.series.update({js_data(row)})')
         self.run_script('; '.join(js_commands))
+
+        # 维护 Python 端数据（与 SeriesCommon 一致）
+        if self.data is None or self.data.empty:
+            self.data = oi_df[['time', 'value']].copy()
+        elif self.data['time'].iloc[-1] == oi_df['time'].iloc[0]:
+            self.data = pd.concat([self.data.iloc[:-1], oi_df[['time', 'value']]], ignore_index=True)
+        else:
+            self.data = pd.concat([self.data, oi_df[['time', 'value']]], ignore_index=True)
+        self._last_bar = oi_df.iloc[-1]
 
     def update_from_ticks(self, df, cumulative_volume=False, _df_cleaned=False):
         """tick 数据聚合为 bar 后更新持仓量。将 open_interest 列映射为 value 后委托给通用版本。"""
@@ -1249,17 +1285,11 @@ class CandleSeries(SeriesCommon):
         if self.markers:
             self._update_markers()
 
-    def update(self, series: pd.Series):
-        """
-        更新最新一根 bar 或追加新 bar。
-
-        :param series: 包含 time, open, high, low, close 的 Series。
-            若 time 与最后一根相同则更新，否则追加。
-        :raises AssertionError: 如果尚未调用 set() 设置初始数据
-        """
-        if self._last_bar is None:
-            raise AssertionError("set() must be called first.")
+    def update_bar(self, series: pd.Series):
+        """更新最新一根 bar 或追加新 bar。"""
         self.update_bars(series.to_frame().T)
+
+    update = update_bar
 
     def update_bars(self, df: pd.DataFrame, _df_cleaned=False):
         """
@@ -1682,24 +1712,21 @@ class AbstractChart(Pane):
             if self.oi:
                 self.oi.set(None)
 
-    def update(self, series):
-        """更新最新一根 bar 或追加新 bar。同时转发 volume/OI/_lines 给独立 series。"""
-        if self.volume and 'volume' in series.index:
-            self.volume.update(series)
-        if self.oi and 'open_interest' in series.index:
-            self.oi.update(series)
-        for line in self._lines:
-            if line.name and line.name in series.index:
-                line.update(series)
-        return self.candle.update(series)
-
     def update_bar(self, series):
-        """更新最新一根 bar（向后兼容别名）。委托给 update()。"""
-        return self.update(series)
+        """更新最新一根 bar 或追加新 bar。"""
+        self.update_bars(series.to_frame().T)
+
+    update = update_bar
 
     def update_bars(self, df):
-        """批量更新多根 K 线。同时转发 volume/OI/_lines 给独立 series。"""
+        """批量更新多根 K 线。
+
+        更新顺序：candle → volume → oi → _lines。
+        每个 series 独立维护 _last_bar，顺序不影响正确性。
+        candle 放最前是惯例（主系列优先）。
+        """
         df = self._clean_df(df)
+        self.candle.update_bars(df, _df_cleaned=True)
         if self.volume and 'volume' in df.columns:
             self.volume.update_bars(df, _df_cleaned=True)
         if self.oi and 'open_interest' in df.columns:
@@ -1707,7 +1734,6 @@ class AbstractChart(Pane):
         for line in self._lines:
             if line.name and line.name in df.columns:
                 line.update_bars(df)
-        return self.candle.update_bars(df, _df_cleaned=True)
 
     def update_from_tick(self, series, cumulative_volume=False):
         """使用单个 tick 更新图表。委托给 update_from_ticks 统一处理 volume/OI 转发。"""
@@ -1725,7 +1751,11 @@ class AbstractChart(Pane):
 
         df = self._clean_df(df)
 
-        # ── volume/OI 各自聚合 tick（传 _df_cleaned=True 跳过重复清洗）──
+        # ── candle 最先更新（惯例：主系列优先）──
+        candle_df = df.drop(columns=[c for c in ('volume', 'open_interest') if c in df.columns], errors='ignore')
+        self.candle.update_from_ticks(candle_df, cumulative_volume, _df_cleaned=True)
+
+        # ── volume/OI 聚合 tick ──
         if self.volume and 'volume' in df.columns:
             self.volume.update_from_ticks(df, cumulative_volume, _df_cleaned=True)
         if self.oi and 'open_interest' in df.columns:
@@ -1741,10 +1771,6 @@ class AbstractChart(Pane):
                         'value': group_df[line.name].last().array,
                     })
                     line.update_bars(line_data)
-
-        # ── 剥离 volume/OI，让 CandleSeries 只处理 OHLC ──
-        candle_df = df.drop(columns=[c for c in ('volume', 'open_interest') if c in df.columns], errors='ignore')
-        return self.candle.update_from_ticks(candle_df, cumulative_volume, _df_cleaned=True)
 
     def clear_data(self):
         """清空所有 K 线数据（K线 + 成交量 + 持仓量）。"""
