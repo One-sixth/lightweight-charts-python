@@ -286,6 +286,12 @@ class SeriesCommon(Pane):
         """从系列末尾移除指定数量的数据点。"""
         self.run_script(f'{self.id}.series.pop({count})')
 
+    def clear_data(self):
+        """清空系列数据和标记。"""
+        self.run_script(f'{self.id}.series.setData([])')
+        self.data = pd.DataFrame()
+        self.clear_markers()
+
     def _get_df_interval_offset(self, df: pd.DataFrame) -> (int, int):
         """获取数据DF内时间点的通常间隔（秒），返回，时间间隔（秒）和偏移时间（秒）"""
         return get_df_interval_offset(df)
@@ -1274,10 +1280,9 @@ class CandleSeries(SeriesCommon):
             );0''')
 
     def clear_data(self):
-        """清空所有 K 线数据。"""
-        self.run_script(f'{self.id}.series.setData([])')
+        """清空所有 K 线数据和标记。"""
+        super().clear_data()
         self.candle_data = pd.DataFrame()
-        self.data = pd.DataFrame()
         self._last_bar = None
 
     def set(self, df: Optional[pd.DataFrame] = None, _df_cleaned=False):
@@ -1502,7 +1507,7 @@ class AbstractChart(Pane):
     """图表容器——管理所有序列和工具组件，自身不是任何 Series。
 
     采用组合模式：self.candle (CandleSeries) 管理 K 线数据，
-    self.volume (VolumeSeries) / self.oi (OpenInterestSeries) 可选挂载。
+    self.volume (VolumeSeries) / self.oi (OpenInterestSeries) 始终存在（reset 后自动重建）。
     所有 CandleSeries 方法通过委托保持向后兼容。
     """
 
@@ -1599,17 +1604,17 @@ class AbstractChart(Pane):
     @property
     def candle_data(self):
         """K 线数据 DataFrame。"""
-        return self.candle.candle_data if self.candle else pd.DataFrame()
+        return self.candle.candle_data
 
     @property
     def data(self):
         """系列数据 DataFrame。"""
-        return self.candle.data if self.candle else pd.DataFrame()
+        return self.candle.data
 
     @property
     def markers(self):
         """标记字典。"""
-        return self.candle.markers if self.candle else {}
+        return self.candle.markers
 
     # ── 时间级别方法（图表级，不再委托到 candle）──
 
@@ -1682,22 +1687,10 @@ class AbstractChart(Pane):
             # 设置数据（AbstractChart 统一清洗一次，子 series 跳过重复清洗）
             df = self._clean_df(df)
 
-            # 检测并重建被 reset() 删除的 series
-            base = self.id.replace('window.', '')
-            if self.candle is None:
-                self.candle = CandleSeries(self, _fixed_id=f'window.{base}_candle', _dont_add_list=True)
-                self.run_script(f'{self.id}.series = {self.candle.id}.series;0')
-            if 'volume' in df.columns and self.volume is None:
-                self.volume = VolumeSeries(self, _fixed_id=f'window.{base}_volume', _dont_add_list=True)
-                self.run_script(f'{self.id}.volumeSeries = {self.volume.id}.series;0')
-            if 'open_interest' in df.columns and self.oi is None:
-                self.oi = OpenInterestSeries(self, _fixed_id=f'window.{base}_oi', _dont_add_list=True)
-                self.run_script(f'{self.id}.openInterestSeries = {self.oi.id}.series;0')
-
             self.candle.set(df, _df_cleaned=True)
-            if self.volume and 'volume' in df.columns:
+            if 'volume' in df.columns:
                 self.volume.set(df, _df_cleaned=True)
-            if self.oi and 'open_interest' in df.columns:
+            if 'open_interest' in df.columns:
                 self.oi.set(df, _df_cleaned=True)
 
             # 转发数据给 _lines（Line/Histogram）—— 大小写精确匹配
@@ -1713,10 +1706,8 @@ class AbstractChart(Pane):
         else:
             # 清空所有数据
             self.candle.set(None)
-            if self.volume:
-                self.volume.set(None)
-            if self.oi:
-                self.oi.set(None)
+            self.volume.set(None)
+            self.oi.set(None)
 
     def update_bar(self, series):
         """更新最新一根 bar 或追加新 bar。"""
@@ -1733,9 +1724,9 @@ class AbstractChart(Pane):
         """
         df = self._clean_df(df)
         self.candle.update_bars(df, _df_cleaned=True)
-        if self.volume and 'volume' in df.columns:
+        if 'volume' in df.columns:
             self.volume.update_bars(df, _df_cleaned=True)
-        if self.oi and 'open_interest' in df.columns:
+        if 'open_interest' in df.columns:
             self.oi.update_bars(df, _df_cleaned=True)
         for line in self._lines:
             if line.name and line.name in df.columns:
@@ -1762,9 +1753,9 @@ class AbstractChart(Pane):
         self.candle.update_from_ticks(candle_df, cumulative_volume, _df_cleaned=True)
 
         # ── volume/OI 聚合 tick ──
-        if self.volume and 'volume' in df.columns:
+        if 'volume' in df.columns:
             self.volume.update_from_ticks(df, cumulative_volume, _df_cleaned=True)
-        if self.oi and 'open_interest' in df.columns:
+        if 'open_interest' in df.columns:
             self.oi.update_from_ticks(df, _df_cleaned=True)
 
         # ── _lines 聚合 tick 后转发（每个 line 按 time 取 last）──
@@ -1781,10 +1772,8 @@ class AbstractChart(Pane):
     def clear_data(self):
         """清空所有 K 线数据（K线 + 成交量 + 持仓量）。"""
         self.candle.clear_data()
-        if self.volume:
-            self.volume.run_script(f'{self.volume.id}.series.setData([])')
-        if self.oi:
-            self.oi.run_script(f'{self.oi.id}.series.setData([])')
+        self.volume.clear_data()
+        self.oi.clear_data()
 
     # ── 标记方法（显式委托）──
 
@@ -1815,7 +1804,7 @@ class AbstractChart(Pane):
         """配置成交量样式。"""
         self.volume.config(
             scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom,
-                   up_color=up_color, down_color=down_color
+            up_color=up_color, down_color=down_color
         )
 
     def open_interest_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0,
@@ -1883,24 +1872,18 @@ class AbstractChart(Pane):
         self.candle.pop(count)
         self.volume.pop(count)
         self.oi.pop(count)
-        for line in self._lines:
-            line.pop(count)
 
     def hide_data(self):
         """隐藏所有数据（candle + volume + oi）。"""
         self.candle.hide_data()
-        if self.volume:
-            self.volume.hide_data()
-        if self.oi:
-            self.oi.hide_data()
+        self.volume.hide_data()
+        self.oi.hide_data()
 
     def show_data(self):
         """显示所有数据（candle + volume + oi）。"""
         self.candle.show_data()
-        if self.volume:
-            self.volume.show_data()
-        if self.oi:
-            self.oi.show_data()
+        self.volume.show_data()
+        self.oi.show_data()
 
     # ═══════════════════════════════════════════════════════
 
@@ -1989,20 +1972,11 @@ class AbstractChart(Pane):
                 series.data = pd.DataFrame()
                 series._last_bar = None
 
-        # 2. 重置 Handler 引用和 Python 状态
-        # seriesMarkers 由 _update_markers() 按需在 series 级别创建，随 series 删除自动清理
-        self.run_script(f'''
-            {self.id}.series = null;
-            {self.id}.volumeSeries = null;
-            {self.id}.openInterestSeries = null;
-        ''')
+        # 2. 重置 Python 状态
         self.candle.data = pd.DataFrame()
         self.candle.candle_data = pd.DataFrame()
         self.candle._last_bar = None
         self.candle.markers.clear()
-        self.candle = None
-        self.volume = None
-        self.oi = None
         self._interval = None
         self._offset = 0
         self._period_locked = False
@@ -2028,6 +2002,24 @@ class AbstractChart(Pane):
         # 8. 恢复主图 ToolBox handler（_clear_handlers 把它也清了，但 ToolBox 对象还在）
         if hasattr(self, 'toolbox'):
             self.win.handlers[f'save_drawings{self.id}'] = self.toolbox._save_drawings
+
+        # 9. 重建 candle/volume/oi（始终存在，省去后续所有 None 检查）
+        base = self.id.replace('window.', '')
+        self.candle = CandleSeries(self, _fixed_id=f'window.{base}_candle', _dont_add_list=True)
+        self.volume = VolumeSeries(self, _fixed_id=f'window.{base}_volume', _dont_add_list=True)
+        self.oi = OpenInterestSeries(self, _fixed_id=f'window.{base}_oi', _dont_add_list=True)
+        self.run_script(f'''
+            {self.id}.series = {self.candle.id}.series;
+            {self.id}.volumeSeries = {self.volume.id}.series;
+            {self.id}.openInterestSeries = {self.oi.id}.series;
+            var _ci = {self.id}._seriesList.indexOf({self.candle.id}.series);
+            if (_ci >= 0) {self.id}._seriesList.splice(_ci, 1);
+            var _li = {self.id}.legend._lines.find(l => l.series === {self.candle.id}.series);
+            if (_li) {{
+                {self.id}.legend._lines = {self.id}.legend._lines.filter(l => l !== _li);
+                try {{ {self.id}.legend.div.removeChild(_li.row) }} catch(e) {{}}
+            }}
+        ;0''')
 
     def remove_subchart(self, subchart_id: str):
         """

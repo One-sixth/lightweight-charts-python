@@ -208,15 +208,23 @@ def _test_resource_full_cleanup_impl(toolbox: bool):
         print("      [OK] Python-side audit confirms all resources present")
 
         print("\n[4] Delete resources ...")
-        chart.clear_data()
-        all_clean &= log_check(chart.candle_data.empty, "candle_data cleared", errors, "candle_data_not_empty")
-        print("  4a. clear_data() [OK]")
 
+        # 4a. remove_marker — 逐个移除
         chart.remove_marker(list(chart.markers.keys())[0])
         chart.remove_marker(list(chart.markers.keys())[0])
+        remaining = len(chart.markers)
+        all_clean &= log_check(remaining == 2, f"remove_marker: 4→{remaining}", errors, "remove_marker_count")
+        print(f"  4a. remove_marker() [OK] (4→{remaining})")
+
+        # 4b. clear_markers — 清空剩余
         chart.clear_markers()
         all_clean &= log_check(len(chart.markers) == 0, "markers cleared", errors, "markers_not_empty")
-        print("  4b. markers [OK]")
+        print("  4b. clear_markers() [OK]")
+
+        # 4c. clear_data — 清空 K 线数据（markers 已空，不影响）
+        chart.clear_data()
+        all_clean &= log_check(chart.candle_data.empty, "candle_data cleared", errors, "candle_data_not_empty")
+        print("  4c. clear_data() [OK]")
 
         line1.delete()
         line2.delete()
@@ -547,10 +555,10 @@ def test_reset_cleanup():
             chart.candle_data.empty, "candle_data empty", errors, "r_reset_candle_empty"
         )
         all_clean &= log_check(
-            chart.volume is None, "volume is None", errors, "r_reset_vol_none"
+            chart.volume is not None, "volume exists (auto-recreated)", errors, "r_reset_vol_none"
         )
         all_clean &= log_check(
-            chart.oi is None, "oi is None", errors, "r_reset_oi_none"
+            chart.oi is not None, "oi exists (auto-recreated)", errors, "r_reset_oi_none"
         )
         all_clean &= log_check(
             len(chart.markers) == 0, "markers cleared", errors, "r_reset_markers"
@@ -563,14 +571,14 @@ def test_reset_cleanup():
         )
         print("      [OK] Python state verified")
 
-        # --- Step 5: verify JS side series are deleted ---
-        print("\n[5] Verify JS series deleted ...")
+        # --- Step 5: verify JS side series are recreated (not null) ---
+        print("\n[5] Verify JS series recreated ...")
         handler_id = chart.id
         js_check2 = chart.win.run_script_and_get(
-            f'({handler_id}.series === null) && ({handler_id}.volumeSeries === null) && ({handler_id}.openInterestSeries === null)',
+            f'({handler_id}.series !== null) && ({handler_id}.volumeSeries !== null) && ({handler_id}.openInterestSeries !== null)',
             timeout=5
         )
-        all_clean &= log_check(js_check2 == True, "Handler refs are null", errors, "r_js_handler_null")
+        all_clean &= log_check(js_check2 == True, "Handler refs are not null (auto-recreated)", errors, "r_js_handler_null")
         print(f"      JS check: {js_check2}")
 
         # --- Step 6: set() again (should recreate volume/oi) ---
