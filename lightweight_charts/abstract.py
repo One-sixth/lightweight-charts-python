@@ -1913,6 +1913,7 @@ class AbstractChart(Pane):
         10. Events（JSEmitter 事件订阅）
         11. syncCharts 双向解关联 + 重建
         12. handlers 清理
+        13. Legend 重建（最后执行，恢复到初始隐藏状态）
         """
         # 1. K线/成交量/持仓量数据
         self.clear_data()
@@ -1964,6 +1965,14 @@ class AbstractChart(Pane):
 
         # 12. handlers 清理（salt 匹配）
         self._remove_my_handlers()
+
+        # 13. Legend 重建（最后执行）
+        # cleanup() 的 div.remove() 将 legend DOM 从文档树移除，
+        # 但后续 legend()/makeSeriesRow() 仍需要一个在 DOM 中的 div。
+        # 放在所有清理之后重建，确保 crosshair 订阅不被后续清理干扰。
+        # 重建后 div 恢复到"已创建但隐藏"(display:none) 的初始状态，
+        # 等待 Python 端 legend(visible=True) 激活。
+        self.run_script(f'{self.id}.legend.recreate()')
 
     def _cleanup_events(self):
         """清理 JSEmitter 事件订阅。"""

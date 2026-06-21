@@ -108,6 +108,34 @@ var Lib = (function (exports, lightweightCharts) {
             this._lines = [];
             this._lines_grp = {};
         }
+        /**
+         * 重建 legend DOM 并重新订阅 crosshair 事件。
+         * 在 cleanup() 之后、需要恢复 legend 时调用。
+         * 重建后 div 附加到 handler.div，默认隐藏 (display:none)，
+         * 由 Python 端 legend(visible=True) 控制显示。
+         */
+        recreate() {
+            // 重建 DOM 结构（与 constructor 一致）
+            this.div = document.createElement('div');
+            this.div.classList.add("legend");
+            this.div.style.maxWidth = `${(this.handler.scale.width * 100) - 8}vw`;
+            this.div.style.display = 'none';
+            const seriesWrapper = document.createElement('div');
+            seriesWrapper.style.display = 'flex';
+            seriesWrapper.style.flexDirection = 'row';
+            this.seriesContainer = document.createElement("div");
+            this.seriesContainer.classList.add("series-container");
+            this.text = document.createElement('span');
+            this.text.style.lineHeight = '1.8';
+            this.candle = document.createElement('div');
+            seriesWrapper.appendChild(this.seriesContainer);
+            this.div.appendChild(this.text);
+            this.div.appendChild(this.candle);
+            this.div.appendChild(seriesWrapper);
+            this.handler.div.appendChild(this.div);
+            // 重新订阅 crosshair 事件
+            this.handler.chart.subscribeCrosshairMove(this.legendHandler);
+        }
         makeSeriesRow(name, series, paneIndex) {
             const strokeColor = '#FFF';
             let openEye = `

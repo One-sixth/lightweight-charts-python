@@ -52,8 +52,12 @@ def add_full_resources(chart, bars, prefix, line_color):
     chart.set(bars)
     chart.legend(visible=True, ohlc=True, lines=True)
 
-    # 技术指标线
-    chart.create_line(f'{prefix} MA5', color=line_color, width=2)
+    # 技术指标线（5日均线）
+    ma5 = bars[['time', 'close']].copy()
+    ma5['close'] = bars['close'].rolling(5).mean()
+    ma5 = ma5.dropna()
+    ma5.rename(columns={'close': f'{prefix} MA5'}, inplace=True)
+    chart.create_line(f'{prefix} MA5', color=line_color, width=2).set(ma5)
 
     # 标记
     chart.marker(bars['time'].iloc[10], 'above', 'circle', '#ff4444', f'{prefix} 卖出')
