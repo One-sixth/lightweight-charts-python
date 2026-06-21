@@ -65,8 +65,20 @@ class Window:
         self.loaded = True
 
         if hasattr(self, '_return_q'):
-            while not self.run_script_and_get('document.readyState == "complete"'):
-                continue    # scary, but works
+            try:
+                self.run_script_and_get('document.readyState == "complete"')
+            except TimeoutError:
+                raise RuntimeError(
+                    "on_js_load: 远端超时，JS 页面未就绪。可能原因：\n"
+                    "  1. WebView 未正常启动（检查浏览器路径/系统权限）\n"
+                    "  2. 页面加载被阻塞（检查 index.html 资源加载）\n"
+                    "  3. JS 桥未建立（检查 _return_q 是否正确设置）"
+                )
+            except RuntimeError as e:
+                raise RuntimeError(
+                    f"on_js_load: JS 执行出错 → {e}\n"
+                    "  页面加载阶段发生 JS 错误，请检查 index.html 和 bundle.js"
+                ) from e
 
         initial_script = ''
         self.scripts.extend(self.final_scripts)
