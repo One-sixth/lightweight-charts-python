@@ -81,7 +81,6 @@ class PyWV:
         self.windows: typing.List[webview.Window] = []
         self.loop()
 
-
     def create_window(
         self, width, height, x, y, screen=None, on_top=False,
         maximize=False, title='', frameless=False
@@ -177,13 +176,28 @@ class PyWV:
                     break
 
 
-class WebviewHandler():
+class WebviewHandler:
     """pywebview 进程管理器，负责窗口进程的启动、通信和生命周期管理。"""
     def __init__(self) -> None:
-        self._reset()
         self.debug = False
+        self._inited = False
+        self._destroyed = False
 
-    def _reset(self):
+        self.loaded_event = None
+        self.return_queue = None
+        self.function_call_queue = None
+        self.emit_queue = None
+        self.wv_process = None
+        self.max_window_num = None
+
+        self.init()
+
+    def init(self):
+        if self._destroyed:
+            raise RuntimeError('WebviewHandler is destroyed. Cannot initialize again.')
+        if self._inited:
+            raise RuntimeError('WebviewHandler is already initialized.')
+
         self.loaded_event = mp.Event()
         self.return_queue = mp.Queue()
         self.function_call_queue = mp.Queue()
@@ -196,6 +210,7 @@ class WebviewHandler():
             daemon=True
         )
         self.max_window_num = -1
+        self._inited = True
 
     def create_window(
         self, width, height, x, y, screen=None, on_top=False,
@@ -268,12 +283,17 @@ class WebviewHandler():
         raise RuntimeError("Chart window has been destroyed. Cannot execute script.")
 
     def exit(self):
+        if self._destroyed:
+            return
+        if not self._inited:
+            return
+
         """终止窗口进程并清理所有队列。"""
         if self.wv_process.is_alive():
             self.wv_process.terminate()
             self.wv_process.join()
         self._clear_all_queue()
-        self._reset()
+        self._destroyed = True
 
 
 class Chart(abstract.AbstractChart):
@@ -435,14 +455,14 @@ class CrossProcessChart:
     Example:
         >>> from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
         >>> import sys
-        >>> 
+        >>>
         >>> app = QApplication(sys.argv)
         >>> parent = QWidget()
         >>> layout = QVBoxLayout(parent)
-        >>> 
+        >>>
         >>> chart = CrossProcessChart(parent, width=800, height=600)
         >>> layout.addWidget(chart.widget)
-        >>> 
+        >>>
         >>> parent.show()
         >>> chart.set(df)
         >>> app.exec()
