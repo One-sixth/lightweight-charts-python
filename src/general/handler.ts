@@ -15,7 +15,6 @@ import {
     HistogramSeries,
     LineSeries,
     createTextWatermark,
-    createSeriesMarkers,
 } from "lightweight-charts";
 
 import { GlobalParams, globalParamInit } from "./global-params";
@@ -79,7 +78,7 @@ export class Handler {
         const SKIP_KEYS = new Set([
             'series', 'volumeSeries', 'openInterestSeries', 'chart',
             'wrapper', 'div', 'legend', 'toolBox', '_topBar',
-            '_seriesList', 'seriesMarkers', 'commandFunctions',
+            '_seriesList', 'commandFunctions',
             'reSize', '_createChart', 'createCandlestickSeries',
             'createVolumeSeries', 'createOpenInterestSeries',
             'createLineSeries', 'createHistogramSeries', 'createCandleSeries', '_styleMap',
@@ -167,10 +166,6 @@ export class Handler {
                     const candleLen = h.series.data().length;
                     if (candleLen >= 0) lines.push(`candleDataPoints = ${candleLen}`);
                 } catch (_) {}
-                try {
-                    const markers = h.seriesMarkers?.length ?? 0;
-                    lines.push(`markersCount = ${markers}`);
-                } catch (_) {}
             }
 
             // — watermark —
@@ -245,7 +240,6 @@ export class Handler {
     public _seriesList: ISeriesApi<SeriesType>[] = [];
     private resize_hdr_height: number = 8;
     public watermark: any;
-    public seriesMarkers: any;
 
     // syncCharts 同步追踪
     public _syncedHandlers: string[] = [];
@@ -276,9 +270,7 @@ export class Handler {
         nrows: number,
         ncols: number,
         index: number,
-        autoSize: boolean,
-        paneIndex: number = 0,
-        marker_auto_scale: boolean = true
+        autoSize: boolean
     ) {
         this.reSize = this.reSize.bind(this)
 
@@ -347,7 +339,6 @@ export class Handler {
         this.series = null;
         this.volumeSeries = null;
         this.openInterestSeries = null;
-        this.seriesMarkers = null;
 
         this.legend = new Legend(this)
 
@@ -767,11 +758,9 @@ export class Handler {
             this._seriesList.push(candle);
             this.legend.makeSeriesRow(name, candle, paneIndex);
         }
-        const seriesMarkers = createSeriesMarkers(candle, [], { autoScale: true });
         return {
             name: name,
             series: candle,
-            seriesMarkers: seriesMarkers,
         };
     }
 

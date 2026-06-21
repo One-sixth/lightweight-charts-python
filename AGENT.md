@@ -58,6 +58,8 @@ Pane (util.py)
 6. **绘图方法只在 AbstractChart**：不在 SeriesCommon
 7. **`update_from_ticks` 双层设计**：SeriesCommon 通用版 + CandleSeries 覆盖版
 8. **`_is_subchart` 标识**：`reset()`/`_clear_handlers()` 限制仅主图可调用
+9. **seriesMarkers 按需创建**：Handler 不再持有 `seriesMarkers`，由 `_update_markers()` 在 series 级别按需创建
+10. **Handler 构造函数精简**：7 个参数（chartId/width/height/nrows/ncols/index/autoSize），`paneIndex` 和 `marker_auto_scale` 已移除
 
 ---
 
@@ -135,8 +137,9 @@ lightweight-charts-onesixth/
 
 ### 标记不显示
 1. 检查 `_update_markers` 是否有 try/catch 保护
-2. 检查 `seriesMarkers` 是否已创建（`_update_markers` 会动态创建）
-3. 所有 Series 都支持标记
+2. `seriesMarkers` 由 `_update_markers()` 按需创建（首次调用时自动创建）
+3. 检查 `_marker_auto_scale` 是否正确传递（Python `_update_markers` 使用 `self._chart._marker_auto_scale`）
+4. 所有 Series 都支持标记
 
 ### reset 后 set 失败
 1. 检查 `self.candle` 是否为 None（reset 后应为 None）

@@ -507,6 +507,7 @@ class SeriesCommon(Pane):
         self.update_batch(bars)
 
     def _update_markers(self):
+        auto_scale = jbool(self._chart._marker_auto_scale)
         if not self.markers:
             self.run_script(f'''
                 if ({self.id}.seriesMarkers) {self.id}.seriesMarkers.setMarkers([]);
@@ -517,7 +518,7 @@ class SeriesCommon(Pane):
             try {{
                 if (!{self.id}.seriesMarkers) {{
                     {self.id}.seriesMarkers = LightweightCharts.createSeriesMarkers(
-                        {self.id}.series, [], {{autoScale: true}}
+                        {self.id}.series, [], {{autoScale: {auto_scale}}}
                     );
                 }}
                 {self.id}.seriesMarkers.setMarkers({str_markers});
@@ -1431,6 +1432,7 @@ class AbstractChart(Pane):
         self._width = width
         self._height = height
         self._is_subchart = False  # 由 create_subchart() 设为 True
+        self._marker_auto_scale = marker_auto_scale  # 标记是否参与价格轴自动缩放
         # 时间级别（图表级，所有 series 共享）
         self._interval = None       # None = 未初始化，需先调 set() 或 set_period()
         self.offset = 0
@@ -1466,7 +1468,7 @@ class AbstractChart(Pane):
             f'{self.id} = new Lib.Handler('
             f'"{self.id}", {width}, {height}, '
             f'{self._position_info["nrows"]}, {self._position_info["ncols"]}, {self._position_info["index"]}, '
-            f'{jbool(autosize)}, {pane_index}, {jbool(marker_auto_scale)})'
+            f'{jbool(autosize)})'
         )
         self.run_script(self._html_chart_init + ';0')
 
@@ -1477,9 +1479,9 @@ class AbstractChart(Pane):
         self.oi: 'OpenInterestSeries' = OpenInterestSeries(self, _fixed_id=f'window.{base}_oi', _dont_add_list=True)
 
         # 设置 Handler 的 series 引用（audit 和 _toggle_data 需要）
+        # seriesMarkers 由 _update_markers() 按需在 series 级别创建，无需复制到 Handler
         self.run_script(f'''
             {self.id}.series = {self.candle.id}.series;
-            {self.id}.seriesMarkers = {self.candle.id}.seriesMarkers;
             {self.id}.volumeSeries = {self.volume.id}.series;
             {self.id}.openInterestSeries = {self.oi.id}.series;
             // 主 candle 不应出现在 _seriesList 中（它属于 Handler 主 series）
@@ -1589,7 +1591,6 @@ class AbstractChart(Pane):
                 self.candle = CandleSeries(self, _fixed_id=f'window.{base}_candle', _dont_add_list=True)
                 self.run_script(f'''
                     {self.id}.series = {self.candle.id}.series;
-                    {self.id}.seriesMarkers = {self.candle.id}.seriesMarkers;
                     var _ci = {self.id}._seriesList.indexOf({self.candle.id}.series);
                     if (_ci >= 0) {self.id}._seriesList.splice(_ci, 1);
                 ;0''')
@@ -1828,12 +1829,11 @@ class AbstractChart(Pane):
                 series._last_bar = None
 
         # 2. 重置 Handler 引用和 Python 状态
+        # seriesMarkers 由 _update_markers() 按需在 series 级别创建，随 series 删除自动清理
         self.run_script(f'''
             {self.id}.series = null;
             {self.id}.volumeSeries = null;
             {self.id}.openInterestSeries = null;
-            if ({self.id}.seriesMarkers) {self.id}.seriesMarkers.setMarkers([]);
-            {self.id}.seriesMarkers = null;
         ''')
         self.candle.data = pd.DataFrame()
         self.candle.candle_data = pd.DataFrame()

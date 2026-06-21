@@ -4,6 +4,34 @@
 
 ---
 
+## [v2.7.1] - 2026-06-21
+
+### 清理
+
+#### 移除 Handler 级别 `seriesMarkers`
+- **问题**：v2.7.0 重构后，Handler 的 `seriesMarkers` 属性从未被功能性使用——Python 勤奋赋值，JS 端从不读取（audit 中的 `markersCount` 因 `.length` 不存在永远返回 0）
+- **清理内容**：
+  - **JS**：移除 `seriesMarkers` 属性声明、构造函数初始化、SKIP_KEYS 条目、`createSeriesMarkers` import 和调用
+  - **JS**：`createCandleSeries()` 不再返回 `seriesMarkers`，改为 `_update_markers()` 按需在 series 级别创建
+  - **JS**：移除 audit 中坏掉的 `markersCount` 读取
+  - **Python**：移除 `AbstractChart.__init__` 和 `set()` 中 `{self.id}.seriesMarkers = {self.candle.id}.seriesMarkers` 赋值
+  - **Python**：移除 `reset()` 中 `seriesMarkers` 清理（随 series 删除自动清理）
+- **设计变更**：`seriesMarkers` 从"Handler 级别持有 + 全局复制"改为"按需在 series 级别创建"——`_update_markers()` 首次调用时自动创建，`delete series` 时自动清理
+
+#### `_marker_auto_scale` 修复
+- **问题**：Handler 构造函数接收 `marker_auto_scale` 参数但从未存储或使用，`_update_markers()` 中 `autoScale` 硬编码为 `true`
+- **修复**：
+  - **Python**：`AbstractChart.__init__` 存储 `self._marker_auto_scale = marker_auto_scale`
+  - **Python**：`_update_markers()` 使用 `self._chart._marker_auto_scale` 替代硬编码 `true`
+  - **JS**：移除 Handler 构造函数中的 `marker_auto_scale` 参数（纯 Python 侧逻辑）
+
+#### 移除 Handler 构造函数中忽略的参数
+- **`paneIndex`**：pane_index 在系列创建时（`createLineSeries` 等）传入，Handler 层面不需要，已移除
+- **`_marker_auto_scale`**：纯 Python 侧逻辑（`AbstractChart._marker_auto_scale` 存储 + `_update_markers()` 读取），已移除
+- Handler 构造函数从 8 个参数精简为 7 个
+
+---
+
 ## [v2.7.0] - 2026-06-21
 
 ### 核心架构变更
@@ -12,7 +40,7 @@
 - **主 series 使用固定 ID**：`window.Chart_1_candle` / `window.Chart_1_volume` / `window.Chart_1_oi`
   - ID 不由 IDGen 自动生成，但 audit 的 `GLOBALS_RE`（`Chart_\d` 前缀）能正确捕获
   - 删除后按同名重建，JS 全局变量名一致
-- **Handler 构造函数惰性创建**：`this.series`/`this.volumeSeries`/`this.openInterestSeries`/`this.seriesMarkers` 全部设为 `null`
+- **Handler 构造函数惰性创建**：`this.series`/`this.volumeSeries`/`this.openInterestSeries` 全部设为 `null`
   - 由 Python 端 AbstractChart.__init__ 创建后通过 JS 脚本设置 Handler 引用
 - **`reset()` 彻底清理**：删除 candle/volume/oi 的 JS 对象和 Python 状态，Handler 引用设为 null
 - **`set()` 按需重建**：检测 `self.candle`/`self.volume`/`self.oi` 为 None 时按固定 ID 重建

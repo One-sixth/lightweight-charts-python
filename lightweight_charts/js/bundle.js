@@ -2080,7 +2080,7 @@ var Lib = (function (exports, lightweightCharts) {
             const SKIP_KEYS = new Set([
                 'series', 'volumeSeries', 'openInterestSeries', 'chart',
                 'wrapper', 'div', 'legend', 'toolBox', '_topBar',
-                '_seriesList', 'seriesMarkers', 'commandFunctions',
+                '_seriesList', 'commandFunctions',
                 'reSize', '_createChart', 'createCandlestickSeries',
                 'createVolumeSeries', 'createOpenInterestSeries',
                 'createLineSeries', 'createHistogramSeries', 'createCandleSeries', '_styleMap',
@@ -2171,11 +2171,6 @@ var Lib = (function (exports, lightweightCharts) {
                             lines.push(`candleDataPoints = ${candleLen}`);
                     }
                     catch (_) { }
-                    try {
-                        const markers = h.seriesMarkers?.length ?? 0;
-                        lines.push(`markersCount = ${markers}`);
-                    }
-                    catch (_) { }
                 }
                 // — watermark —
                 if (h.watermark)
@@ -2243,7 +2238,6 @@ var Lib = (function (exports, lightweightCharts) {
         _seriesList = [];
         resize_hdr_height = 8;
         watermark;
-        seriesMarkers;
         // syncCharts 同步追踪
         _syncedHandlers = [];
         _syncCallbacks = {};
@@ -2260,7 +2254,7 @@ var Lib = (function (exports, lightweightCharts) {
         isGridLayout = false;
         customPosition = null;
         _originalHeight = null;
-        constructor(chartId, innerWidth, innerHeight, nrows, ncols, index, autoSize, paneIndex = 0, marker_auto_scale = true) {
+        constructor(chartId, innerWidth, innerHeight, nrows, ncols, index, autoSize) {
             this.reSize = this.reSize.bind(this);
             this.id = chartId;
             this.scale = {
@@ -2319,7 +2313,6 @@ var Lib = (function (exports, lightweightCharts) {
             this.series = null;
             this.volumeSeries = null;
             this.openInterestSeries = null;
-            this.seriesMarkers = null;
             this.legend = new Legend(this);
             Handler._all.push(this);
             document.addEventListener('keydown', (event) => {
@@ -2679,11 +2672,9 @@ var Lib = (function (exports, lightweightCharts) {
                 this._seriesList.push(candle);
                 this.legend.makeSeriesRow(name, candle, paneIndex);
             }
-            const seriesMarkers = lightweightCharts.createSeriesMarkers(candle, [], { autoScale: true });
             return {
                 name: name,
                 series: candle,
-                seriesMarkers: seriesMarkers,
             };
         }
         createToolBox() {
