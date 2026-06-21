@@ -807,18 +807,20 @@ class Histogram(SeriesCommon):
 class VolumeSeries(SeriesCommon):
     """成交量柱状图，独立系列，自动根据 K 线涨跌着色。
 
-    通常通过 ``AbstractChart.attach_volume()`` 创建，也可以独立创建后手动 ``set()``。
+    由 ``AbstractChart.__init__`` 自动创建为 ``self.volume``，也可独立创建后手动 ``set()``。
 
     用法示例::
 
-        # 通过 chart 创建
-        vol = chart.attach_volume(up_color='green', down_color='red')
-        vol.set(df)
+        # chart 自动创建，直接访问
+        chart = Chart()
+        chart.set(df)  # volume 数据自动转发到 chart.volume
 
         # 独立配置
-        vol.config(scale_margin_top=0.7)
+        chart.volume.config(scale_margin_top=0.7)
 
-        # 删除
+        # 独立创建（高级用法）
+        vol = VolumeSeries(chart, pane_index=1)
+        vol.set(vol_df)
         vol.delete()
     """
 
@@ -1012,13 +1014,20 @@ class VolumeSeries(SeriesCommon):
 class OpenInterestSeries(SeriesCommon):
     """持仓量折线，独立系列。
 
-    通常通过 ``AbstractChart.attach_open_interest()`` 创建。
+    由 ``AbstractChart.__init__`` 自动创建为 ``self.oi``，也可独立创建后手动 ``set()``。
 
     用法示例::
 
-        oi = chart.attach_open_interest(color='#F5A623')
-        oi.set(df)
-        oi.config(color='#FF6600')
+        # chart 自动创建，直接访问
+        chart = Chart()
+        chart.set(df)  # open_interest 数据自动转发到 chart.oi
+
+        # 独立配置
+        chart.oi.config(color='#FF6600')
+
+        # 独立创建（高级用法）
+        oi = OpenInterestSeries(chart, pane_index=1)
+        oi.set(oi_df)
         oi.delete()
     """
 
@@ -1386,24 +1395,6 @@ class CandleSeries(SeriesCommon):
         wick_down_color = wick_down_color if wick_down_color else down_color
         self.run_script(f"{self.id}.series.applyOptions({js_json(locals())})")
 
-    def volume_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0,
-                      up_color=None, down_color=None):
-        """
-        Configure volume settings. Delegates to chart.volume.
-        """
-        if self._chart.volume:
-            self._chart.volume.config(scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom,
-                       up_color=up_color, down_color=down_color)
-
-    def open_interest_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0,
-                             color=None):
-        """
-        Configure open interest settings. Delegates to chart.oi.
-        """
-        if self._chart.oi:
-            self._chart.oi.config(scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom,
-                      color=color)
-
     def price_scale(
         self,
         auto_scale: bool = True,
@@ -1620,11 +1611,6 @@ class AbstractChart(Pane):
         """标记字典。"""
         return self.candle.markers if self.candle else {}
 
-    @property
-    def _last_bar(self):
-        """最后一根 bar 的数据。"""
-        return self.candle._last_bar if self.candle else None
-
     # ── 时间级别方法（图表级，不再委托到 candle）──
 
     def _set_interval(self, df: pd.DataFrame):
@@ -1767,8 +1753,6 @@ class AbstractChart(Pane):
         """
         if df.empty:
             return
-        if self._last_bar is None:
-            raise AssertionError('update_from_ticks() must be called after set()')
 
         df = normal_df(df)
         df = self._time_to_bar_time(df)
@@ -1826,13 +1810,20 @@ class AbstractChart(Pane):
         """配置 K 线样式。"""
         return self.candle.candle_style(**kwargs)
 
-    def volume_config(self, **kwargs):
+    def volume_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0,
+                      up_color=None, down_color=None):
         """配置成交量样式。"""
-        return self.candle.volume_config(**kwargs)
+        self.volume.config(
+            scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom,
+                   up_color=up_color, down_color=down_color
+        )
 
-    def open_interest_config(self, **kwargs):
+    def open_interest_config(self, scale_margin_top: float = 0.8, scale_margin_bottom: float = 0.0,
+                             color=None):
         """配置持仓量样式。"""
-        return self.candle.open_interest_config(**kwargs)
+        self.oi.config(
+            scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom, color=color
+        )
 
     def price_scale(self, **kwargs):
         """配置价格坐标轴。"""
@@ -1889,7 +1880,11 @@ class AbstractChart(Pane):
 
     def pop(self, count=1):
         """从末尾移除数据点。"""
-        return self.candle.pop(count)
+        self.candle.pop(count)
+        self.volume.pop(count)
+        self.oi.pop(count)
+        for line in self._lines:
+            line.pop(count)
 
     def hide_data(self):
         """隐藏所有数据（candle + volume + oi）。"""

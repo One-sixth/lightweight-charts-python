@@ -2083,8 +2083,7 @@ var Lib = (function (exports, lightweightCharts) {
                 'series', 'volumeSeries', 'openInterestSeries', 'chart',
                 'wrapper', 'div', 'legend', 'toolBox', '_topBar',
                 '_seriesList', 'commandFunctions',
-                'reSize', '_createChart', 'createCandlestickSeries',
-                'createVolumeSeries', 'createOpenInterestSeries',
+                'reSize', '_createChart',
                 'createLineSeries', 'createHistogramSeries', 'createCandleSeries', '_styleMap',
             ]);
             // Regex matching our custom window global variable names
@@ -2559,44 +2558,6 @@ var Lib = (function (exports, lightweightCharts) {
                 },
                 handleScroll: { vertTouchDrag: true },
             });
-        }
-        createCandlestickSeries(paneIndex) {
-            const up = 'rgba(39, 157, 130, 100)';
-            const down = 'rgba(200, 97, 100, 100)';
-            const candleSeries = this.chart.addSeries(lightweightCharts.CandlestickSeries, {
-                upColor: up, borderUpColor: up, wickUpColor: up,
-                downColor: down, borderDownColor: down, wickDownColor: down
-            }, paneIndex);
-            candleSeries.priceScale().applyOptions({
-                scaleMargins: { top: 0.2, bottom: 0.2 },
-            });
-            return candleSeries;
-        }
-        createVolumeSeries(paneIndex) {
-            const volumeSeries = this.chart.addSeries(lightweightCharts.HistogramSeries, {
-                color: '#26a69a',
-                priceFormat: { type: 'volume' },
-                priceScaleId: 'volume_scale',
-            }, paneIndex);
-            volumeSeries.priceScale().applyOptions({
-                scaleMargins: { top: 0.8, bottom: 0 },
-            });
-            return volumeSeries;
-        }
-        createOpenInterestSeries(paneIndex) {
-            const oiSeries = this.chart.addSeries(lightweightCharts.LineSeries, {
-                color: '#F5A623',
-                lineWidth: 1,
-                priceScaleId: 'oi_scale',
-                lastValueVisible: false,
-                priceLineVisible: false,
-                crosshairMarkerVisible: true,
-            }, paneIndex);
-            oiSeries.priceScale().applyOptions({
-                scaleMargins: { top: 0.8, bottom: 0 },
-                autoScale: true,
-            });
-            return oiSeries;
         }
         /**
          * 创建折线系列。

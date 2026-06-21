@@ -11,6 +11,10 @@
   4. update_from_ticks() tick 聚合
   5. 重复时间戳合并（merge_value_by_time）
   6. Python 端数据一致性
+  7. 纯函数单元测试（get_df_interval_offset / normal_df / time_to_bar_time / merge_value_by_time）
+  8. 跨时间级别聚合测试（5s→1min / 1min→5min / 1h→daily / 多级链式）
+  9. 混沌测试（随机混合 ticks + bars + 不同时间级别，每步校验）
+  10. 边界情况测试（空 DataFrame / 单行 / 乱序 / 重复时间戳）
 
 Usage:
     python test/test_data_aggregation.py
@@ -18,13 +22,16 @@ Usage:
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-os.chdir(os.path.dirname(__file__))
+os.chdir(os.path.join(os.path.dirname(__file__), '..'))
 
 import time
 import pandas as pd
 import numpy as np
 from lightweight_charts import Chart
-from lightweight_charts.util import merge_value_by_time, normal_df
+from lightweight_charts.util import (
+    merge_value_by_time, normal_df, time_to_bar_time,
+    get_df_interval_offset,
+)
 
 
 def ts_to_dt(ts):
@@ -139,6 +146,110 @@ def verify_set(chart, df, label, errors):
     all_clean &= log_check(ok, f"{label} candle._last_bar == oi._last_bar", errors, f"{label}_last_bar_oi_match")
 
     return all_clean
+
+
+def assert_close(actual, expected, label, errors, tol=1e-6):
+    """校验两个 DataFrame 是否近似相等（忽略列顺序）。返回 True/False。"""
+    if actual is None or expected is None:
+        if actual is not expected:
+            errors.append(f"{label}: one is None")
+            print(f"      [FAIL] {label}: actual={'None' if actual is None else 'df'}, expected={'None' if expected is None else 'df'}")
+            return False
+        return True
+    if len(actual) != len(expected):
+        errors.append(f"{label}: rows {len(actual)} != {len(expected)}")
+        print(f"      [FAIL] {label}: rows {len(actual)} != {len(expected)}")
+        return False
+    for col in expected.columns:
+        if col not in actual.columns:
+            errors.append(f"{label}: missing column '{col}'")
+            print(f"      [FAIL] {label}: missing column '{col}'")
+            return False
+        if not np.allclose(actual[col].values, expected[col].values, atol=tol, equal_nan=True):
+            diff = actual[col].values - expected[col].values
+            errors.append(f"{label}: {col} mismatch (max diff={np.max(np.abs(diff)):.8f})")
+            print(f"      [FAIL] {label}: {col} mismatch (max diff={np.max(np.abs(diff)):.8f})")
+            return False
+    print(f"      [OK] {label}")
+    return True
+
+
+def compute_expected(expected, new_bars, chart, is_ticks=False, cumulative_volume=False,
+                     prev_last_bar=None):
+    """
+    模拟 chart 的聚合管线，计算期望结果（仅 OHLC 列）。
+
+    对每批 new_bars（原始 tick 或 bar），复刻：
+      normal_df → time_to_bar_time → merge_value_by_time
+      → update_from_ticks OHLC 聚合（is_ticks=True 时）
+      → last-bar 继承（open 不变, high=max, low=min）
+      → filter 旧数据 → concat + dedup（replace-or-append）
+
+    返回的 DataFrame 仅含 time/open/high/low/close，与 chart.candle.data 对齐。
+
+    :param expected: 当前期望状态（DataFrame），None 表示尚未初始化
+    :param new_bars: 本批输入数据（DataFrame，原始 tick 或 bar）
+    :param chart: 真实 Chart 实例（用于获取 interval/offset）
+    :param is_ticks: True 表示输入是 tick 数据，需要 OHLC 聚合
+    :param cumulative_volume: update_from_ticks 的 cumulative_volume 参数
+    :param prev_last_bar: 操作前的 candle._last_bar（用于 last-bar 继承），None 则跳过继承
+    :return: 更新后的期望状态（DataFrame，time/open/high/low/close）
+    """
+    if new_bars is None or new_bars.empty:
+        return expected
+
+    # 1. clean（复刻 AbstractChart.update_from_ticks 的清洗路径）
+    #    tick 路径：normal_df + time_to_bar_time（不做 merge_value_by_time！）
+    #    bar 路径：normal_df + time_to_bar_time + merge_value_by_time
+    df = normal_df(new_bars)
+    df = time_to_bar_time(df, chart._offset, chart._interval)
+    if not is_ticks:
+        df = merge_value_by_time(df)
+
+    # 2. update_from_ticks 的 OHLC 聚合（tick 路径：groupby time → OHLC from price）
+    if is_ticks and 'price' in df.columns:
+        group_df = df.groupby('time')
+        bars = pd.DataFrame({
+            'time': list(group_df.groups),
+            'open': group_df['price'].first().values,
+            'high': group_df['price'].max().values,
+            'low': group_df['price'].min().values,
+            'close': group_df['price'].last().values,
+        })
+        df = bars
+
+    # 只保留 OHLC 列（与 chart.candle.data 对齐）
+    ohlc_cols = ['time', 'open', 'high', 'low', 'close']
+    df = df[[c for c in ohlc_cols if c in df.columns]]
+
+    # 3. last-bar 继承（update_from_ticks 中，首条聚合 bar 继承上一根的 open/high/low）
+    if expected is not None and not expected.empty and is_ticks and prev_last_bar is not None:
+        last_time = prev_last_bar['time']
+        if len(df) > 0 and df.iloc[0]['time'] == last_time:
+            df.iloc[0, df.columns.get_loc('open')] = prev_last_bar['open']
+            df.iloc[0, df.columns.get_loc('high')] = max(prev_last_bar['high'], df.iloc[0]['high'])
+            df.iloc[0, df.columns.get_loc('low')] = min(prev_last_bar['low'], df.iloc[0]['low'])
+
+    # 4. filter 旧数据
+    if expected is not None and not expected.empty:
+        last_time = expected.iloc[-1]['time']
+        df = df[df['time'] >= last_time]
+        if df.empty:
+            return expected
+
+    # 5. replace-or-append（精确复刻 update_bars 的逻辑）
+    #    关键：仅在第一个新 bar 的时间 == 最后一根旧 bar 的时间时做替换
+    #    其他情况下，新 bar 简单追加，不会和旧 bar 合并
+    if expected is None or expected.empty:
+        return df.reset_index(drop=True)
+    result = expected.copy()
+    if len(df) > 0 and df.iloc[0]['time'] == result.iloc[-1]['time']:
+        # 边界替换：替换最后一根旧 bar，追加剩余新 bar
+        result = pd.concat([result.iloc[:-1], df], ignore_index=True)
+    else:
+        # 简单追加
+        result = pd.concat([result, df], ignore_index=True)
+    return result.reset_index(drop=True)
 
 
 # ═══════════════════════════════════════════════════════
@@ -632,6 +743,669 @@ def test_line_name_case_preserved():
 
 
 # ═══════════════════════════════════════════════════════
+#  测试 7: 纯函数单元测试
+# ═══════════════════════════════════════════════════════
+
+def test_util_functions():
+    sep = "=" * 60
+    print(sep)
+    print("  test_util_functions")
+    print(sep)
+
+    errors = []
+    all_clean = True
+
+    # ── get_df_interval_offset ──
+    print("\n[1] get_df_interval_offset() ...")
+    cases = [
+        (1,    '1s',   0),     # 1s, no offset
+        (5,    '5s',   0),     # 5s
+        (60,   '1min', 0),     # 1min
+        (300,  '5min', 0),     # 5min
+        (3600, '1h',   0),     # 1h
+    ]
+    for interval_sec, label, _ in cases:
+        base = pd.Timestamp('2024-01-01')
+        times = [base + pd.Timedelta(seconds=interval_sec * i) for i in range(20)]
+        df = pd.DataFrame({'time': times, 'value': np.arange(20, dtype=float)})
+        df = normal_df(df)
+        det_interval, offset = get_df_interval_offset(df)
+        ok = det_interval == interval_sec
+        all_clean &= log_check(ok, f"{label}: interval={det_interval}=={interval_sec}", errors, f"interval_{label}")
+
+    # ── normal_df 格式处理 ──
+    print("\n[2] normal_df() format handling ...")
+    # date 列 → time
+    df_date = pd.DataFrame({'date': pd.date_range('2024-01-01', periods=5, freq='D'), 'value': range(5)})
+    ndf = normal_df(df_date)
+    all_clean &= log_check('time' in ndf.columns and 'date' not in ndf.columns,
+                            "date→time rename", errors, "normal_df_date")
+    # 大写列名 → 小写
+    df_upper = pd.DataFrame({'Time': pd.date_range('2024-01-01', periods=5, freq='D'), 'Value': range(5)})
+    ndf = normal_df(df_upper)
+    all_clean &= log_check('time' in ndf.columns and 'value' in ndf.columns,
+                            "uppercase→lowercase", errors, "normal_df_upper")
+    # index 作为 time
+    df_idx = pd.DataFrame({'value': range(5)}, index=pd.date_range('2024-01-01', periods=5, freq='D'))
+    ndf = normal_df(df_idx)
+    all_clean &= log_check('time' in ndf.columns, "index→time", errors, "normal_df_index")
+    # Unix 时间戳（int）
+    base_ts = int(pd.Timestamp('2024-01-01').timestamp())
+    df_ts = pd.DataFrame({'time': [base_ts + 86400 * i for i in range(5)], 'value': range(5)})
+    ndf = normal_df(df_ts)
+    all_clean &= log_check(ndf['time'].dtype in (np.int64, np.float64),
+                            "unix timestamp passthrough", errors, "normal_df_ts")
+
+    # ── time_to_bar_time 边界对齐 ──
+    print("\n[3] time_to_bar_time() boundary alignment ...")
+    base = pd.Timestamp('2024-01-01 00:00:00')
+    test_times = [
+        pd.Timestamp('2024-01-01 12:03:45'),  # → 12:00:00 (1h)
+        pd.Timestamp('2024-01-01 12:07:22'),  # → 12:05:00 (5min)
+        pd.Timestamp('2024-01-01 12:07:37'),  # → 12:07:35 (5s)
+    ]
+    intervals = [3600, 300, 5]
+    offsets = [0, 0, 0]
+    expected_hms = [(12, 0, 0), (12, 5, 0), (12, 7, 35)]
+    for tt, intv, off, (h, m, s) in zip(test_times, intervals, offsets, expected_hms):
+        ts = int((base + pd.Timedelta(hours=tt.hour, minutes=tt.minute, seconds=tt.second) - base).total_seconds())
+        aligned = int(time_to_bar_time(ts, off, intv))
+        aligned_dt = pd.Timestamp(aligned, unit='s')
+        ok = aligned_dt.hour == h and aligned_dt.minute == m and aligned_dt.second == s
+        all_clean &= log_check(ok,
+                                f"{tt.strftime('%H:%M:%S')} → {aligned_dt.strftime('%H:%M:%S')} (intv={intv}s)",
+                                errors, f"align_{tt.strftime('%H%M%S')}")
+    # Series 输入（3 个值：ts+1→ts, ts+61→ts+60, ts+121→ts+120 → 3 unique）
+    series_in = pd.Series([ts + 1, ts + 61, ts + 121])
+    aligned_series = time_to_bar_time(series_in, 0, 60)
+    all_clean &= log_check(len(aligned_series) == 3 and aligned_series.nunique() == 3,
+                            "Series alignment: 3 inputs → 3 unique", errors, "align_series")
+    # DataFrame 输入
+    df_in = pd.DataFrame({'time': [ts + 1, ts + 61], 'value': [1.0, 2.0]})
+    aligned_df = time_to_bar_time(df_in, 0, 60)
+    all_clean &= log_check('time' in aligned_df.columns and aligned_df['time'].nunique() == 2,
+                            "DataFrame alignment", errors, "align_df")
+
+    # ── merge_value_by_time OHLC 语义 ──
+    print("\n[4] merge_value_by_time() OHLC semantics ...")
+    t = int(pd.Timestamp('2024-01-01').timestamp())
+    df = pd.DataFrame({
+        'time': [t, t, t],
+        'open': [100.0, 102.0, 101.0],
+        'high': [105.0, 110.0, 108.0],
+        'low':  [98.0,  99.0,  97.0],
+        'close': [103.0, 107.0, 109.0],
+        'volume': [1000.0, 2000.0, 3000.0],
+        'open_interest': [5000.0, 6000.0, 7000.0],
+    })
+    merged = merge_value_by_time(df)
+    all_clean &= log_check(merged.iloc[0]['open'] == 100.0, "open=first=100", errors, "merge_open")
+    all_clean &= log_check(merged.iloc[0]['high'] == 110.0, "high=max=110", errors, "merge_high")
+    all_clean &= log_check(merged.iloc[0]['low'] == 97.0, "low=min=97", errors, "merge_low")
+    all_clean &= log_check(merged.iloc[0]['close'] == 109.0, "close=last=109", errors, "merge_close")
+    all_clean &= log_check(merged.iloc[0]['volume'] == 6000.0, "volume=sum=6000", errors, "merge_vol")
+    all_clean &= log_check(merged.iloc[0]['open_interest'] == 7000.0, "OI=last=7000", errors, "merge_oi")
+    # 不同时间 → 不合并
+    df2 = pd.DataFrame({'time': [t, t + 60], 'value': [1.0, 2.0]})
+    merged2 = merge_value_by_time(df2)
+    all_clean &= log_check(len(merged2) == 2, "different times not merged", errors, "merge_no_merge")
+
+    chart = Chart()
+    chart.exit()
+
+    print()
+    print(f"  RESULT: {'PASS' if all_clean else 'FAIL ({0} errors)'.format(len(errors))}")
+    return all_clean
+
+
+# ═══════════════════════════════════════════════════════
+#  测试 8: 跨时间级别聚合测试
+# ═══════════════════════════════════════════════════════
+
+def test_cross_level_aggregation():
+    sep = "=" * 60
+    print(sep)
+    print("  test_cross_level_aggregation")
+    print(sep)
+
+    errors = []
+    all_clean = True
+
+    def verify_agg(chart, expected, label):
+        """校验 chart.candle.data 与期望结果（OHLC + 时间）。"""
+        nonlocal all_clean
+        cols = ['time', 'open', 'high', 'low', 'close']
+        all_clean &= assert_close(chart.candle.data[cols], expected[cols], label, errors)
+
+    # ── [1] 5s → 1min ──
+    print("\n[1] 5s → 1min aggregation ...")
+    base = pd.Timestamp('2024-01-01')
+    t_1min = int(base.timestamp())
+    times_5s = [t_1min + i * 5 for i in range(12)]
+    rng = np.random.RandomState(101)
+    prices = 100 + np.cumsum(rng.randn(12) * 0.5)
+    highs = prices + rng.uniform(0.1, 0.5, 12)
+    lows = prices - rng.uniform(0.1, 0.5, 12)
+    df_5s = pd.DataFrame({
+        'time': [pd.Timestamp(t, unit='s') for t in times_5s],
+        'open': prices, 'high': highs, 'low': lows, 'close': prices,
+        'volume': rng.randint(100, 500, 12).astype(float),
+        'open_interest': rng.randint(1000, 5000, 12).astype(float),
+    })
+    # 手动聚合：groupby aligned time
+    df_5s_norm = normal_df(df_5s)
+    df_5s_norm = time_to_bar_time(df_5s_norm, 0, 60)
+    expected = merge_value_by_time(df_5s_norm)
+    # chart.set_period(60) 锁定 1min，再 set 5s 数据 → 自动对齐聚合
+    chart = Chart()
+    chart.set_period(60)
+    chart.set(df_5s)
+    verify_agg(chart, expected, "5s→1min")
+    all_clean &= log_check(chart.candle._last_bar['time'] == expected.iloc[-1]['time'],
+                            "5s→1min last_bar time", errors, "5s_1min_last")
+    chart.exit()
+
+    # ── [2] 1min → 5min ──
+    print("\n[2] 1min → 5min aggregation ...")
+    t_5min = int(pd.Timestamp('2024-01-02').timestamp())
+    times_1min = [t_5min + i * 60 for i in range(5)]
+    rng = np.random.RandomState(102)
+    prices = 200 + np.cumsum(rng.randn(5) * 1.0)
+    highs = prices + rng.uniform(0.5, 2, 5)
+    lows = prices - rng.uniform(0.5, 2, 5)
+    df_1min = pd.DataFrame({
+        'time': [pd.Timestamp(t, unit='s') for t in times_1min],
+        'open': prices, 'high': highs, 'low': lows, 'close': prices,
+        'volume': rng.randint(500, 2000, 5).astype(float),
+    })
+    df_1min_norm = normal_df(df_1min)
+    df_1min_norm = time_to_bar_time(df_1min_norm, 0, 300)
+    expected = merge_value_by_time(df_1min_norm)
+    chart = Chart()
+    chart.set_period(300)
+    chart.set(df_1min)
+    verify_agg(chart, expected, "1min→5min")
+    all_clean &= log_check(chart.candle._last_bar['time'] == expected.iloc[-1]['time'],
+                            "1min→5min last_bar time", errors, "1min_5min_last")
+    chart.exit()
+
+    # ── [3] 1h → daily ──
+    print("\n[3] 1h → daily aggregation ...")
+    chart = Chart()
+    chart.set_period(86400)
+    t_day = int(pd.Timestamp('2024-01-01').timestamp())
+    # 8 条 1h bars（模拟交易时段 09:00-17:00）
+    times_1h = [t_day + 3600 * 9 + i * 3600 for i in range(8)]
+    rng = np.random.RandomState(103)
+    prices = 500 + np.cumsum(rng.randn(8) * 3)
+    highs = prices + rng.uniform(1, 5, 8)
+    lows = prices - rng.uniform(1, 5, 8)
+    df_1h = pd.DataFrame({
+        'time': [pd.Timestamp(t, unit='s') for t in times_1h],
+        'open': prices, 'high': highs, 'low': lows, 'close': prices,
+        'volume': rng.randint(1000, 10000, 8).astype(float),
+        'open_interest': rng.randint(20000, 80000, 8).astype(float),
+    })
+    chart.set(df_1h)
+    df_1h_norm = normal_df(df_1h)
+    df_1h_norm = time_to_bar_time(df_1h_norm, 0, 86400)
+    expected = merge_value_by_time(df_1h_norm)
+    verify_agg(chart, expected, "1h→daily")
+    all_clean &= log_check(chart.candle._last_bar['open'] == expected.iloc[-1]['open'],
+                            "1h→daily open", errors, "1h_day_open")
+    all_clean &= log_check(chart.candle._last_bar['high'] == expected.iloc[-1]['high'],
+                            "1h→daily high", errors, "1h_day_high")
+    all_clean &= log_check(chart.candle._last_bar['low'] == expected.iloc[-1]['low'],
+                            "1h→daily low", errors, "1h_day_low")
+    all_clean &= log_check(chart.candle._last_bar['close'] == expected.iloc[-1]['close'],
+                            "1h→daily close", errors, "1h_day_close")
+    chart.exit()
+
+    # ── [4] 多级链式聚合：1s → 1min → 5min → 1h ──
+    print("\n[4] Multi-level chain: 1s → 1min → 5min → 1h ...")
+    rng = np.random.RandomState(104)
+    t_base = int(pd.Timestamp('2024-01-01 09:00:00').timestamp())
+    n_seconds = 300  # 5 minutes of 1s data
+    times = [t_base + i for i in range(n_seconds)]
+    prices = 100 + np.cumsum(rng.randn(n_seconds) * 0.1)
+
+    chain_intervals = [
+        (60,    '1min'),
+        (300,   '5min'),
+        (3600,  '1h'),
+    ]
+    for intv_sec, label in chain_intervals:
+        chart = Chart()
+        chart.set_period(intv_sec)
+        df_1s = pd.DataFrame({
+            'time': [pd.Timestamp(t, unit='s') for t in times],
+            'open': prices, 'high': prices + 0.5, 'low': prices - 0.5, 'close': prices,
+            'volume': np.ones(n_seconds) * 100.0,
+        })
+        chart.set(df_1s)
+        df_1s_norm = normal_df(df_1s)
+        df_1s_norm = time_to_bar_time(df_1s_norm, 0, intv_sec)
+        expected = merge_value_by_time(df_1s_norm)
+        verify_agg(chart, expected, f"1s→{label} chain")
+        chart.exit()
+
+    # ── [5] 边界对齐校验 ──
+    print("\n[5] Boundary alignment verification ...")
+    for intv_sec, label in [(60, '1min'), (300, '5min'), (3600, '1h')]:
+        chart = Chart()
+        chart.set_period(intv_sec)
+        base_t = int(pd.Timestamp('2024-01-01').timestamp())
+        n_bars = 10
+        times = [base_t + intv_sec * i for i in range(n_bars)]
+        df = pd.DataFrame({
+            'time': [pd.Timestamp(t, unit='s') for t in times],
+            'open': 100 + np.arange(n_bars, dtype=float),
+            'high': 101 + np.arange(n_bars, dtype=float),
+            'low': 99 + np.arange(n_bars, dtype=float),
+            'close': 100 + np.arange(n_bars, dtype=float),
+        })
+        chart.set(df)
+        expected_times = [base_t + intv_sec * i for i in range(n_bars)]
+        actual_times = chart.candle.data['time'].values.tolist()
+        all_clean &= log_check(actual_times == expected_times,
+                                f"{label} boundary alignment", errors, f"boundary_{label}")
+        chart.exit()
+
+    print()
+    print(f"  RESULT: {'PASS' if all_clean else 'FAIL ({0} errors)'.format(len(errors))}")
+    return all_clean
+
+
+# ═══════════════════════════════════════════════════════
+#  测试 9: 混沌测试
+# ═══════════════════════════════════════════════════════
+
+def make_random_ticks(n, start_ts, price_range=(90, 110), vol_range=(10, 500), seed=None):
+    """生成随机 tick 数据。"""
+    rng = np.random.RandomState(seed)
+    times = sorted(start_ts + rng.randint(0, 1800, n))
+    prices = price_range[0] + rng.random(n) * (price_range[1] - price_range[0])
+    volumes = vol_range[0] + rng.random(n) * (vol_range[1] - vol_range[0])
+    return pd.DataFrame({
+        'time': [pd.Timestamp(t, unit='s') for t in times],
+        'price': prices,
+        'volume': volumes,
+    })
+
+
+def make_random_bars(n, start_ts, interval_sec, price_range=(90, 110), vol_range=(100, 5000), seed=None):
+    """生成随机 bar 数据。"""
+    rng = np.random.RandomState(seed)
+    times = [start_ts + interval_sec * i for i in range(n)]
+    base = price_range[0] + rng.random(n) * (price_range[1] - price_range[0])
+    return pd.DataFrame({
+        'time': [pd.Timestamp(t, unit='s') for t in times],
+        'open': base + rng.randn(n) * 0.5,
+        'high': base + rng.uniform(0.5, 2, n),
+        'low': base - rng.uniform(0.5, 2, n),
+        'close': base + rng.randn(n) * 0.5,
+        'volume': vol_range[0] + rng.random(n) * (vol_range[1] - vol_range[0]),
+    })
+
+
+def verify_chaos(chart, expected, step, op_desc, errors):
+    """混沌测试每步校验：chart.candle.data 与 expected 比较。"""
+    if expected is None or expected.empty:
+        return True
+    cols = ['time', 'open', 'high', 'low', 'close']
+    if len(chart.candle.data) != len(expected):
+        errors.append(f"step {step}: rows {len(chart.candle.data)} != {len(expected)}")
+        print(f"      [FAIL] step {step} ({op_desc}): rows {len(chart.candle.data)} != {len(expected)}")
+        print(f"             actual times: {chart.candle.data['time'].values.tolist()}")
+        print(f"             expected times: {expected['time'].values.tolist()}")
+        return False
+    for col in cols:
+        if col not in chart.candle.data.columns or col not in expected.columns:
+            continue
+        if not np.allclose(chart.candle.data[col].values, expected[col].values, atol=1e-6, equal_nan=True):
+            actual_vals = chart.candle.data[col].values
+            expected_vals = expected[col].values
+            diffs = np.abs(actual_vals - expected_vals)
+            worst_idx = np.argmax(diffs)
+            errors.append(f"step {step}: {col} mismatch (diff={diffs[worst_idx]:.8f})")
+            print(f"      [FAIL] step {step} ({op_desc}): {col} mismatch")
+            print(f"             worst at idx={worst_idx}: actual={actual_vals[worst_idx]:.8f} expected={expected_vals[worst_idx]:.8f} diff={diffs[worst_idx]:.8f}")
+            print(f"             actual times: {chart.candle.data['time'].values.tolist()}")
+            print(f"             expected times: {expected['time'].values.tolist()}")
+            return False
+    print(f"      [OK] step {step:3d} ({op_desc})")
+    return True
+
+
+def test_chaos_random_mixed():
+    """混沌测试：100 步随机混合 ticks + bars + 不同时间级别，每步校验。"""
+    sep = "=" * 60
+    print(sep)
+    print("  test_chaos_random_mixed (100 steps)")
+    print(sep)
+
+    chart = Chart()
+    errors = []
+    all_clean = True
+    rng = np.random.RandomState(42)
+
+    # 初始化：20 条 daily bars
+    init_df = make_bar_data(20, 'D', 100, 42)
+    chart.set(init_df)
+    expected = chart.candle.data[['time', 'open', 'high', 'low', 'close']].copy()
+
+    # 所有 update 操作都会追加到 init_df 之后
+    last_ts = int(init_df.iloc[-1]['time'].timestamp())
+
+    for step in range(1, 101):
+        r = rng.random()
+        if r < 0.4:
+            # ── tick 更新 ──
+            n_ticks = rng.randint(3, 40)
+            start = last_ts + rng.randint(60, 3600)
+            cumvol = rng.random() < 0.5
+            ticks = make_random_ticks(n_ticks, start, seed=step)
+            prev = chart.candle._last_bar.copy() if chart.candle._last_bar is not None else None
+            chart.update_from_ticks(ticks, cumulative_volume=cumvol)
+            expected = compute_expected(expected, ticks, chart,
+                                        is_ticks=True, cumulative_volume=cumvol,
+                                        prev_last_bar=prev)
+            all_clean &= verify_chaos(chart, expected, step,
+                                      f"ticks(n={n_ticks},cum={cumvol})", errors)
+        elif r < 0.8:
+            # ── bar 更新（随机时间级别）──
+            freq_sec = rng.choice([60, 300, 900, 3600])
+            n_bars = rng.randint(2, 15)
+            start = last_ts + rng.randint(60, 3600)
+            bars = make_random_bars(n_bars, start, freq_sec, seed=step)
+            chart.update_bars(bars)
+            expected = compute_expected(expected, bars, chart)
+            all_clean &= verify_chaos(chart, expected, step,
+                                      f"bars(n={n_bars},freq={freq_sec}s)", errors)
+        else:
+            # ── 混合：先 ticks 后 bars ──
+            n_ticks = rng.randint(3, 20)
+            start_t = last_ts + rng.randint(60, 1800)
+            ticks = make_random_ticks(n_ticks, start_t, seed=step)
+            prev = chart.candle._last_bar.copy() if chart.candle._last_bar is not None else None
+            chart.update_from_ticks(ticks, cumulative_volume=False)
+            expected = compute_expected(expected, ticks, chart,
+                                        is_ticks=True, cumulative_volume=False,
+                                        prev_last_bar=prev)
+
+            freq_sec = rng.choice([60, 300, 900])
+            n_bars = rng.randint(2, 8)
+            start_b = start_t + rng.randint(60, 600)
+            bars = make_random_bars(n_bars, start_b, freq_sec, seed=step + 1000)
+            chart.update_bars(bars)
+            expected = compute_expected(expected, bars, chart)
+            all_clean &= verify_chaos(chart, expected, step,
+                                      f"mixed(ticks={n_ticks},bars={n_bars})", errors)
+
+        # 更新 last_ts 追踪
+        if expected is not None and not expected.empty:
+            last_ts = int(expected.iloc[-1]['time'])
+
+    chart.exit()
+
+    print()
+    print(f"  RESULT: {'PASS' if all_clean else 'FAIL ({0} errors)'.format(len(errors))}")
+    return all_clean
+
+
+def test_chaos_multi_level_fusion():
+    """混沌测试：不同时间级别 bar 融合到同一 chart，每步校验。"""
+    sep = "=" * 60
+    print(sep)
+    print("  test_chaos_multi_level_fusion")
+    print(sep)
+
+    chart = Chart()
+    errors = []
+    all_clean = True
+    rng = np.random.RandomState(77)
+
+    # 初始化：5min bars
+    t0 = int(pd.Timestamp('2024-01-02').timestamp())
+    init_bars = make_random_bars(10, t0, 300, seed=77)
+    chart.set(init_bars)
+    expected = chart.candle.data[['time', 'open', 'high', 'low', 'close']].copy()
+
+    # 序列：不同时间级别的操作
+    ops = [
+        ('bars',   300,   5,   '5min bars'),
+        ('bars',   60,    8,   '1min bars'),
+        ('bars',   3600,  3,   '1h bars'),
+        ('ticks',  None,  30,  '30s ticks'),
+        ('bars',   900,   4,   '15min bars'),
+        ('ticks',  None,  20,  '20s ticks'),
+        ('bars',   60,    10,  '1min bars #2'),
+        ('bars',   3600,  2,   '1h bars #2'),
+    ]
+
+    last_ts = t0 + 300 * 9  # end of initial bars
+    for i, (op_type, freq_sec, count, label) in enumerate(ops):
+        start = last_ts + rng.randint(60, 600)
+        if op_type == 'ticks':
+            cumvol = rng.random() < 0.5
+            ticks = make_random_ticks(count, start, seed=100 + i)
+            prev = chart.candle._last_bar.copy() if chart.candle._last_bar is not None else None
+            chart.update_from_ticks(ticks, cumulative_volume=cumvol)
+            expected = compute_expected(expected, ticks, chart,
+                                        is_ticks=True, cumulative_volume=cumvol,
+                                        prev_last_bar=prev)
+        else:
+            bars = make_random_bars(count, start, freq_sec, seed=200 + i)
+            chart.update_bars(bars)
+            expected = compute_expected(expected, bars, chart)
+        all_clean &= verify_chaos(chart, expected, i + 1, label, errors)
+        if expected is not None and not expected.empty:
+            last_ts = int(expected.iloc[-1]['time'])
+
+    chart.exit()
+
+    print()
+    print(f"  RESULT: {'PASS' if all_clean else 'FAIL ({0} errors)'.format(len(errors))}")
+    return all_clean
+
+
+def test_chaos_last_bar_inheritance():
+    """混沌测试：last-bar 继承 — 连续 ticks 落在同一 bar 窗口内，验证 open 不变、high 递增、low 递减。"""
+    sep = "=" * 60
+    print(sep)
+    print("  test_chaos_last_bar_inheritance")
+    print(sep)
+
+    chart = Chart()
+    errors = []
+    all_clean = True
+    rng = np.random.RandomState(55)
+
+    # 初始化：1min bars
+    t0 = int(pd.Timestamp('2024-01-03 09:00:00').timestamp())
+    init_bars = make_random_bars(5, t0, 60, seed=55)
+    chart.set(init_bars)
+    expected = chart.candle.data[['time', 'open', 'high', 'low', 'close']].copy()
+
+    # 连续 5 批 ticks，全部落在同一 5min 窗口内
+    # 这样每批都会触发 last-bar 继承
+    for batch in range(5):
+        # ticks 落在 t0+300 到 t0+300+299 的 5min 窗口内
+        ticks = make_random_ticks(
+            rng.randint(5, 20),
+            t0 + 300 + batch * 10,
+            price_range=(95 + batch, 105 + batch),
+            seed=500 + batch,
+        )
+        prev = chart.candle._last_bar.copy() if chart.candle._last_bar is not None else None
+        chart.update_from_ticks(ticks, cumulative_volume=False)
+        expected = compute_expected(expected, ticks, chart,
+                                    is_ticks=True, cumulative_volume=False,
+                                    prev_last_bar=prev)
+        all_clean &= verify_chaos(chart, expected, batch + 1,
+                                  f"inherit batch {batch}", errors)
+
+    # 测试 cumulative_volume=True
+    chart2 = Chart()
+    chart2.set(init_bars)
+    expected2 = chart2.candle.data[['time', 'open', 'high', 'low', 'close']].copy()
+
+    for batch in range(5):
+        ticks = make_random_ticks(
+            rng.randint(5, 20),
+            t0 + 300 + batch * 10,
+            price_range=(95, 105),
+            vol_range=(100, 500),
+            seed=600 + batch,
+        )
+        prev2 = chart2.candle._last_bar.copy() if chart2.candle._last_bar is not None else None
+        chart2.update_from_ticks(ticks, cumulative_volume=True)
+        expected2 = compute_expected(expected2, ticks, chart2,
+                                     is_ticks=True, cumulative_volume=True,
+                                     prev_last_bar=prev2)
+        all_clean &= verify_chaos(chart2, expected2, batch + 1,
+                                  f"cum inherit batch {batch}", errors)
+
+    chart.exit()
+    chart2.exit()
+
+    print()
+    print(f"  RESULT: {'PASS' if all_clean else 'FAIL ({0} errors)'.format(len(errors))}")
+    return all_clean
+
+
+# ═══════════════════════════════════════════════════════
+#  测试 10: 边界情况
+# ═══════════════════════════════════════════════════════
+
+def test_edge_cases():
+    sep = "=" * 60
+    print(sep)
+    print("  test_edge_cases")
+    print(sep)
+
+    errors = []
+    all_clean = True
+
+    # ── [1] 空 DataFrame ──
+    print("\n[1] Empty DataFrame handling ...")
+    chart = Chart()
+    df = make_bar_data(10, 'D', 100, 42)
+    chart.set(df)
+    n_before = len(chart.candle.data)
+    chart.update_bars(pd.DataFrame())
+    all_clean &= log_check(len(chart.candle.data) == n_before,
+                            "update_bars(empty) no change", errors, "empty_update_bars")
+    chart.update_from_ticks(pd.DataFrame())
+    all_clean &= log_check(len(chart.candle.data) == n_before,
+                            "update_from_ticks(empty) no change", errors, "empty_update_ticks")
+    chart.exit()
+
+    # ── [2] 单行数据 ──
+    print("\n[2] Single row data ...")
+    chart = Chart()
+    # set() 需要 ≥2 行才能推断 interval，单行用 set_period + update_bar
+    chart.set_period(86400)
+    single = pd.Series({
+        'time': pd.Timestamp('2024-01-01'),
+        'open': 100.0, 'high': 105.0, 'low': 95.0, 'close': 102.0,
+        'volume': 5000.0,
+    })
+    chart.update_bar(single)
+    all_clean &= log_check(len(chart.candle.data) == 1,
+                            "single row set", errors, "single_set")
+    all_clean &= log_check(chart.candle.data.iloc[0]['open'] == 100.0,
+                            "single row open", errors, "single_open")
+    all_clean &= log_check(chart.candle.data.iloc[0]['high'] == 105.0,
+                            "single row high", errors, "single_high")
+    all_clean &= log_check(chart.candle.data.iloc[0]['close'] == 102.0,
+                            "single row close", errors, "single_close")
+    # 追加单行
+    single2 = pd.Series({
+        'time': pd.Timestamp('2024-01-02'),
+        'open': 102.0, 'high': 108.0, 'low': 100.0, 'close': 106.0,
+        'volume': 6000.0,
+    })
+    chart.update_bar(single2)
+    all_clean &= log_check(len(chart.candle.data) == 2,
+                            "single row append", errors, "single_append")
+    all_clean &= log_check(chart.candle.data.iloc[1]['close'] == 106.0,
+                            "appended row close", errors, "single_append_close")
+    chart.exit()
+
+    # ── [3] 乱序 tick 数据 ──
+    print("\n[3] Out-of-order tick data ...")
+    chart = Chart()
+    t0 = int(pd.Timestamp('2024-01-01').timestamp())
+    chart.set(make_bar_data(5, 'D', 100, 42))
+    # 乱序 ticks（时间不单调）
+    tick_times = [t0 + 86400 + s for s in [30, 10, 50, 5, 25, 40]]
+    tick_prices = [100, 101, 99, 102, 98, 103]
+    ticks = pd.DataFrame({
+        'time': [pd.Timestamp(t, unit='s') for t in tick_times],
+        'price': tick_prices,
+    })
+    chart.update_from_ticks(ticks)
+    # groupby 不依赖顺序，结果应与排序后一致
+    sorted_ticks = ticks.sort_values('time').reset_index(drop=True)
+    chart2 = Chart()
+    chart2.set(make_bar_data(5, 'D', 100, 42))
+    chart2.update_from_ticks(sorted_ticks)
+    all_clean &= log_check(
+        np.allclose(chart.candle.data.values, chart2.candle.data.values, atol=1e-6),
+        "out-of-order ticks same result", errors, "ooo_ticks")
+    chart.exit()
+    chart2.exit()
+
+    # ── [4] 重复时间戳 bar ──
+    print("\n[4] Duplicate timestamp bars ...")
+    chart = Chart()
+    t = pd.Timestamp('2024-01-01')
+    chart.set(pd.DataFrame({
+        'time': [t, t + pd.Timedelta(days=1)],
+        'open': [100.0, 102.0], 'high': [105.0, 108.0],
+        'low': [95.0, 100.0], 'close': [102.0, 105.0],
+        'volume': [1000.0, 2000.0],
+    }))
+    dup_bars = pd.DataFrame({
+        'time': [t + pd.Timedelta(days=2)] * 3,
+        'open': [102.0, 103.0, 101.0],
+        'high': [108.0, 110.0, 107.0],
+        'low': [100.0, 101.0, 99.0],
+        'close': [105.0, 107.0, 109.0],
+        'volume': [2000.0, 3000.0, 4000.0],
+    })
+    chart.update_bars(dup_bars)
+    # 应该合并为 1 条（同一时间），open=first, high=max, low=min, close=last
+    all_clean &= log_check(len(chart.candle.data) == 3,
+                            "dup bars merged to 1 (+ initial 2)", errors, "dup_count")
+    merged_bar = chart.candle.data.iloc[-1]
+    all_clean &= log_check(merged_bar['open'] == 102.0, "dup open=first=102", errors, "dup_open")
+    all_clean &= log_check(merged_bar['high'] == 110.0, "dup high=max=110", errors, "dup_high")
+    all_clean &= log_check(merged_bar['low'] == 99.0, "dup low=min=99", errors, "dup_low")
+    all_clean &= log_check(merged_bar['close'] == 109.0, "dup close=last=109", errors, "dup_close")
+    chart.exit()
+
+    # ── [5] set() 后再 set() 覆盖 ──
+    print("\n[5] set() overwrite ...")
+    chart = Chart()
+    df1 = make_bar_data(10, 'D', 100, 42)
+    chart.set(df1)
+    n1 = len(chart.candle.data)
+    df2 = make_bar_data(20, 'D', 200, 99)
+    chart.set(df2)
+    all_clean &= log_check(len(chart.candle.data) == 20,
+                            f"overwrite: {n1}→{len(chart.candle.data)}", errors, "overwrite_count")
+    all_clean &= log_check(chart.candle.data.iloc[0]['open'] != df1.iloc[0]['open'],
+                            "overwrite: data changed", errors, "overwrite_data")
+    chart.exit()
+
+    print()
+    print(f"  RESULT: {'PASS' if all_clean else 'FAIL ({0} errors)'.format(len(errors))}")
+    return all_clean
+
+
+# ═══════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════
 
@@ -646,6 +1420,12 @@ if __name__ == '__main__':
     results.append(('duplicate_time_merge', test_duplicate_time_merge()))
     results.append(('last_bar_filter', test_last_bar_filter()))
     results.append(('line_name_case_preserved', test_line_name_case_preserved()))
+    results.append(('util_functions', test_util_functions()))
+    results.append(('cross_level_aggregation', test_cross_level_aggregation()))
+    results.append(('chaos_random_mixed', test_chaos_random_mixed()))
+    results.append(('chaos_multi_level_fusion', test_chaos_multi_level_fusion()))
+    results.append(('chaos_last_bar_inheritance', test_chaos_last_bar_inheritance()))
+    results.append(('edge_cases', test_edge_cases()))
 
     print()
     print("=" * 60)

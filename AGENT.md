@@ -166,3 +166,4 @@ lightweight-charts-onesixth/
 | `test_cleanup.py` | 资源全链路创建/删除 + JS TOML 审计 + 多图表清理 + reset + **handlers 检查区分 toolbox/non-toolbox** |
 | `test_features.py` | 数据列重命名/line 追踪/截图/topbar 事件 |
 | `test_util.py` | 工具函数测试（13 个） |
+| `test_data_aggregation.py` | 多频率 set/update_bar/update_bars/update_from_ticks/重复时间戳合并/_last_bar 过滤/Line 名字大小写保留 |

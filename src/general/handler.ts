@@ -79,8 +79,7 @@ export class Handler {
             'series', 'volumeSeries', 'openInterestSeries', 'chart',
             'wrapper', 'div', 'legend', 'toolBox', '_topBar',
             '_seriesList', 'commandFunctions',
-            'reSize', '_createChart', 'createCandlestickSeries',
-            'createVolumeSeries', 'createOpenInterestSeries',
+            'reSize', '_createChart',
             'createLineSeries', 'createHistogramSeries', 'createCandleSeries', '_styleMap',
         ]);
 
@@ -615,58 +614,6 @@ export class Handler {
       handleScroll: { vertTouchDrag: true },
     });
   }
-
-    createCandlestickSeries(paneIndex?: number) {
-        const up = 'rgba(39, 157, 130, 100)'
-        const down = 'rgba(200, 97, 100, 100)'
-        const candleSeries = this.chart.addSeries(
-            CandlestickSeries, {
-                upColor: up, borderUpColor: up, wickUpColor: up,
-                downColor: down, borderDownColor: down, wickDownColor: down
-            },
-            paneIndex
-        );
-        candleSeries.priceScale().applyOptions({
-            scaleMargins: {top: 0.2, bottom: 0.2},
-        });
-        return candleSeries;
-    }
-
-    createVolumeSeries(paneIndex?: number) {
-        const volumeSeries = this.chart.addSeries(
-            HistogramSeries,
-            {
-                color: '#26a69a',
-                priceFormat: {type: 'volume'},
-                priceScaleId: 'volume_scale',
-            },
-            paneIndex
-        );
-        volumeSeries.priceScale().applyOptions({
-            scaleMargins: {top: 0.8, bottom: 0},
-        });
-        return volumeSeries;
-    }
-
-    createOpenInterestSeries(paneIndex?: number) {
-        const oiSeries = this.chart.addSeries(
-            LineSeries,
-            {
-                color: '#F5A623',
-                lineWidth: 1,
-                priceScaleId: 'oi_scale',
-                lastValueVisible: false,
-                priceLineVisible: false,
-                crosshairMarkerVisible: true,
-            },
-            paneIndex
-        );
-        oiSeries.priceScale().applyOptions({
-            scaleMargins: {top: 0.8, bottom: 0},
-            autoScale: true,
-        });
-        return oiSeries;
-    }
 
     /**
      * 创建折线系列。

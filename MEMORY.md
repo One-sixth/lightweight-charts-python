@@ -268,4 +268,50 @@ v2.7.0 组合架构重构后，`AbstractChart.update_bars(df)` 只委托给 `sel
 
 ---
 
-*最后更新：2026-06-21 深夜（v2.7.2 数据清洗优化 + update_bars 重构）*
+## 🧪 数据聚合测试体系（2026-06-22 新增）
+
+### 测试文件
+`test/test_data_aggregation.py` — 13 个测试函数（7 旧 + 6 新），覆盖完整数据聚合管线。
+
+### 新增测试模块
+
+| 模块 | 内容 | 校验项数 |
+|------|------|---------|
+| `test_util_functions` | `get_df_interval_offset` / `normal_df` / `time_to_bar_time` / `merge_value_by_time` 纯函数单元测试 | 16 |
+| `test_cross_level_aggregation` | 5s→1min, 1min→5min, 1h→daily, 1s→1min→5min→1h 多级链式聚合 | 15 |
+| `test_chaos_random_mixed` | **100 步混沌测试**：随机 mix ticks+bars+不同时间级别，每步校验 | 100 步 |
+| `test_chaos_multi_level_fusion` | 8 步操作序列：5min→1min→1h→ticks→15min→ticks→1min→1h | 8 步 |
+| `test_chaos_last_bar_inheritance` | 连续 5 批 ticks 落在同一窗口，验证 open 不变/high 递增/low 递减 | 10 步 |
+| `test_edge_cases` | 空 DataFrame、单行、乱序 tick、重复时间戳、set() 覆盖 | 14 |
+
+### 关键设计决策
+
+#### compute_expected 的 tick vs bar 清洗路径差异 ⭐
+- **tick 路径**：只做 `normal_df + time_to_bar_time`（不做 `merge_value_by_time`！）
+- **bar 路径**：做 `normal_df + time_to_bar_time + merge_value_by_time`
+- **原因**：`AbstractChart.update_from_ticks` 只做 `normal_df + time_to_bar_time`，然后传给 `candle.update_from_ticks(_df_cleaned=True)` 跳过清洗
+- **坑**：如果 tick 路径也做 `merge_value_by_time`，多条 tick 会被压缩为一条（只保留 last price），导致 OHLC 聚合的 max/min 全部丢失
+
+#### 期望值计算的 replace-or-append 逻辑
+- 复刻 `update_bars` 的边界替换：第一个新 bar 时间 == 最后一根旧 bar 时间 → 替换最后一根
+- 其他情况：简单追加
+- 不用 `drop_duplicates`（会导致旧数据中匹配的行被错误删除）
+
+#### 真实 Chart 测试模式
+- 所有测试使用真实 `Chart()` 实例（不调 `show()`，不启动 pywebview）
+- 数据管理在 Python 端完成，JS 调用排队但不执行
+- 访问路径：`chart.candle.data`（OHLC）、`chart.volume.data`（volume）、`chart.oi.data`（OI）
+
+### 辅助函数
+
+| 函数 | 用途 |
+|------|------|
+| `assert_close(actual, expected, label, errors)` | DataFrame 近似比较，返回 True/False |
+| `compute_expected(expected, new_bars, chart, is_ticks, cumulative_volume, prev_last_bar)` | 模拟 chart 聚合管线计算期望值 |
+| `verify_chaos(chart, expected, step, op_desc, errors)` | 混沌测试每步校验，失败时打印 worst index + 时间戳 |
+| `make_random_ticks(n, start_ts, ...)` | 生成随机 tick 数据 |
+| `make_random_bars(n, start_ts, interval_sec, ...)` | 生成随机 bar 数据（任意时间级别） |
+
+---
+
+*最后更新：2026-06-22（数据聚合测试体系 + 100 步混沌测试 + 跨级别聚合）*
