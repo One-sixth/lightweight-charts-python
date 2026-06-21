@@ -78,13 +78,19 @@ def chart_section(chart, data):
     return data.get(sid, {})
 
 
-def test_resource_full_cleanup():
+def _expected_handlers(toolbox: bool) -> int:
+    """返回清理后 handlers 的预期数量。ToolBox 注册 save_drawings handler。"""
+    return 1 if toolbox else 0
+
+
+def _test_resource_full_cleanup_impl(toolbox: bool):
     sep = "=" * 60
     print(sep)
-    print("  test_resource_full_cleanup")
+    suffix = " (toolbox=True)" if toolbox else " (toolbox=False)"
+    print(f"  test_resource_full_cleanup{suffix}")
     print(sep)
 
-    chart = Chart(toolbox=True, position=211)
+    chart = Chart(toolbox=toolbox, position=211)
     bars = make_oi_data(50)
     errors = []
     all_clean = True
@@ -266,7 +272,12 @@ def test_resource_full_cleanup():
         all_clean &= log_check(len(chart._tables) == 0, "_tables cleared", errors, "tables_not_empty")
         chart.events.new_bar -= my_handler
         chart.win.remove_handler('test_handler')
-        all_clean &= log_check(len(chart.win.handlers) == 0, "handlers cleared", errors, "handlers_not_empty")
+        expected = _expected_handlers(toolbox)
+        all_clean &= log_check(
+            len(chart.win.handlers) == expected,
+            f"handlers cleared (expect {expected}, got {len(chart.win.handlers)})",
+            errors, "handlers_not_empty"
+        )
         print("  4h. handlers + table [OK]")
 
         # --- Final JS audit: seriesList, OI, window globals ---
@@ -316,6 +327,7 @@ def test_resource_full_cleanup():
 
         # --- Python-side final state ---
         print("\n[6] Python-side final state ...")
+        expected = _expected_handlers(toolbox)
         py_checks = [
             (chart.candle_data.empty, "candle_data", "py_candle_data"),
             (len(chart._lines) == 0, "_lines", "py_lines"),
@@ -323,7 +335,7 @@ def test_resource_full_cleanup():
             (len(chart._drawings) == 0, "_drawings", "py_drawings"),
             (len(chart._tables) == 0, "_tables", "py_tables"),
             (len(chart.markers) == 0, "markers", "py_markers"),
-            (len(chart.win.handlers) == 0, "handlers", "py_handlers"),
+            (len(chart.win.handlers) == expected, f"handlers (expect {expected})", "py_handlers"),
             (chart.events.new_bar._callable is None, "Emitter handler", "py_emitter"),
         ]
         for ok, name, ek in py_checks:
@@ -348,14 +360,17 @@ def test_resource_full_cleanup():
         sys.exit(1)
 
 
-def test_multi_chart_cleanup():
-    """
-    Tests that multiple Chart instances can each independently clean up their resources
-    without affecting each other.
-    """
+def test_resource_full_cleanup():
+    """Run full cleanup test with toolbox=True then toolbox=False."""
+    _test_resource_full_cleanup_impl(toolbox=True)
+    _test_resource_full_cleanup_impl(toolbox=False)
+
+
+def _test_multi_chart_cleanup_impl(toolbox: bool):
     sep = "=" * 60
     print(sep)
-    print("  test_multi_chart_cleanup")
+    suffix = " (toolbox=True)" if toolbox else " (toolbox=False)"
+    print(f"  test_multi_chart_cleanup{suffix}")
     print(sep)
 
     bars = make_oi_data(30)
@@ -364,8 +379,8 @@ def test_multi_chart_cleanup():
 
     # --- Create 2 charts ---
     print("\n[1] Create 2 charts ...")
-    chart1 = Chart(title='Chart-1', toolbox=True)
-    chart2 = Chart(title='Chart-2', toolbox=True)
+    chart1 = Chart(title='Chart-1', toolbox=toolbox)
+    chart2 = Chart(title='Chart-2', toolbox=toolbox)
     print("      [OK]")
 
     chart1.show(block=False)
@@ -462,6 +477,12 @@ def test_multi_chart_cleanup():
 
     if not all_clean:
         sys.exit(1)
+
+
+def test_multi_chart_cleanup():
+    """Run multi-chart cleanup test with toolbox=True then toolbox=False."""
+    _test_multi_chart_cleanup_impl(toolbox=True)
+    _test_multi_chart_cleanup_impl(toolbox=False)
 
 
 def test_reset_cleanup():

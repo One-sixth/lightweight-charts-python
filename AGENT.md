@@ -160,6 +160,6 @@ lightweight-charts-onesixth/
 | `test_multi_pane` | 多 pane 独立 K 线/各自数据和标记/独立更新/独立删除 |
 | `test_candle_with_main` | 主 K 线 + CandleSeries + Line + Histogram 混合资源清理 |
 | `test_options` | 自定义颜色/边框/影线/价格线参数 + JS 验证 |
-| `test_cleanup.py` | 资源全链路创建/删除 + JS TOML 审计 + 多图表清理 + **reset 后 series 全部删除再重建** |
+| `test_cleanup.py` | 资源全链路创建/删除 + JS TOML 审计 + 多图表清理 + reset + **handlers 检查区分 toolbox/non-toolbox** |
 | `test_features.py` | 数据列重命名/line 追踪/截图/topbar 事件 |
 | `test_util.py` | 工具函数测试（13 个） |
