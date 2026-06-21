@@ -246,10 +246,10 @@ chart.win.handlers[f'save_drawings{self.id}'] = self._save_drawings
 
 ---
 
-## 🐛 update_batch/update_from_ticks 不转发 volume/OI（2026-06-21 修复）
+## 🐛 update_bars/update_from_ticks 不转发 volume/OI（2026-06-21 修复）
 
 ### 问题
-v2.7.0 组合架构重构后，`AbstractChart.update_batch(df)` 只委托给 `self.candle.update_batch(df)`，后者只处理 OHLC 列，volume/OI 数据被静默丢弃。`set()` 正确转发了 volume/OI，但 `update()`/`update_batch()`/`update_from_ticks()` 遗漏了。
+v2.7.0 组合架构重构后，`AbstractChart.update_bars(df)` 只委托给 `self.candle.update_bars(df)`，后者只处理 OHLC 列，volume/OI 数据被静默丢弃。`set()` 正确转发了 volume/OI，但 `update()`/`update_bars()`/`update_from_ticks()` 遗漏了。
 
 ### 影响
 - `chart.update_bars(df)` — volume 不更新（用户在 examples/34_candle_series/3_batch_update.py 中发现）
@@ -257,13 +257,13 @@ v2.7.0 组合架构重构后，`AbstractChart.update_batch(df)` 只委托给 `se
 - `chart.update_from_tick(series)` — volume 不更新
 
 ### 修复
-1. **`update()`/`update_batch()`**：新增 volume/OI 转发给 `self.volume`/`self.oi`
+1. **`update()`/`update_bars()`**：新增 volume/OI 转发给 `self.volume`/`self.oi`
 2. **`update_from_ticks()`**：重写——先聚合 volume/OI 转发给独立 series，再剥离 volume/OI 列交给 CandleSeries 处理 OHLC（避免重复聚合）
 3. **`update_from_tick()`**：委托给 `update_from_ticks()` 统一处理
-4. **`update_bar`/`update_bars` 别名**：从 `property(lambda: self.candle.xxx)` 改为普通方法，委托给 `update()`/`update_batch()`
+4. **`update_bar`/`update_bars` 别名**：从 `property(lambda: self.candle.xxx)` 改为普通方法，委托给 `update()`/`update_bars()`
 
 ### 教训
-- **property 别名陷阱**：`update_bars = property(lambda self: self.candle.update_batch)` 直接绑定 CandleSeries 方法，绕过了 AbstractChart 的转发逻辑。改为普通方法委托更安全
+- **property 别名陷阱**：`update_bars = property(lambda self: self.candle.update_bars)` 直接绑定 CandleSeries 方法，绕过了 AbstractChart 的转发逻辑。改为普通方法委托更安全
 - **`update_from_ticks` 不可简单转发**：CandleSeries 内部已有 tick→bar 聚合逻辑（含 volume），直接转发会导致 volume 重复聚合。必须剥离 volume/OI 列后再交给 CandleSeries
 
 ---

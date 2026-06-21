@@ -41,7 +41,7 @@ Other repositories are also welcome to use the code as needed.
 
 Below is the consolidated and optimized Markdown version, retaining all information with ordered lists and emojis for a clear, readable structure:
 
-1. ✅ **Series Batch Update API** — `Line.update_batch()` / `Histogram.update_batch()` updates multiple data points at once, significantly improving performance
+1. ✅ **Series Batch Update API** — `Line.update_bars()` / `Histogram.update_bars()` updates multiple data points at once, significantly improving performance
 2. 🚀 **K-line Batch Update** — `chart.update_bars()` / `chart.update_from_ticks()` batch data processing acceleration up to 10x
 3. 📊 **Open Interest Visualization** — Independent Y-axis scaling for Open Interest, overlaid with volume display
 4. 🔄 **Reflex Integration** — `ReflexChart(StaticLWC)` embeds K-line charts in [Reflex](https://reflex.dev) applications; incremental real-time updates via postMessage bridge; JS→Python callback bridge auto-forwards events like crosshair_move to State
@@ -721,7 +721,7 @@ if __name__ == '__main__':
     chart = Chart()
     chart.set(df)
     line = chart.create_line('SMA 20')
-    line.update_batch(sma_data)  # Batch update series
+    line.update_bars(sma_data)  # Batch update series
     chart.show(block=True)
 ```
 

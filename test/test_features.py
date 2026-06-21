@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import pandas as pd
 import numpy as np
 import asyncio
+from lightweight_charts.util import normal_df
 from lightweight_charts import Chart
 
 
@@ -62,12 +63,12 @@ def test_data_column_renaming():
         'date': 'Date', 'open': 'OPEN', 'high': 'HIgh',
         'low': 'Low', 'close': 'close', 'volUME': 'volume'
     })
-    result = chart._normal_df(messy)
+    result = normal_df(messy)
     ok = list(result.columns) == expected_cols
     all_clean &= log_check(ok, "mixed-case columns renamed correctly", errors, "rename_mixed")
 
     # Already lowercase — should pass through
-    result2 = chart._normal_df(bars)
+    result2 = normal_df(bars)
     ok = list(result2.columns) == expected_cols
     all_clean &= log_check(ok, "lowercase columns pass through", errors, "rename_lower")
 

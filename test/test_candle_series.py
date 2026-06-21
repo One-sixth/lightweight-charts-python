@@ -1,7 +1,7 @@
 """
 CandleSeries tests.
 
-Tests creation, data operations (set/update/update_batch), markers,
+Tests creation, data operations (set/update/update_bars), markers,
 delete/cleanup, and JS audit verification.
 
 Usage:
@@ -151,7 +151,7 @@ def test_basic_create_delete():
         sys.exit(1)
 
 
-# ── Test 2: update and update_batch ─────────────────────────────
+# ── Test 2: update and update_bars ─────────────────────────────
 
 def test_update_operations():
     sep = "=" * 60
@@ -194,8 +194,8 @@ def test_update_operations():
                                f"no new row (still {len(ref.candle_data)})", errors, "update_existing")
         print("      [OK]")
 
-        # update_batch() - multiple bars
-        print("\n[3] update_batch() multiple bars ...")
+        # update_bars() - multiple bars
+        print("\n[3] update_bars() multiple bars ...")
         count_before = len(ref.candle_data)
         batch = make_ohlcv(10, 210, 99)
         # Ensure batch times are after current data
@@ -205,7 +205,7 @@ def test_update_operations():
             periods=10, freq='D'
         )
         batch['time'] = (batch['time'] - pd.Timestamp('1970-01-01')) // pd.Timedelta('1s')
-        ref.update_batch(batch[['time', 'open', 'high', 'low', 'close']])
+        ref.update_bars(batch[['time', 'open', 'high', 'low', 'close']])
         all_clean &= log_check(len(ref.candle_data) == count_before + 10,
                                f"candle_data rows={len(ref.candle_data)} (was {count_before})",
                                errors, "batch_count")

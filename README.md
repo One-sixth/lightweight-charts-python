@@ -44,7 +44,7 @@ https://github.com/EsIstJosh/lightweight-charts-python
 
 以下是合并优化后的 Markdown 版本，保留了所有信息，并采用有序列表 + 表情符号，结构清晰易读：
 
-1. ✅ **序列批量更新 API** — `Line.update_batch()` / `Histogram.update_batch()` 一次性更新多个数据点，性能大幅提升
+1. ✅ **序列批量更新 API** — `Line.update_bars()` / `Histogram.update_bars()` 一次性更新多个数据点，性能大幅提升
 2. 🚀 **K线批量更新** — `chart.update_bars()` / `chart.update_from_ticks()` 批量数据处理加速 10x
 3. 📊 **持仓量可视化** — Open Interest 独立 Y 轴缩放，与成交量叠加显示
 4. 🔄 **Reflex 集成** — `ReflexChart(StaticLWC)` 在 [Reflex](https://reflex.dev) 应用中嵌入 K线图；通过 postMessage 桥接实现增量实时更新；JS→Python 回调桥接将 crosshair_move 等事件自动转发到 State
@@ -81,7 +81,7 @@ https://github.com/EsIstJosh/lightweight-charts-python
 35. 🔄 **子图内容重置** — `reset_sub()` 清除子图全部内容（数据/线条/标记/绘图/表格/ToolBox/TopBar/Legend/Events/sync/handlers），保留布局，不影响其他子图，reset 后可重用
 36. 📚 **示例 33** — reset_sub 子图内容重置完整演示（4 子图网格 + 主图 reset + 独立子图 + 十字光标同步恢复）
 37. 🔗 **`sync_id` 组同步 API（v2.6.0）** — 全新的基于组名的图表同步机制，所有 `AbstractChart` 子类统一支持 `sync_id` 和 `sync_crosshairs_only` 参数
-38. 🕯️ **示例 34** — CandleSeries 独立K线系列（主K线+参考K线在不同 pane，支持 set/update/update_batch/marker）
+38. 🕯️ **示例 34** — CandleSeries 独立K线系列（主K线+参考K线在不同 pane，支持 set/update/update_bars/marker）
 
     🧰 **主要支持环境** — PySide6、PyQt6、wxPython
 
@@ -727,7 +727,7 @@ if __name__ == '__main__':
     chart = Chart()
     chart.set(df)
     line = chart.create_line('SMA 20')
-    line.update_batch(sma_data)  # 批量更新序列
+    line.update_bars(sma_data)  # 批量更新序列
     chart.show(block=True)
 ```
 
@@ -983,7 +983,7 @@ ref = chart.create_candle_series(
 )
 ref.set(df_reference)       # 初始数据
 ref.update(new_bar)         # 更新/追加
-ref.update_batch(df_more)   # 批量追加
+ref.update_bars(df_more)   # 批量追加
 ref.marker(...)             # 打标记
 
 chart.show(block=True)
@@ -996,7 +996,7 @@ chart.show(block=True)
 | `create_candle_series()` | 创建独立K线（无 volume/open interest） |
 | `set(df)` | 设置初始 OHLC 数据 |
 | `update(series)` | 更新最新一根 bar 或追加新 bar |
-| `update_batch(df)` | 批量更新多根 bar |
+| `update_bars(df)` | 批量更新多根 bar |
 | `marker(...)` | 在独立K线上打标记 |
 | `delete()` | 删除系列并清理 JS 对象 |
 | `pane_index` | 控制绘制在哪个 pane |

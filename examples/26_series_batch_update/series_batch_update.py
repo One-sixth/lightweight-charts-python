@@ -1,13 +1,13 @@
 """
 Example 26: Series Batch Update
-Demonstrates update_batch() for Line and Histogram series.
+Demonstrates update_bars() for Line and Histogram series.
 
 This example shows:
 1. How to append multiple data points to a Line series in one go
 2. How to append multiple data points to a Histogram series in one go
-3. Performance comparison: N individual update() calls vs 1 update_batch() call
+3. Performance comparison: N individual update() calls vs 1 update_bars() call
 
-The key benefit: update_batch() merges all JS commands into a single
+The key benefit: update_bars() merges all JS commands into a single
 run_script call, dramatically reducing communication overhead.
 """
 import pandas as pd
@@ -123,33 +123,33 @@ if __name__ == '__main__':
     chart.show(block=False)
 
     # ================================================================
-    # Phase 2 - Line series: update_batch()
+    # Phase 2 - Line series: update_bars()
     # ================================================================
     print("\n" + "=" * 60)
-    print("  PHASE 2: Line series — update_batch()")
+    print("  PHASE 2: Line series — update_bars()")
     print("=" * 60)
 
     t0 = perf_counter()
-    sma20_line.update_batch(sma20_new)
+    sma20_line.update_bars(sma20_new)
     dt = perf_counter() - t0
-    print(f"[SMA 20]  update_batch({len(sma20_new)} rows) → {dt * 1000:.1f} ms")
+    print(f"[SMA 20]  update_bars({len(sma20_new)} rows) → {dt * 1000:.1f} ms")
 
     t0 = perf_counter()
-    ema10_line.update_batch(ema10_new)
+    ema10_line.update_bars(ema10_new)
     dt = perf_counter() - t0
-    print(f"[EMA 10]  update_batch({len(ema10_new)} rows) → {dt * 1000:.1f} ms")
+    print(f"[EMA 10]  update_bars({len(ema10_new)} rows) → {dt * 1000:.1f} ms")
 
     # ================================================================
-    # Phase 3 - Histogram series: update_batch()
+    # Phase 3 - Histogram series: update_bars()
     # ================================================================
     print("\n" + "=" * 60)
-    print("  PHASE 3: Histogram series — update_batch()")
+    print("  PHASE 3: Histogram series — update_bars()")
     print("=" * 60)
 
     t0 = perf_counter()
-    rsi_hist.update_batch(rsi_new)
+    rsi_hist.update_bars(rsi_new)
     dt = perf_counter() - t0
-    print(f"[RSI 14]  update_batch({len(rsi_new)} rows) → {dt * 1000:.1f} ms")
+    print(f"[RSI 14]  update_bars({len(rsi_new)} rows) → {dt * 1000:.1f} ms")
 
     # ================================================================
     # Phase 4 - Individual update() calls (comparison)
@@ -191,10 +191,10 @@ if __name__ == '__main__':
     print("\n" + "=" * 60)
     print("  SUMMARY")
     print("=" * 60)
-    print("update_batch() — single run_script call for N data points")
+    print("update_bars() — single run_script call for N data points")
     print("update()       — N individual run_script calls")
     print()
-    print("Tip: Always prefer update_batch() when appending many points!")
+    print("Tip: Always prefer update_bars() when appending many points!")
     print()
 
     chart.show(True)

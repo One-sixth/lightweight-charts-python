@@ -158,7 +158,7 @@ lightweight-charts-onesixth/
 | 测试 | 覆盖内容 |
 |------|---------|
 | `test_basic_create_delete` | 创建/设置数据/标记/删除/Python 状态清理 + JS audit |
-| `test_update_operations` | update 单 bar/update 已有 bar/update_batch 批量/set 重置 |
+| `test_update_operations` | update 单 bar/update 已有 bar/update_bars 批量/set 重置 |
 | `test_markers` | marker 显式时间/marker 默认时间/marker_list 批量/remove/clear + JS 验证 |
 | `test_multi_pane` | 多 pane 独立 K 线/各自数据和标记/独立更新/独立删除 |
 | `test_candle_with_main` | 主 K 线 + CandleSeries + Line + Histogram 混合资源清理 |

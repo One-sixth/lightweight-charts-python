@@ -435,7 +435,7 @@ line = chart.create_line(
 )
 line.set(df)           # df 列: time + name
 line.update(series)    # 逐点实时更新，每次发送一条 JS 命令
-line.update_batch(df)  # 批量追加数据点，所有 JS 命令合并为一次发送（性能优化）
+line.update_bars(df)  # 批量追加数据点，所有 JS 命令合并为一次发送（性能优化）
 line.delete()          # 删除 (JS + Python 双端清理)
 
 hist = chart.create_histogram(
@@ -446,7 +446,7 @@ hist = chart.create_histogram(
 )
 hist.set(df)
 hist.update(series)
-hist.update_batch(df)                # 批量追加数据点（Histogram 同样支持）
+hist.update_bars(df)                # 批量追加数据点（Histogram 同样支持）
 hist.scale(top=0.0, bottom=0.0)     # 调整缩放边距
 hist.delete()
 
@@ -821,7 +821,7 @@ get_last_trade(ticker)
 | 23 | `23_crosshair_move` | `events.crosshair_move` — 鼠标悬停实时回调 (Hit Testing) | `crosshair_move.py` |
 | 24 | `24_price_format` | `set_price_format(type='base')` — 基础价格格式，避免浮点精度问题 (v5.2.0+) | `price_format.py` |
 | 25 | `25_screenshot_enhanced` | `screenshot(add_top_layer=True, include_crosshair=True)` — 增强截图 (v5.2.0+) | `screenshot_enhanced.py` |
-| 26 | `26_series_batch_update` | 系列批量更新：`update_batch()` 用于 Line 和 Histogram 系列 | `series_batch_update.py` |
+| 26 | `26_series_batch_update` | 系列批量更新：`update_bars()` 用于 Line 和 Histogram 系列 | `series_batch_update.py` |
 | 27 | `27_reflex_chart` | Reflex 嵌入：K线 + SMA 指标在 Reflex 应用中渲染 | `rx_chart.py` |
 | 28 | `28_cross_process_chart` | CrossProcessChart：跨进程嵌入 PySide6 QWidget | `cross_process_chart.py` |
 | 29 | `29_grid_layout` | 网格布局：position 参数三种格式 + get_position/set_position | `grid_layout.py` |
