@@ -244,6 +244,8 @@ var Lib = (function (exports, lightweightCharts) {
         legendHandler(param, usingPoint = false) {
             if (!this.ohlcEnabled && !this.linesEnabled && !this.percentEnabled)
                 return;
+            if (!this.handler.series)
+                return;
             const options = this.handler.series.options();
             if (!param.time && !this.persistent) {
                 this.candle.style.color = 'transparent';
@@ -2678,6 +2680,8 @@ var Lib = (function (exports, lightweightCharts) {
             };
         }
         createToolBox() {
+            if (!this.series)
+                return;
             this.toolBox = new ToolBox(this.id, this.chart, this.series, this.commandFunctions);
             this.div.appendChild(this.toolBox.div);
         }
@@ -2706,10 +2710,14 @@ var Lib = (function (exports, lightweightCharts) {
                     try {
                         const time = param.time;
                         const srcSeries = source.series;
+                        if (!srcSeries)
+                            return;
                         const point = time ? param.seriesData.get(srcSeries) || null : null;
                         for (let i = 0; i < handlers.length; i++) {
                             const target = handlers[i];
                             if (target === source)
+                                continue;
+                            if (!target.series)
                                 continue;
                             try {
                                 const tc = target.chart;
@@ -2834,10 +2842,14 @@ var Lib = (function (exports, lightweightCharts) {
                     try {
                         const time = param.time;
                         const srcSeries = source.series;
+                        if (!srcSeries)
+                            return;
                         const point = time ? param.seriesData.get(srcSeries) || null : null;
                         for (let i = 0; i < handlers.length; i++) {
                             const target = handlers[i];
                             if (target === source)
+                                continue;
+                            if (!target.series)
                                 continue;
                             try {
                                 const tc = target.chart;
@@ -2905,6 +2917,8 @@ var Lib = (function (exports, lightweightCharts) {
         }
         static syncCharts(childChart, parentChart, crosshairOnly = false) {
             function crosshairHandler(chart, point, param) {
+                if (!chart.series)
+                    return;
                 if (!param.time) {
                     chart.chart.clearCrosshairPosition();
                     return;
@@ -2914,7 +2928,7 @@ var Lib = (function (exports, lightweightCharts) {
                     chart.legend.legendHandler(point, true);
             }
             function getPoint(series, param) {
-                if (!param.time)
+                if (!series || !param.time)
                     return null;
                 return param.seriesData.get(series) || null;
             }
@@ -3027,9 +3041,13 @@ var Lib = (function (exports, lightweightCharts) {
                 try {
                     const time = param.time;
                     const srcSeries = chart.series;
+                    if (!srcSeries)
+                        return;
                     const point = time ? param.seriesData.get(srcSeries) || null : null;
                     for (let i = 0; i < targets.length; i++) {
                         const target = targets[i];
+                        if (!target.series)
+                            continue;
                         try {
                             if (!target.legend?.div)
                                 continue;

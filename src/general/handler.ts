@@ -765,6 +765,7 @@ export class Handler {
     }
 
     createToolBox() {
+        if (!this.series) return;
         this.toolBox = new ToolBox(this.id, this.chart, this.series, this.commandFunctions);
         this.div.appendChild(this.toolBox.div);
     }
@@ -796,10 +797,12 @@ export class Handler {
                 try {
                     const time = param.time;
                     const srcSeries = source.series;
+                    if (!srcSeries) return;
                     const point = time ? param.seriesData.get(srcSeries) || null : null;
                     for (let i = 0; i < handlers.length; i++) {
                         const target = handlers[i];
                         if (target === source) continue;
+                        if (!target.series) continue;
                         try {
                             const tc = target.chart;
                             if (!time) { tc.clearCrosshairPosition(); continue; }
@@ -917,10 +920,12 @@ export class Handler {
                 try {
                     const time = param.time;
                     const srcSeries = source.series;
+                    if (!srcSeries) return;
                     const point = time ? param.seriesData.get(srcSeries) || null : null;
                     for (let i = 0; i < handlers.length; i++) {
                         const target = handlers[i];
                         if (target === source) continue;
+                        if (!target.series) continue;
                         try {
                             const tc = target.chart;
                             if (!time) { tc.clearCrosshairPosition(); continue; }
@@ -977,6 +982,7 @@ export class Handler {
 
     public static syncCharts(childChart:Handler, parentChart: Handler, crosshairOnly = false) {
         function crosshairHandler(chart: Handler, point: any, param: any) {
+            if (!chart.series) return;
             if (!param.time) {
                 chart.chart.clearCrosshairPosition();
                 return;
@@ -986,8 +992,8 @@ export class Handler {
                 chart.legend.legendHandler(point, true);
         }
 
-        function getPoint(series: ISeriesApi<SeriesType>, param: MouseEventParams) {
-            if (!param.time) return null;
+        function getPoint(series: ISeriesApi<SeriesType> | null, param: MouseEventParams) {
+            if (!series || !param.time) return null;
             return param.seriesData.get(series) || null;
         }
 
@@ -1098,9 +1104,11 @@ export class Handler {
             try {
                 const time = param.time;
                 const srcSeries = chart.series;
+                if (!srcSeries) return;
                 const point = time ? param.seriesData.get(srcSeries) || null : null;
                 for (let i = 0; i < targets.length; i++) {
                     const target = targets[i];
+                    if (!target.series) continue;
                     try {
                         if (!target.legend?.div) continue;
                         const tc = target.chart;

@@ -237,6 +237,7 @@ export class Legend {
 
     legendHandler(param: MouseEventParams, usingPoint= false) {
         if (!this.ohlcEnabled && !this.linesEnabled && !this.percentEnabled) return;
+        if (!this.handler.series) return;
         const options: any = this.handler.series.options()
 
         if (!param.time && !this.persistent) {
