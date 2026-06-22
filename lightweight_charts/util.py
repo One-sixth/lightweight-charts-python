@@ -122,7 +122,8 @@ def js_json(d: dict):
     return f"JSON.parse('{json.dumps(filtered_dict)}')"
 
 
-def jbool(b: bool): return 'true' if b is True else 'false' if b is False else None
+def jbool(b: bool):
+    return 'true' if b is True else 'false' if b is False else None
 
 
 LINE_STYLE = Literal['solid', 'dotted', 'dashed', 'large_dashed', 'sparse_dotted']

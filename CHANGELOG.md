@@ -21,6 +21,25 @@
   - CandleSeries `clear_data()` 改为 `super().clear_data()` + 清理 `candle_data` 和 `_last_bar`
   - AbstractChart `clear_data()` 简化为统一调用三个系列的 `clear_data()`
 
+- **abstract.py 拆分**：SeriesCommon + VolumeSeries + OpenInterestSeries + CandleSeries 移入新文件 `series.py`（1198 行），abstract.py 从 2795 行缩减到 1553 行（-45%），零继承链变化
+
+- **SeriesCommon.delete() 基类统一**：基类新增 `delete()` 方法（clear_markers + 重置 _last_bar/data + JS 清理），5 个子类（Line/Histogram/VolumeSeries/OI/CandleSeries）全部简化为 `super().delete()`
+  - 修复 Line/Histogram 的 JS bug：`{self.id}legendItem` 变量名含 `.` 导致 JS 语法错误，统一为 `var _legendItem`
+  - delete 时调用 `clear_markers()` 清除 Python 和 JS 端标记，防止 removeSeries 失败后残留
+
+- **三个系列类 _build() 提取 + 参数存储**：CandleSeries / VolumeSeries / OpenInterestSeries 的 `__init__` 将 JS 创建逻辑提取到 `_build()` 方法，构造参数存储为实例属性
+  - `config()` / `candle_style()` 同步更新 Python 属性 + JS，确保 `_build()` 重建时使用最新值
+
+- **CandleSeries candle_data → data 合并**：移除 `self.candle_data`，统一使用基类的 `self.data`，消除每次更新的 `.copy()` 开销
+  - `AbstractChart.candle_data` property 保留兼容性，返回 `self.candle.data`
+
+- **CandleSeries 删除多余 volume/OI 检测**：`update_from_ticks()` 中移除 ~20 行 volume/OI 聚合逻辑（CandleSeries 只处理 OHLC，聚合后会被 `update_bars()` 丢弃）
+
+- **AbstractChart toolbox 始终存在**：`self.toolbox = ToolBox(self) if toolbox else None`，不再使用 `hasattr` 检查
+  - ToolBox 新增 `clear_drawings()` / `reposition_drawings()` 方法，封装 JS 细节
+
+- **run_tests.py 补全**：新增 4 个缺失测试（test_candle_series / test_data_aggregation / test_position / test_reset_sub），现在 7/7 test suites 全部覆盖
+
 ---
 
 ## [v2.7.2] - 2026-06-21
