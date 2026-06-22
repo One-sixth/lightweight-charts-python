@@ -1410,7 +1410,7 @@ def test_edge_cases():
 # ═══════════════════════════════════════════════════════
 
 if __name__ == '__main__':
-    start_time = time.time()
+    # start_time = time.time()
 
     results = []
     results.append(('set_different_frequencies', test_set_different_frequencies()))
@@ -1437,4 +1437,4 @@ if __name__ == '__main__':
         print(f"    [{status}] {name}")
     print("=" * 60)
 
-    print(f"  Total time: {time.time() - start_time:.2f} seconds")
+    # print(f"  Total time: {time.time() - start_time:.2f} seconds")

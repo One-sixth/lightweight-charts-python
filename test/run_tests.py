@@ -10,12 +10,18 @@ Or run individual test files directly:
 """
 
 if __name__ == '__main__':
-    import subprocess, sys, os
+    import subprocess, sys, os, time
+
+    start_time = time.time()
 
     tests = [
         'test_cleanup.py',
         'test_features.py',
         'test_util.py',
+        'test_candle_series.py',
+        'test_data_aggregation.py',
+        'test_position.py',
+        'test_reset_sub.py',
     ]
 
     results = []
@@ -32,5 +38,7 @@ if __name__ == '__main__':
         mark = "PASS" if ok else "FAIL"
         print(f"    [{mark}] {name}")
     print("=" * 60)
+
+    print(f"  Total time: {time.time() - start_time:.2f} seconds")
 
     sys.exit(0 if all(ok for _, ok in results) else 1)
