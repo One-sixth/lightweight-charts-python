@@ -889,7 +889,8 @@ class OpenInterestSeries(SeriesCommon):
                 {self.id}.series.priceScale().applyOptions({{
                     scaleMargins: {{top: {top}, bottom: {bottom}}},
                     autoScale: true,
-                }})''')
+                }})
+            ''')
 
     def delete(self):
         """删除持仓量系列。"""
@@ -988,6 +989,24 @@ class CandleSeries(SeriesCommon):
             0;
         ''')
 
+    def candle_style(
+            self, up_color: str = 'rgba(39, 157, 130, 100)', down_color: str = 'rgba(200, 97, 100, 100)',
+            wick_visible: bool = True, border_visible: bool = True, border_up_color: str = '',
+            border_down_color: str = '', wick_up_color: str = '', wick_down_color: str = ''):
+        """
+        Candle styling for each of its parts.
+        If only `up_color` and `down_color` are passed, they will color all parts of the candle.
+        """
+        self.up_color = up_color
+        self.down_color = down_color
+        self.wick_visible = wick_visible
+        self.border_visible = border_visible
+        self.border_up_color = border_up_color if border_up_color else up_color
+        self.border_down_color = border_down_color if border_down_color else down_color
+        self.wick_up_color = wick_up_color if wick_up_color else up_color
+        self.wick_down_color = wick_down_color if wick_down_color else down_color
+        self.run_script(f"{self.id}.series.applyOptions({js_json(locals())})")
+
     def clear_data(self):
         """清空所有 K 线数据和标记。"""
         super().clear_data()
@@ -1074,20 +1093,6 @@ class CandleSeries(SeriesCommon):
         self._last_bar = ohlc.iloc[-1]
 
         self.run_script(' '.join(js_commands))
-
-    def candle_style(
-            self, up_color: str = 'rgba(39, 157, 130, 100)', down_color: str = 'rgba(200, 97, 100, 100)',
-            wick_visible: bool = True, border_visible: bool = True, border_up_color: str = '',
-            border_down_color: str = '', wick_up_color: str = '', wick_down_color: str = ''):
-        """
-        Candle styling for each of its parts.
-        If only `up_color` and `down_color` are passed, they will color all parts of the candle.
-        """
-        border_up_color = border_up_color if border_up_color else up_color
-        border_down_color = border_down_color if border_down_color else down_color
-        wick_up_color = wick_up_color if wick_up_color else up_color
-        wick_down_color = wick_down_color if wick_down_color else down_color
-        self.run_script(f"{self.id}.series.applyOptions({js_json(locals())})")
 
     def update_from_tick(self, series: pd.Series, cumulative_volume: bool = False):
         """
