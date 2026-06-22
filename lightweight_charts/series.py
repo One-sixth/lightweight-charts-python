@@ -18,12 +18,13 @@ if TYPE_CHECKING:
 
 class SeriesCommon(Pane):
     """图表的系列数据基类，管理数据更新、标记、绘图和价格线。"""
-    def __init__(self, chart: 'AbstractChart', name: str = '', pane_index: int = 0, _fixed_id: str = None):
+    def __init__(self, chart: 'AbstractChart', name: str = '', pane_index: int = 0, _fixed_id: str = None, _option_columns: list[str] = None):
         """
         :param chart: 所属的 AbstractChart 实例
         :param name: 系列名称（用于图例标识）
         :param pane_index: 所属面板索引
         :param _fixed_id: 固定 ID（如 'window.Chart_1_candle'），跳过 IDGen 自动生成
+        :param _option_columns: 可选列名列表（全小写），set/update_bars 时若输入 df 中存在这些列则自动携带
         """
         if _fixed_id:
             self.id = _fixed_id
@@ -35,6 +36,7 @@ class SeriesCommon(Pane):
         self.data = pd.DataFrame()
         self.markers = {}
         self.pane_index = pane_index
+        self._option_columns = _option_columns or []
 
     def pop(self, count: int = 1):
         """从系列末尾移除指定数量的数据点。"""
@@ -79,6 +81,24 @@ class SeriesCommon(Pane):
         """格式化单个时间值（委托到所属图表的时间级别）。"""
         return self._chart._single_datetime_format(arg)
 
+    def _check_value_name_conflict_and_rename(self, df: pd.DataFrame):
+        """检查 'value' 列和系列名是否同时存在。如果同时存在则报错。最后自动重命名系列名到value列。
+
+        匹配规则：大小写不敏感（normal_df 可能已将列名小写化）。
+        返回 rename 后的 df（不修改原 df）。
+        """
+        is_value_in_df_cols = 'value' in df.columns
+        is_name_in_df_cols = self.name != '' and self.name is not None
+        if is_value_in_df_cols and is_name_in_df_cols:
+            raise ValueError(f'Column "value" and "{self.name}" cannot be used simultaneously.')
+        elif not is_value_in_df_cols and not is_name_in_df_cols:
+            raise ValueError(f'Column "value" or "{self.name}" is required.')
+        elif is_name_in_df_cols:
+            # 非 inplace rename，返回新 df，不修改调用者的 df
+            return df.rename(columns={self.name: 'value'})
+        else:
+            return df
+
     def set(self, df: Optional[pd.DataFrame] = None, _df_cleaned=False):
         """
         设置或更新系列数据。
@@ -107,13 +127,14 @@ class SeriesCommon(Pane):
             df = self._time_to_bar_time(df)
             df = merge_value_by_time(df)
 
-        if self.name:
-            # 大小写不敏感匹配列名（AbstractChart 可能保留了原始大小写）
-            col_match = next((c for c in df.columns if c.lower() == self.name.lower()), None)
-            if col_match is None:
-                raise NameError(f'No column named "{self.name}".')
-            if col_match != 'value':
-                df = df.rename(columns={col_match: 'value'})
+        df = self._check_value_name_conflict_and_rename(df)
+
+        # 构建输出列：time + value + 存在的 option_columns
+        cols = ['time', 'value']
+        for c in self._option_columns:
+            if c in df.columns and c not in cols:
+                cols.append(c)
+        df = df[cols]
 
         self.data = df.copy()
         self._last_bar = df.iloc[-1]
@@ -141,7 +162,7 @@ class SeriesCommon(Pane):
 
     update = update_bar
 
-    def _clean_update_bars(self, df: pd.DataFrame, exclude_lowercase=None, _df_cleaned=False):
+    def _clean_update_bars(self, df: pd.DataFrame, _df_cleaned=False):
         '''
         通用函数，清理批量更新数据，确保时间是单调递增的，且在 _last_bar 后面。
         :return:
@@ -151,7 +172,7 @@ class SeriesCommon(Pane):
 
         # 先直接清理格式
         if not _df_cleaned:
-            df = normal_df(df, exclude_lowercase=exclude_lowercase)
+            df = normal_df(df, exclude_lowercase=self.name)
             df = self._time_to_bar_time(df)
             df = merge_value_by_time(df)
 
@@ -187,10 +208,15 @@ class SeriesCommon(Pane):
             return
 
         # 先直接清理格式
-        df = self._clean_update_bars(df, exclude_lowercase=self.name)
-        df.rename(columns={self.name: 'value'}, inplace=True)
-        # 取出有效数据
-        df = df[['time', 'value']]
+        df = self._clean_update_bars(df)
+        df = self._check_value_name_conflict_and_rename(df)
+
+        # 构建输出列：time + value + 存在的 option_columns
+        cols = ['time', 'value']
+        for c in self._option_columns:
+            if c in df.columns and c not in cols:
+                cols.append(c)
+        df = df[cols]
 
         # 确保时间是单调递增
         if len(df) > 1:
@@ -467,11 +493,20 @@ class Line(SeriesCommon):
 
 
 class Histogram(SeriesCommon):
-    """柱状图系列，常用于成交量或持仓量展示。"""
+    """柱状图系列，常用于成交量或持仓量展示。
+
+    支持通过 ``option_columns`` 传入可选列（如 ``['color']``），set/update_bars 时若输入 df 中存在这些列则自动携带到 JS 端。
+
+    示例::
+
+        df = pd.DataFrame({'time': [1,2,3], 'value': [10,20,15], 'color': ['#f00','#0f0','#00f']})
+        hist = chart.create_histogram(option_columns=['color'])
+        hist.set(df)
+    """
     def __init__(self, chart, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom,
-                 pane_index: int = 0
+                 pane_index: int = 0, option_columns: list[str] = None
     ):
-        super().__init__(chart, name, pane_index)
+        super().__init__(chart, name, pane_index, _option_columns=option_columns)
         self.color = color
         self.run_script(f'''
         {self.id} = {chart.id}.createHistogramSeries(
