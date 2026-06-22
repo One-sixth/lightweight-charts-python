@@ -40,6 +40,25 @@ class SeriesCommon(Pane):
         """从系列末尾移除指定数量的数据点。"""
         self.run_script(f'{self.id}.series.pop({count})')
 
+    def delete(self):
+        """删除此系列（清除标记、移除 JS 对象、清理图例）。"""
+        self.clear_markers()
+
+        if self in self._chart._lines:
+            self._chart._lines.remove(self)
+
+        self.run_script(f'''
+            {self._chart.id}.chart.removeSeries({self.id}.series);
+            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series);
+            if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1);
+            var _legendItem = {self._chart.id}.legend._lines.find(l => l.series == {self.id}.series);
+            if (_legendItem) {{
+                {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter(l => l != _legendItem);
+                try {{ {self._chart.id}.legend.div.removeChild(_legendItem.row) }} catch(e) {{}}
+            }}
+            delete {self.id}
+        ''')
+
     def clear_data(self):
         """清空系列数据和标记。"""
         self.clear_markers()
@@ -442,22 +461,8 @@ class Line(SeriesCommon):
             );null''')  # 后面的 null 是为了防止 JS 异常，必不可少
 
     def delete(self):
-        """
-        Irreversibly deletes the line, as well as the object that contains the line.
-        """
-        self._chart._lines.remove(self) if self in self._chart._lines else None
-        self.clear_markers()
-        self.run_script(f'''
-            {self._chart.id}.chart.removeSeries({self.id}.series)
-            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series); if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1)
-
-            {self.id}legendItem = {self._chart.id}.legend._lines.find((line) => line.series == {self.id}.series)
-            {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
-            try {{ if ({self.id}legendItem) {self._chart.id}.legend.div.removeChild({self.id}legendItem.row) }} catch(e) {{}}
-
-            delete {self.id}legendItem
-            delete {self.id}
-        ''')
+        """删除此折线系列。"""
+        super().delete()
 
 
 class Histogram(SeriesCommon):
@@ -484,22 +489,8 @@ class Histogram(SeriesCommon):
         }});0''')
 
     def delete(self):
-        """
-        Irreversibly deletes the histogram.
-        """
-        self._chart._lines.remove(self) if self in self._chart._lines else None
-        self.clear_markers()
-        self.run_script(f'''
-            {self._chart.id}.chart.removeSeries({self.id}.series)
-            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series); if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1)
-
-            {self.id}legendItem = {self._chart.id}.legend._lines.find((line) => line.series == {self.id}.series)
-            {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
-            try {{ if ({self.id}legendItem) {self._chart.id}.legend.div.removeChild({self.id}legendItem.row) }} catch(e) {{}}
-
-            delete {self.id}legendItem
-            delete {self.id}
-        ''')
+        """删除此柱状图系列。"""
+        super().delete()
 
     def scale(self, scale_margin_top: float = 0.0, scale_margin_bottom: float = 0.0):
         """调整柱状图的 Y 轴边距。"""
@@ -555,24 +546,33 @@ class VolumeSeries(SeriesCommon):
         """
         pane = pane_index if pane_index is not None else 0
         super().__init__(chart, name='', pane_index=pane, _fixed_id=_fixed_id)
-        self._up_color = up_color
-        self._down_color = down_color
 
+        # 存储构造参数，供重建时使用
+        self.up_color = up_color
+        self.down_color = down_color
+        self.scale_margin_top = scale_margin_top
+        self.scale_margin_bottom = scale_margin_bottom
+        self.price_scale_id = price_scale_id
+        self._dont_add_list = _dont_add_list
+
+        self._build()
+
+    def _build(self):
         self.run_script(f'''
             {self.id} = {self._chart.id}.createHistogramSeries(
                 "",
                 {{
-                    color: '{down_color}',
+                    color: '{self.down_color}',
                     lastValueVisible: false,
                     priceLineVisible: false,
-                    priceScaleId: '{price_scale_id}',
+                    priceScaleId: '{self.price_scale_id}',
                     priceFormat: {{type: "volume"}},
                 }},
-                {pane},
-                {jbool(_dont_add_list)}
+                {self.pane_index},
+                {jbool(self._dont_add_list)}
             )
             {self.id}.series.priceScale().applyOptions({{
-                scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}}
+                scaleMargins: {{top: {self.scale_margin_top}, bottom: {self.scale_margin_bottom}}}
             }});0''')
 
     def set(self, df: pd.DataFrame, _df_cleaned=False):
@@ -596,10 +596,10 @@ class VolumeSeries(SeriesCommon):
 
         # 根据 OHLC 着色
         if 'open' in df.columns and 'close' in df.columns:
-            vol_df['color'] = self._down_color
-            vol_df.loc[df['close'] > df['open'], 'color'] = self._up_color
+            vol_df['color'] = self.down_color
+            vol_df.loc[df['close'] > df['open'], 'color'] = self.up_color
         else:
-            vol_df['color'] = self._down_color
+            vol_df['color'] = self.down_color
 
         self.data = vol_df.copy()
         self._last_bar = vol_df.iloc[-1]
@@ -628,10 +628,10 @@ class VolumeSeries(SeriesCommon):
         vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
 
         if 'open' in df.columns and 'close' in df.columns:
-            vol_df['color'] = self._down_color
-            vol_df.loc[df['close'] > df['open'], 'color'] = self._up_color
+            vol_df['color'] = self.down_color
+            vol_df.loc[df['close'] > df['open'], 'color'] = self.up_color
         else:
-            vol_df['color'] = self._down_color
+            vol_df['color'] = self.down_color
 
         # 过滤旧数据（与 CandleSeries/SeriesCommon 一致）
         if self._last_bar is not None:
@@ -689,12 +689,14 @@ class VolumeSeries(SeriesCommon):
         :param down_color: 下跌颜色
         """
         if up_color is not None:
-            self._up_color = up_color
+            self.up_color = up_color
         if down_color is not None:
-            self._down_color = down_color
+            self.down_color = down_color
         if scale_margin_top is not None or scale_margin_bottom is not None:
             top = scale_margin_top if scale_margin_top is not None else 0.8
             bottom = scale_margin_bottom if scale_margin_bottom is not None else 0.0
+            self.scale_margin_top = top
+            self.scale_margin_bottom = bottom
             self.run_script(f'''
                 {self.id}.series.priceScale().applyOptions({{
                     scaleMargins: {{top: {top}, bottom: {bottom}}}
@@ -702,19 +704,7 @@ class VolumeSeries(SeriesCommon):
 
     def delete(self):
         """删除成交量系列。不影响绑定的 CandleSeries。"""
-        self.clear_markers()
-        self._chart._lines.remove(self) if self in self._chart._lines else None
-        self.run_script(f'''
-            {self._chart.id}.chart.removeSeries({self.id}.series)
-            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series);
-            if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1);
-            var _legendItem = {self._chart.id}.legend._lines.find(l => l.series == {self.id}.series);
-            if (_legendItem) {{
-                {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter(l => l != _legendItem);
-                try {{ {self._chart.id}.legend.div.removeChild(_legendItem.row) }} catch(e) {{}}
-            }}
-            delete {self.id}
-        ''')
+        super().delete()
 
 
 class OpenInterestSeries(SeriesCommon):
@@ -763,26 +753,38 @@ class OpenInterestSeries(SeriesCommon):
         """
         pane = pane_index if pane_index is not None else 0
         super().__init__(chart, name='', pane_index=pane, _fixed_id=_fixed_id)
-        self._color = color
 
+        # 存储构造参数，供重建时使用
+        self.color = color
+        self.line_width = line_width
+        self.scale_margin_top = scale_margin_top
+        self.scale_margin_bottom = scale_margin_bottom
+        self.price_scale_id = price_scale_id
+        self._dont_add_list = _dont_add_list
+
+        self._build()
+
+    def _build(self):
         self.run_script(f'''
             {self.id} = {self._chart.id}.createLineSeries(
                 "",
                 {{
-                    color: '{color}',
-                    lineWidth: {line_width},
-                    priceScaleId: '{price_scale_id}',
+                    color: '{self.color}',
+                    lineWidth: {self.line_width},
+                    priceScaleId: '{self.price_scale_id}',
                     lastValueVisible: false,
                     priceLineVisible: false,
                     crosshairMarkerVisible: true,
                 }},
-                {pane},
-                {jbool(_dont_add_list)}
+                {self.pane_index},
+                {jbool(self._dont_add_list)}
             )
             {self.id}.series.priceScale().applyOptions({{
-                scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}},
+                scaleMargins: {{top: {self.scale_margin_top}, bottom: {self.scale_margin_bottom}}},
                 autoScale: true,
-            }});0''')
+            }});
+            0
+        ''')
 
     def set(self, df: pd.DataFrame, _df_cleaned=False):
         """设置持仓量数据。
@@ -872,7 +874,7 @@ class OpenInterestSeries(SeriesCommon):
         opts = {}
         if color is not None:
             opts['color'] = color
-            self._color = color
+            self.color = color
         if line_width is not None:
             opts['lineWidth'] = line_width
         if opts:
@@ -880,6 +882,8 @@ class OpenInterestSeries(SeriesCommon):
         if scale_margin_top is not None or scale_margin_bottom is not None:
             top = scale_margin_top if scale_margin_top is not None else 0.8
             bottom = scale_margin_bottom if scale_margin_bottom is not None else 0.0
+            self.scale_margin_top = top
+            self.scale_margin_bottom = bottom
             self.run_script(f'''
                 {self.id}.series.priceScale().applyOptions({{
                     scaleMargins: {{top: {top}, bottom: {bottom}}},
@@ -888,19 +892,7 @@ class OpenInterestSeries(SeriesCommon):
 
     def delete(self):
         """删除持仓量系列。"""
-        self.clear_markers()
-        self._chart._lines.remove(self) if self in self._chart._lines else None
-        self.run_script(f'''
-            {self._chart.id}.chart.removeSeries({self.id}.series)
-            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series);
-            if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1);
-            var _legendItem = {self._chart.id}.legend._lines.find(l => l.series == {self.id}.series);
-            if (_legendItem) {{
-                {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter(l => l != _legendItem);
-                try {{ {self._chart.id}.legend.div.removeChild(_legendItem.row) }} catch(e) {{}}
-            }}
-            delete {self.id}
-        ''')
+        super().delete()
 
 
 class CandleSeries(SeriesCommon):
@@ -954,31 +946,47 @@ class CandleSeries(SeriesCommon):
         super().__init__(chart, name, pane_index, _fixed_id=_fixed_id)
         self.candle_data = pd.DataFrame()
 
-        border_up_color = up_color
-        border_down_color = down_color
-        wick_up_color = up_color
-        wick_down_color = down_color
+        # 存储构造参数，供重建时使用
+        self.up_color = up_color
+        self.down_color = down_color
+        self.border_visible = border_visible
+        self.wick_visible = wick_visible
+        self.price_line = price_line
+        self.price_label = price_label
+        self.price_scale_id = price_scale_id
+        self.crosshair_marker = crosshair_marker
+        self._dont_add_list = _dont_add_list
 
+        self.border_up_color = up_color
+        self.border_down_color = down_color
+        self.wick_up_color = up_color
+        self.wick_down_color = down_color
+
+        self._build()
+
+    def _build(self):
         self.run_script(f'''
-            {self.id} = {chart.id}.createCandleSeries(
-                "{name}",
+            {self.id} = {self._chart.id}.createCandleSeries(
+                "{self.name}",
                 {{
-                    upColor: '{up_color}',
-                    downColor: '{down_color}',
-                    borderUpColor: '{border_up_color}',
-                    borderDownColor: '{border_down_color}',
-                    wickUpColor: '{wick_up_color}',
-                    wickDownColor: '{wick_down_color}',
-                    borderVisible: {jbool(border_visible)},
-                    wickVisible: {jbool(wick_visible)},
-                    lastValueVisible: {jbool(price_label)},
-                    priceLineVisible: {jbool(price_line)},
-                    crosshairMarkerVisible: {jbool(crosshair_marker)},
-                    priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
+                    upColor: '{self.up_color}',
+                    downColor: '{self.down_color}',
+                    borderUpColor: '{self.border_up_color}',
+                    borderDownColor: '{self.border_down_color}',
+                    wickUpColor: '{self.wick_up_color}',
+                    wickDownColor: '{self.wick_down_color}',
+                    borderVisible: {jbool(self.border_visible)},
+                    wickVisible: {jbool(self.wick_visible)},
+                    lastValueVisible: {jbool(self.price_label)},
+                    priceLineVisible: {jbool(self.price_line)},
+                    crosshairMarkerVisible: {jbool(self.crosshair_marker)},
+                    priceScaleId: {f'"{self.price_scale_id}"' if self.price_scale_id else 'undefined'},
                 }},
-                {pane_index},
-                {jbool(_dont_add_list)}
-            );0''')
+                {self.pane_index},
+                {jbool(self._dont_add_list)}
+            );
+            0;
+        ''')
 
     def clear_data(self):
         """清空所有 K 线数据和标记。"""
@@ -1166,16 +1174,4 @@ class CandleSeries(SeriesCommon):
 
     def delete(self):
         """删除此 K 线系列。"""
-        self.clear_markers()
-        self._chart._lines.remove(self) if self in self._chart._lines else None
-        self.run_script(f'''
-            {self._chart.id}.chart.removeSeries({self.id}.series);
-            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series);
-            if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1);
-            var _legendItem = {self._chart.id}.legend._lines.find(l => l.series == {self.id}.series);
-            if (_legendItem) {{
-                {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter(l => l != _legendItem);
-                try {{ {self._chart.id}.legend.div.removeChild(_legendItem.row) }} catch(e) {{}}
-            }}
-            delete {self.id}
-        ''')
+        super().delete()
