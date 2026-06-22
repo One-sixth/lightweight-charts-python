@@ -42,9 +42,9 @@ class SeriesCommon(Pane):
 
     def clear_data(self):
         """清空系列数据和标记。"""
+        self.clear_markers()
         self.run_script(f'{self.id}.series.setData([])')
         self.data = pd.DataFrame()
-        self.clear_markers()
 
     def _get_df_interval_offset(self, df: pd.DataFrame) -> (int, int):
         """获取数据DF内时间点的通常间隔（秒），返回，时间间隔（秒）和偏移时间（秒）"""
@@ -251,24 +251,24 @@ class SeriesCommon(Pane):
 
     def _update_markers(self):
         auto_scale = jbool(self._chart._marker_auto_scale)
-        if not self.markers:
+        if len(self.markers) > 0:
+            str_markers = json.dumps(list(self.markers.values()))
+            self.run_script(f'''
+                try {{
+                    if (!{self.id}.seriesMarkers) {{
+                        {self.id}.seriesMarkers = LightweightCharts.createSeriesMarkers(
+                            {self.id}.series, [], {{autoScale: {auto_scale}}}
+                        );
+                    }}
+                    {self.id}.seriesMarkers.setMarkers({str_markers});
+                }} catch(e) {{
+                    console.error('setMarkers failed:', e.message);
+                }}
+            ''')
+        else:
             self.run_script(f'''
                 if ({self.id}.seriesMarkers) {self.id}.seriesMarkers.setMarkers([]);
             ''')
-            return
-        str_markers = json.dumps(list(self.markers.values()))
-        self.run_script(f'''
-            try {{
-                if (!{self.id}.seriesMarkers) {{
-                    {self.id}.seriesMarkers = LightweightCharts.createSeriesMarkers(
-                        {self.id}.series, [], {{autoScale: {auto_scale}}}
-                    );
-                }}
-                {self.id}.seriesMarkers.setMarkers({str_markers});
-            }} catch(e) {{
-                console.error('setMarkers failed:', e.message);
-            }}
-        ''')
 
     def marker_list(self, markers: list[dict]):
         """
@@ -446,6 +446,7 @@ class Line(SeriesCommon):
         Irreversibly deletes the line, as well as the object that contains the line.
         """
         self._chart._lines.remove(self) if self in self._chart._lines else None
+        self.clear_markers()
         self.run_script(f'''
             {self._chart.id}.chart.removeSeries({self.id}.series)
             var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series); if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1)
@@ -487,6 +488,7 @@ class Histogram(SeriesCommon):
         Irreversibly deletes the histogram.
         """
         self._chart._lines.remove(self) if self in self._chart._lines else None
+        self.clear_markers()
         self.run_script(f'''
             {self._chart.id}.chart.removeSeries({self.id}.series)
             var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series); if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1)
@@ -700,6 +702,8 @@ class VolumeSeries(SeriesCommon):
 
     def delete(self):
         """删除成交量系列。不影响绑定的 CandleSeries。"""
+        self.clear_markers()
+        self._chart._lines.remove(self) if self in self._chart._lines else None
         self.run_script(f'''
             {self._chart.id}.chart.removeSeries({self.id}.series)
             var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series);
@@ -884,6 +888,8 @@ class OpenInterestSeries(SeriesCommon):
 
     def delete(self):
         """删除持仓量系列。"""
+        self.clear_markers()
+        self._chart._lines.remove(self) if self in self._chart._lines else None
         self.run_script(f'''
             {self._chart.id}.chart.removeSeries({self.id}.series)
             var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series);
@@ -1114,34 +1120,10 @@ class CandleSeries(SeriesCommon):
             'close': group_df['price'].last().array,
         })
 
-        # 检测 volume/OI
-        has_vol = 'volume' in df.columns
-        has_oi = 'open_interest' in df.columns
-
-        vol_series = None
-        oi_series = None
-
-        if has_vol:
-            if cumulative_volume:
-                vol_series = group_df['volume'].sum().array
-            else:
-                vol_series = group_df['volume'].last().array
-
-        if has_oi:
-            oi_series = group_df['open_interest'].last().array
-
         if self._last_bar['time'] == bars['time'].iloc[0]:
             bars.iloc[0, 1] = self._last_bar['open']
             bars.iloc[0, 2] = max(self._last_bar['high'], bars.iloc[0, 2])
             bars.iloc[0, 3] = min(self._last_bar['low'], bars.iloc[0, 3])
-
-            if has_vol and cumulative_volume:
-                vol_series.iloc[0] += self._last_bar.get('volume', 0)
-
-        if has_vol:
-            bars['volume'] = vol_series
-        if has_oi:
-            bars['open_interest'] = oi_series
 
         self.update_bars(bars)
 
@@ -1184,15 +1166,16 @@ class CandleSeries(SeriesCommon):
 
     def delete(self):
         """删除此 K 线系列。"""
+        self.clear_markers()
         self._chart._lines.remove(self) if self in self._chart._lines else None
         self.run_script(f'''
-            {self._chart.id}.chart.removeSeries({self.id}.series)
-            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series); if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1)
-
-            {self.id}legendItem = {self._chart.id}.legend._lines.find((line) => line.series == {self.id}.series)
-            {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
-            try {{ if ({self.id}legendItem) {self._chart.id}.legend.div.removeChild({self.id}legendItem.row) }} catch(e) {{}}
-
-            delete {self.id}legendItem
+            {self._chart.id}.chart.removeSeries({self.id}.series);
+            var _idx = {self._chart.id}._seriesList.indexOf({self.id}.series);
+            if (_idx >= 0) {self._chart.id}._seriesList.splice(_idx, 1);
+            var _legendItem = {self._chart.id}.legend._lines.find(l => l.series == {self.id}.series);
+            if (_legendItem) {{
+                {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter(l => l != _legendItem);
+                try {{ {self._chart.id}.legend.div.removeChild(_legendItem.row) }} catch(e) {{}}
+            }}
             delete {self.id}
         ''')
