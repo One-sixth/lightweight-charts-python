@@ -291,8 +291,8 @@ class AbstractChart(Pane):
         self._period_locked = False
         self.events: Events = Events(self)
 
+        # 初始化PolygonAPI支持
         from .polygon import PolygonAPI
-
         self.polygon: PolygonAPI = PolygonAPI(self)
 
         # 获取当前图表数量（用于字符串格式转换）
@@ -316,13 +316,15 @@ class AbstractChart(Pane):
         self._position = position
 
         # 生成 JS 初始化脚本（统一使用网格格式）
-        self._html_chart_init = (
-            f'{self.id} = new Lib.Handler('
-            f'"{self.id}", {width}, {height}, '
-            f'{self._position_info["nrows"]}, {self._position_info["ncols"]}, {self._position_info["index"]}, '
-            f'{jbool(autosize)})'
-        )
-        self.run_script(self._html_chart_init + ';0')
+        self._html_chart_init = f'''
+                {self.id} = new Lib.Handler(
+                "{self.id}", {width}, {height},
+                {self._position_info["nrows"]}, {self._position_info["ncols"]}, {self._position_info["index"]},
+                {jbool(autosize)}
+            );
+            0
+        '''
+        self.run_script(self._html_chart_init)
 
         # ── 组合模式：主 series 使用固定 ID 创建 ──
         base = self.id.replace('window.', '')  # 如 'Chart_1'
@@ -336,22 +338,13 @@ class AbstractChart(Pane):
             {self.id}.series = {self.candle.id}.series;
             {self.id}.volumeSeries = {self.volume.id}.series;
             {self.id}.openInterestSeries = {self.oi.id}.series;
-            // 主 candle 不应出现在 _seriesList 中（它属于 Handler 主 series）
-            // volume/oi 保留在 _seriesList（它们是独立 series）
-            var _ci = {self.id}._seriesList.indexOf({self.candle.id}.series);
-            if (_ci >= 0) {self.id}._seriesList.splice(_ci, 1);
-            var _li = {self.id}.legend._lines.find(l => l.series === {self.candle.id}.series);
-            if (_li) {{
-                {self.id}.legend._lines = {self.id}.legend._lines.filter(l => l !== _li);
-                try {{ {self.id}.legend.div.removeChild(_li.row) }} catch(e) {{}}
-            }}
-        ;0''')
+            0;
+        ''')
 
         self.subcharts.append(self.id)
 
         self.topbar: TopBar = TopBar(self)
-        if toolbox:
-            self.toolbox: ToolBox = ToolBox(self)
+        self.toolbox: ToolBox = ToolBox(self) if toolbox else None
 
     # ═══════════════════════════════════════════════════════
     #  委托方法 — 向后兼容 chart.set() / chart.update() 等 API
@@ -457,10 +450,12 @@ class AbstractChart(Pane):
                     line.set(df, _df_cleaned=True)
 
             # keep_drawings 处理
-            if keep_drawings:
-                self.run_script(f'{self.id}.toolBox?._drawingTool.repositionOnTime()')
-            else:
-                self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.clearDrawings()')
+            if self.toolbox is not None:
+                if keep_drawings:
+                    self.toolbox.reposition_drawings()
+                else:
+                    self.toolbox.clear_drawings()
+
         else:
             # 清空所有数据
             self.candle.set(None)
@@ -745,7 +740,7 @@ class AbstractChart(Pane):
 
         # 4. 清理绘图
         self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.clearDrawings()')
-        if hasattr(self, 'toolbox'):
+        if self.toolbox is not None:
             self.toolbox.drawings.clear()
 
         # 6. 清理子图表
@@ -758,7 +753,7 @@ class AbstractChart(Pane):
         self._clear_handlers()
 
         # 8. 恢复主图 ToolBox handler（_clear_handlers 把它也清了，但 ToolBox 对象还在）
-        if hasattr(self, 'toolbox'):
+        if self.toolbox is not None:
             self.win.handlers[f'save_drawings{self.id}'] = self.toolbox._save_drawings
 
         # 9. 重建 candle/volume/oi（始终存在，省去后续所有 None 检查）
@@ -770,14 +765,8 @@ class AbstractChart(Pane):
             {self.id}.series = {self.candle.id}.series;
             {self.id}.volumeSeries = {self.volume.id}.series;
             {self.id}.openInterestSeries = {self.oi.id}.series;
-            var _ci = {self.id}._seriesList.indexOf({self.candle.id}.series);
-            if (_ci >= 0) {self.id}._seriesList.splice(_ci, 1);
-            var _li = {self.id}.legend._lines.find(l => l.series === {self.candle.id}.series);
-            if (_li) {{
-                {self.id}.legend._lines = {self.id}.legend._lines.filter(l => l !== _li);
-                try {{ {self.id}.legend.div.removeChild(_li.row) }} catch(e) {{}}
-            }}
-        ;0''')
+            0;
+        ''')
 
     def remove_subchart(self, subchart_id: str):
         """
@@ -854,7 +843,7 @@ class AbstractChart(Pane):
         # 发送 save_drawings 回调。如果先调 _cleanup()，回调会排队，之后移除 handler
         # 时消息已经在队列里，show_async() 处理到时 handler 已不在 → KeyError。
         # 先移除 handler 后，排队的消息到达时找不到 handler，被 try/except 静默忽略。
-        if hasattr(self, 'toolbox'):
+        if self.toolbox is not None:
             self.win.handlers.pop(f'save_drawings{self.id}', None)
             self.toolbox._cleanup()
 

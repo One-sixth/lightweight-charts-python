@@ -44,6 +44,14 @@ class ToolBox:
             return
         self.drawings[self._save_under.value] = json.loads(drawings)
 
+    def clear_drawings(self):
+        """清空所有绘图。"""
+        self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.clearDrawings()')
+
+    def reposition_drawings(self):
+        """将绘图重新定位到当前时间轴。"""
+        self.run_script(f'{self.id}.toolBox?._drawingTool.repositionOnTime()')
+
     def _cleanup(self):
         """清理 ToolBox 的 JS 和 Python 资源。"""
         self.run_script(f'''
