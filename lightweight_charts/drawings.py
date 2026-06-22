@@ -1,11 +1,16 @@
 import json
 import inspect
+from typing import Union, Optional, TYPE_CHECKING
 
-from typing import Union, Optional
-from .util import NUM, Pane, as_enum, LINE_STYLE, TIME
+from .util import NUM, Pane, as_enum, LINE_STYLE, TIME, js_json, jbool
 
 
-def make_js_point(chart, time, price):
+if TYPE_CHECKING:
+    # 类型检查时专用，不会在运行时导入
+    from .abstract import AbstractChart
+
+
+def make_js_point(chart: 'AbstractChart', time, price):
     """构造一个包含 time/logical/price 的 JS 点对象字符串。"""
     formatted_time = chart._single_datetime_format(time)
     return f'''{{
@@ -18,9 +23,10 @@ def make_js_point(chart, time, price):
         "price": {price}
     }}'''
 
+
 class Drawing(Pane):
     """绘图基类，所有绘制图形（线、框、射线等）的父类。"""
-    def __init__(self, chart, func=None):
+    def __init__(self, chart: 'AbstractChart', func=None):
         """
         :param chart: 绑定的图表实例
         :param func: 交互回调函数
@@ -45,8 +51,8 @@ class Drawing(Pane):
         if self in self.chart._drawings:
             self.chart._drawings.remove(self)
         self.run_script(f'''
-            {self.id}.detach()
-            delete {self.id}
+            {self.id}.detach();
+            delete {self.id};
         ''')
 
     def options(self, color='#1E80F0', style='solid', width=4):
@@ -54,60 +60,31 @@ class Drawing(Pane):
         :param color: 线条颜色
         :param style: 线条样式（solid/dotted/dashed 等）
         :param width: 线宽"""
-        self.run_script(f'''{self.id}.applyOptions({{
+        self.run_script(f'''
+            {self.id}.applyOptions({{
             lineColor: '{color}',
             lineStyle: {as_enum(style, LINE_STYLE)},
-            width: {width},
-        }})''')
-
-class TwoPointDrawing(Drawing):
-    """两点绘图基类，用于趋势线、方框等需要两个锚点的图形。"""
-    def __init__(
-        self,
-        drawing_type,
-        chart,
-        start_time: TIME,
-        start_value: NUM,
-        end_time: TIME,
-        end_value: NUM,
-        round: bool,
-        options: dict,
-        func=None
-    ):
-        super().__init__(chart, func)
-
-        options_string = '\n'.join(f'{key}: {val},' for key, val in options.items())
-
-        self.run_script(f'''
-        {self.id} = new Lib.{drawing_type}(
-            {make_js_point(self.chart, start_time, start_value)},
-            {make_js_point(self.chart, end_time, end_value)},
-            {{
-                {options_string}
-            }}
-        )
-        {chart.id}.series.attachPrimitive({self.id})
+            width: {width},}})
         ''')
 
 
 class HorizontalLine(Drawing):
     """水平线绘图，支持拖拽回调。"""
-    def __init__(self, chart, price, color, width, style, text, axis_label_visible, func):
+    def __init__(self, chart: 'AbstractChart', price, color, width, style, text, axis_label_visible, func):
         super().__init__(chart, func)
         self.price = price
         self.run_script(f'''
-
-        {self.id} = new Lib.HorizontalLine(
-            {{price: {price}}},
-            {{
-                lineColor: '{color}',
-                lineStyle: {as_enum(style, LINE_STYLE)},
-                width: {width},
-                text: `{text}`,
-            }},
-            callbackName={f"'{self.id}'" if func else 'null'}
-        )
-        {chart.id}.series.attachPrimitive({self.id})
+            {self.id} = new Lib.HorizontalLine(
+                {{price: {price}}},
+                {{
+                    lineColor: '{color}',
+                    lineStyle: {as_enum(style, LINE_STYLE)},
+                    width: {width},
+                    text: `{text}`,
+                }},
+                callbackName={f"'{self.id}'" if func else 'null'}
+            )
+            {chart.id}.series.attachPrimitive({self.id})
         ''')
         if not func:
             return
@@ -128,7 +105,6 @@ class HorizontalLine(Drawing):
         Moves the horizontal line to the given price.
         """
         self.run_script(f'{self.id}.updatePoints({{price: {price}}})')
-        # self.run_script(f'{self.id}.updatePrice({price})')
         self.price = price
 
     def options(self, color='#1E80F0', style='solid', width=4, text=''):
@@ -138,28 +114,26 @@ class HorizontalLine(Drawing):
 
 class VerticalLine(Drawing):
     """垂直线绘图。"""
-    def __init__(self, chart, time, color, width, style, text, func=None):
+    def __init__(self, chart: 'AbstractChart', time, color, width, style, text, func=None):
         super().__init__(chart, func)
         self.time = time
         self.run_script(f'''
-
-        {self.id} = new Lib.VerticalLine(
-            {{time: {self.chart._single_datetime_format(time)}}},
-            {{
-                lineColor: '{color}',
-                lineStyle: {as_enum(style, LINE_STYLE)},
-                width: {width},
-                text: `{text}`,
-            }},
-            callbackName={f"'{self.id}'" if func else 'null'}
-        )
-        {chart.id}.series.attachPrimitive({self.id})
+            {self.id} = new Lib.VerticalLine(
+                {{time: {self.chart._single_datetime_format(time)}}},
+                {{
+                    lineColor: '{color}',
+                    lineStyle: {as_enum(style, LINE_STYLE)},
+                    width: {width},
+                    text: `{text}`,
+                }},
+                callbackName={f"'{self.id}'" if func else 'null'}
+            )
+            {chart.id}.series.attachPrimitive({self.id})
         ''')
 
     def update(self, time: TIME):
         """更新垂直线的时间位置。"""
         self.run_script(f'{self.id}.updatePoints({{time: {time}}})')
-        # self.run_script(f'{self.id}.updatePrice({price})')
         self.time = time
 
     def options(self, color='#1E80F0', style='solid', width=4, text=''):
@@ -171,7 +145,7 @@ class VerticalLine(Drawing):
 class RayLine(Drawing):
     """射线绘图，从起点延伸至无穷远。"""
     def __init__(self,
-        chart,
+        chart: 'AbstractChart',
         start_time: TIME,
         value: NUM,
         round: bool = False,
@@ -183,24 +157,54 @@ class RayLine(Drawing):
     ):
         super().__init__(chart, func)
         self.run_script(f'''
-        {self.id} = new Lib.RayLine(
-            {{time: {self.chart._single_datetime_format(start_time)}, price: {value}}},
-            {{
-                lineColor: '{color}',
-                lineStyle: {as_enum(style, LINE_STYLE)},
-                width: {width},
-                text: `{text}`,
-            }},
-            callbackName={f"'{self.id}'" if func else 'null'}
-        )
-        {chart.id}.series.attachPrimitive({self.id})
+            {self.id} = new Lib.RayLine(
+                {{time: {self.chart._single_datetime_format(start_time)}, price: {value}}},
+                {{
+                    lineColor: '{color}',
+                    lineStyle: {as_enum(style, LINE_STYLE)},
+                    width: {width},
+                    text: `{text}`,
+                }},
+                callbackName={f"'{self.id}'" if func else 'null'}
+            )
+            {chart.id}.series.attachPrimitive({self.id})
+        ''')
+
+
+class TwoPointDrawing(Drawing):
+    """两点绘图基类，用于趋势线、方框等需要两个锚点的图形。"""
+    def __init__(
+        self,
+        drawing_type,
+        chart,
+        start_time: TIME,
+        start_value: NUM,
+        end_time: TIME,
+        end_value: NUM,
+        round: bool,
+        options: dict,
+        func=None
+    ):
+        super().__init__(chart, func)
+
+        options_string = '\n'.join(f'{key}: {val},' for key, val in options.items())
+
+        self.run_script(f'''
+            {self.id} = new Lib.{drawing_type}(
+                {make_js_point(self.chart, start_time, start_value)},
+                {make_js_point(self.chart, end_time, end_value)},
+                {{
+                    {options_string}
+                }}
+            )
+            {chart.id}.series.attachPrimitive({self.id})
         ''')
 
 
 class Box(TwoPointDrawing):
     """矩形方框绘图，支持填充色。"""
     def __init__(self,
-        chart,
+        chart: 'AbstractChart',
         start_time: TIME,
         start_value: NUM,
         end_time: TIME,
@@ -233,7 +237,7 @@ class Box(TwoPointDrawing):
 class TrendLine(TwoPointDrawing):
     """趋势线绘图（两点连线）。"""
     def __init__(self,
-        chart,
+        chart: 'AbstractChart',
         start_time: TIME,
         start_value: NUM,
         end_time: TIME,
@@ -287,42 +291,44 @@ class VerticalSpan(Pane):
                 data = [{'time': fmt(t), 'value': 1} for t in start_time]
             else:
                 data = [{'time': fmt(start_time), 'value': 1}]
+
             self.run_script(f'''
-var _vs = {self._chart.id}.chart.addSeries(LightweightCharts.HistogramSeries, {{
-    color: '{color}',
-    priceFormat: {{type: 'volume'}},
-    priceScaleId: 'vs_{self.id}',
-    lastValueVisible: false,
-    priceLineVisible: false,
-}});
-_vs.priceScale().applyOptions({{scaleMargins: {{top: 0.0, bottom: 0.0}}}});
-_vs.setData({json.dumps(data)});
-{self.id} = _vs;
-0
-        ''')
+                var _vs = {self._chart.id}.chart.addSeries(LightweightCharts.HistogramSeries, {{
+                    color: '{color}',
+                    priceFormat: {{type: 'volume'}},
+                    priceScaleId: 'vs_{self.id}',
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                }});
+                _vs.priceScale().applyOptions({{scaleMargins: {{top: 0.0, bottom: 0.0}}}});
+                _vs.setData({json.dumps(data)});
+                {self.id} = _vs;
+                0
+            ''')
         else:
             # Range between two dates — use continuous fill
             data = [
                 {'time': fmt(start_time), 'value': 1},
                 {'time': fmt(end_time), 'value': 1},
             ]
+
             self.run_script(f'''
-var _vs = {self._chart.id}.chart.addSeries(LightweightCharts.AreaSeries, {{
-    topColor: '{color}',
-    bottomColor: '{color}',
-    lineColor: '{color}',
-    lineWidth: 0,
-    lastValueVisible: false,
-    priceLineVisible: false,
-    crosshairMarkerVisible: false,
-    priceScaleId: 'vs_{self.id}',
-    autoscaleInfoProvider: () => ({{priceRange: {{minValue: 0, maxValue: 1}}}}),
-}});
-_vs.priceScale().applyOptions({{scaleMargins: {{top: 0.0, bottom: 0.0}}}});
-_vs.setData({json.dumps(data)});
-{self.id} = _vs;
-0
-        ''')
+                var _vs = {self._chart.id}.chart.addSeries(LightweightCharts.AreaSeries, {{
+                    topColor: '{color}',
+                    bottomColor: '{color}',
+                    lineColor: '{color}',
+                    lineWidth: 0,
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                    crosshairMarkerVisible: false,
+                    priceScaleId: 'vs_{self.id}',
+                    autoscaleInfoProvider: () => ({{priceRange: {{minValue: 0, maxValue: 1}}}}),
+                }});
+                _vs.priceScale().applyOptions({{scaleMargins: {{top: 0.0, bottom: 0.0}}}});
+                _vs.setData({json.dumps(data)});
+                {self.id} = _vs;
+                0
+            ''')
         self._data = data
         self._chart._drawings.append(self)
 
@@ -333,6 +339,63 @@ _vs.setData({json.dumps(data)});
         if self in self._chart._drawings:
             self._chart._drawings.remove(self)
         self.run_script(f'''
-            {self._chart.id}.chart.removeSeries({self.id})
-            delete {self.id}
+            {self._chart.id}.chart.removeSeries({self.id});
+            delete {self.id};
         ''')
+
+
+class PriceLine(Pane):
+    """
+    A price line drawn on the series (created via create_price_line).
+
+    Use .delete() to remove it.
+    """
+
+    def __init__(self, chart: 'AbstractChart', price: float, color: str,
+                 style: str, width: int, price_label: bool, title: str):
+        super().__init__(chart.win)
+        self._chart = chart
+        chart._price_lines.append(self)
+        self.run_script(f'''
+            {self.id} = {self._chart.id}.series.createPriceLine(
+                {{
+                    price: {price},
+                    color: '{color}',
+                    lineStyle: {as_enum(style, LINE_STYLE)},
+                    lineWidth: {width},
+                    axisLabelVisible: {jbool(price_label)},
+                    title: '{title}',
+                }},
+            );0
+        ''')
+
+    def delete(self):
+        """
+        Removes the price line from the series.
+        """
+        self._chart._price_lines.remove(self) if self in self._chart._price_lines else None
+        self.run_script(f'''
+            {self._chart.id}.series.removePriceLine({self.id});
+            delete {self.id};
+        ''')
+
+    def update(self, price: Optional[float] = None, color: Optional[str] = None,
+               style: Optional[str] = None, width: Optional[int] = None,
+               title: Optional[str] = None):
+        """
+        Updates the price line options.
+        """
+        opts = {}
+        if price is not None:
+            opts['price'] = price
+        if color is not None:
+            opts['color'] = color
+        if style is not None:
+            opts['lineStyle'] = as_enum(style, LINE_STYLE)
+        if width is not None:
+            opts['lineWidth'] = width
+        if title is not None:
+            opts['title'] = title
+        if not opts:
+            return
+        self.run_script(f'{self.id}.applyOptions({js_json(opts)})')

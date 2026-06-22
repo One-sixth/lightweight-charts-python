@@ -11,9 +11,9 @@ lightweight-charts-python/
 │   ├── __init__.py             # 导出 AbstractChart, Chart, CrossProcessChart, JupyterChart,
 │   │                           #        HTMLChart, HtmlTabChart, PolygonChart, ReflexChart,
 │   │                           #        CandleSeries, VolumeSeries, OpenInterestSeries
-│   ├── abstract.py             # 核心类: Window, AbstractChart, SeriesCommon, Candlestick,
-│   │                           #         CandleSeries, VolumeSeries, OpenInterestSeries,
-│   │                           #         Line, Histogram, PriceLine
+│   ├── abstract.py             # 核心类: Window, AbstractChart
+│   ├── series.py               # SeriesCommon, CandleSeries, VolumeSeries, OpenInterestSeries,
+│   │                           #         Line, Histogram
 │   ├── chart.py                # Chart (pywebview 桌面窗口实现) + CrossProcessChart (跨进程嵌入 Qt)
 │   ├── widgets.py              # JupyterChart, HTMLChart, HtmlTabChart, QtChart, WxChart, StreamlitChart
 │   ├── reflex_chart.py         # ReflexChart (Reflex 框架嵌入，iframe + postMessage 通信)
@@ -61,19 +61,18 @@ lightweight-charts-python/
 Pane (util.py)                          ← 所有组件的基类 (拥有 id, run_script)
 ├── Window (abstract.py)                ← JS 通信层: run_script(), run_script_and_get(), handlers
 │
-├── SeriesCommon (abstract.py)          ← 数据系列基类 (set/update/pop/clear_data/marker/marker_list/remove_marker/clear_markers)
-│   ├── Candlestick                     ← K线 + 成交量 + 持仓量 (主图容器, 内部组合模式)
-│   ├── CandleSeries                    ← 独立K线系列 (无 volume, 可在任意 pane)
-│   ├── VolumeSeries                    ← 成交量柱状图 (自动涨跌着色, self-managing)
-│   ├── OpenInterestSeries              ← 持仓量折线 (self-managing)
-│   ├── Line                            ← 折线 (支持 marker)
-│   └── Histogram                       ← 柱状图 (支持 marker)
+├── SeriesCommon (series.py)            ← 数据系列基类 (set/update/pop/clear_data/marker/marker_list/remove_marker/clear_markers)
+│   ├── CandleSeries (series.py)        ← 独立K线系列 (无 volume, 可在任意 pane)
+│   ├── VolumeSeries (series.py)        ← 成交量柱状图 (自动涨跌着色, self-managing)
+│   ├── OpenInterestSeries (series.py)  ← 持仓量折线 (self-managing)
+│   ├── Line (series.py)                ← 折线 (支持 marker)
+│   └── Histogram (series.py)           ← 柱状图 (支持 marker)
 │
 ├── AbstractChart (abstract.py)         ← 图表主类 (继承 Pane, 组合模式)
 │   │   内部组件:
-│   │     self.candle  → Candlestick    ← 主 K 线 + volume + OI
-│   │     self.volume  → VolumeSeries   ← 独立成交量 (__init__ 自动创建)
-│   │     self.oi      → OpenInterestSeries ← 独立持仓量 (__init__ 自动创建)
+│   │     self.candle  → CandleSeries   ← 主 K 线 (始终存在, reset 后自动重建)
+│   │     self.volume  → VolumeSeries   ← 独立成交量 (始终存在, reset 后自动重建)
+│   │     self.oi      → OpenInterestSeries ← 独立持仓量 (始终存在, reset 后自动重建)
 │   │   持有:
 │   │     self._lines  → list[Line|Histogram|CandleSeries]  ← 所有附加系列
 │   │     self._drawings / self._tables / self._price_lines ← 各类资源
@@ -89,7 +88,7 @@ Pane (util.py)                          ← 所有组件的基类 (拥有 id, ru
 │   ├── StreamlitChart (widgets.py)     ← Streamlit 嵌入
 │   └── ReflexChart (reflex_chart.py)   ← Reflex 框架嵌入 (iframe + postMessage)
 │
-├── PriceLine (abstract.py)             ← 价格线 (create_price_line 返回, 支持 update/delete)
+├── PriceLine (drawings.py)             ← 价格线 (create_price_line 返回, 支持 update/delete)
 ├── Drawing (drawings.py)               ← 绘图基类 (detach + delete)
 │   ├── TwoPointDrawing                 ← 两点绘图基类
 │   ├── HorizontalLine / TrendLine / Box / VerticalLine / RayLine / VerticalSpan
