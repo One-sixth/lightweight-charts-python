@@ -562,6 +562,30 @@ hist.delete()
 chart.lines()  # 返回所有已创建的 Line/Histogram/CandleSeries 列表
 ```
 
+#### Histogram 任意颜色支持
+
+Histogram 内置 color 列支持，DataFrame 中包含 `color` 列时每根柱子自动独立着色：
+
+```python
+import pandas as pd
+from lightweight_charts import Chart
+
+chart = Chart()
+chart.set_period(60)
+
+# 正负渐变色示例
+df = pd.DataFrame({
+    'time': [1, 2, 3, 4, 5],
+    'value': [100, -200, 150, -50, 80],
+    'color': ['#26a69a', '#ef5350', '#26a69a', '#ef5350', '#26a69a'],
+})
+
+hist = chart.create_histogram(name='Delta', pane_index=1)
+hist.set(df)  # color 列自动携带到 JS 端
+```
+
+> ⚠️ **注意**：`chart.set()` 不会转发 color 列，如需 histogram 上任意颜色需要**单独 `hist.set()`**。
+
 > **示例 35** (`examples/35_line_markers/line_markers.py`) 演示了在 Line、Histogram 和 CandleSeries 上使用 marker 和 marker_list 的完整用法。
 
 ### 3.7.1 独立 K 线系列 — CandleSeries

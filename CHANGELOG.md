@@ -4,7 +4,15 @@
 
 ---
 
-## [v2.7.3] - 2026-06-22 - 🔧 正在改进中
+## [v2.7.3] - 2026-06-23
+
+### Added
+
+- **Histogram 任意颜色支持**：Histogram 内置 `_option_columns=['color']`，set/update_bars 时若输入 DataFrame 中存在 `color` 列则自动携带到 JS 端，支持每根柱子独立着色
+  - 新增 `_check_value_name_conflict_and_rename()` 方法：统一处理 value 列和系列名的冲突检测与重命名
+  - 方法返回新 df（非 inplace），防止多 line 共享同一个 df 时互相污染
+  - `SeriesCommon.set()` 和 `update_bars()` 均支持 `_option_columns` 参数
+  - 新增示例 `examples/36_histogram_colors/`：买卖量差正负渐变色演示
 
 ### Changed
 

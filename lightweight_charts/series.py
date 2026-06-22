@@ -84,11 +84,11 @@ class SeriesCommon(Pane):
     def _check_value_name_conflict_and_rename(self, df: pd.DataFrame):
         """检查 'value' 列和系列名是否同时存在。如果同时存在则报错。最后自动重命名系列名到value列。
 
-        匹配规则：大小写不敏感（normal_df 可能已将列名小写化）。
-        返回 rename 后的 df（不修改原 df）。
+        返回 rename 后的 df（不修改原 df），调用者需接收返回值。
+        注意：列名匹配为精确匹配，调用者需确保 df 中的列名与 self.name 一致。
         """
         is_value_in_df_cols = 'value' in df.columns
-        is_name_in_df_cols = self.name != '' and self.name is not None
+        is_name_in_df_cols = self.name != '' and self.name in df.columns
         if is_value_in_df_cols and is_name_in_df_cols:
             raise ValueError(f'Column "value" and "{self.name}" cannot be used simultaneously.')
         elif not is_value_in_df_cols and not is_name_in_df_cols:
@@ -500,13 +500,13 @@ class Histogram(SeriesCommon):
     示例::
 
         df = pd.DataFrame({'time': [1,2,3], 'value': [10,20,15], 'color': ['#f00','#0f0','#00f']})
-        hist = chart.create_histogram(option_columns=['color'])
+        hist = chart.create_histogram()
         hist.set(df)
     """
     def __init__(self, chart, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom,
-                 pane_index: int = 0, option_columns: list[str] = None
+                 pane_index: int = 0
     ):
-        super().__init__(chart, name, pane_index, _option_columns=option_columns)
+        super().__init__(chart, name, pane_index, _option_columns=['color'])
         self.color = color
         self.run_script(f'''
         {self.id} = {chart.id}.createHistogramSeries(
