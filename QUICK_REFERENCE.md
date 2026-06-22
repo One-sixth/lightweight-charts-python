@@ -61,7 +61,7 @@ lightweight-charts-python/
 Pane (util.py)                          ← 所有组件的基类 (拥有 id, run_script)
 ├── Window (abstract.py)                ← JS 通信层: run_script(), run_script_and_get(), handlers
 │
-├── SeriesCommon (abstract.py)          ← 数据系列基类 (marker/marker_list/remove_marker/clear_markers)
+├── SeriesCommon (abstract.py)          ← 数据系列基类 (set/update/pop/clear_data/marker/marker_list/remove_marker/clear_markers)
 │   ├── Candlestick                     ← K线 + 成交量 + 持仓量 (主图容器, 内部组合模式)
 │   ├── CandleSeries                    ← 独立K线系列 (无 volume, 可在任意 pane)
 │   ├── VolumeSeries                    ← 成交量柱状图 (自动涨跌着色, self-managing)
@@ -401,9 +401,9 @@ chart.set_period(seconds)
 
 | 资源 | `chart.set(df)` | `chart.reset()` |
 |------|----------------|-----------------|
-| K 线数据 | ✅ 替换 | ✅ 清空 |
-| 成交量 | ✅ 替换 | ✅ 清空 |
-| 持仓量 | ✅ 替换 | ✅ 删除 |
+| K 线数据 | ✅ 替换 | ✅ 清空（自动重建） |
+| 成交量 | ✅ 替换 | ✅ 清空（自动重建） |
+| 持仓量 | ✅ 替换 | ✅ 清空（自动重建） |
 | **指标线 (Line/Histogram)** | ✅ **保留**，更新匹配列名的 | ❌ **全部删除** |
 | **标记 (markers)** | ✅ **保留** | ❌ **全部清除** |
 | **绘图 (drawings)** | ⚠️ 看 `keep_drawings` 参数 | ❌ **全部清除** |
@@ -415,7 +415,7 @@ chart.set_period(seconds)
 
 **`set()` 行为：** 温和替换，只动 K 线/成交量/持仓量，其他一切不动。指标线只更新有匹配列名的，不匹配的保留旧数据。
 
-**`reset()` 行为：** 彻底清空所有资源（K 线 + 指标线 + 标记 + 绘图 + PriceLine + Table + handlers），TopBar 和样式保留。
+**`reset()` 行为：** 彻底清空所有资源（K 线 + 指标线 + 标记 + 绘图 + PriceLine + Table + handlers），TopBar 和样式保留。candle/volume/oi 自动重建（始终存在），方便后续 `set()` 直接填充。
 
 ```python
 # 场景 1: 切换股票，保留指标线

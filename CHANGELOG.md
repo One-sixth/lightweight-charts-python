@@ -4,7 +4,26 @@
 
 ---
 
-## [v2.7.2] - 2026-06-21 - 🔧 正在改进中
+## [v2.7.3] - 2026-06-22 - 🔧 正在改进中
+
+### Changed
+
+- **AbstractChart 常驻系列重构**：`candle`/`volume`/`oi` 始终存在（reset 后自动重建），消除所有 `if self.volume:` / `if self.oi:` / `if self.candle else` 守卫代码
+  - `reset()` 末尾自动重建三者（CandleSeries / VolumeSeries / OpenInterestSeries）并重新赋值 Handler 引用
+  - `set()` 移除 10 行"检测并重建被 reset() 删除的 series"代码块
+  - `update_bars()` / `update_from_ticks()` / `clear_data()` 各移除 None 守卫，只保留 `'volume' in df.columns` 列检查
+  - `candle_data` / `data` / `markers` 三个属性去掉 `if self.candle else` 三元判断
+  - `hide_data()` / `show_data()` 去掉 volume/oi 的 None 守卫
+  - 类 docstring 从"可选挂载"改为"始终存在"
+
+- **SeriesCommon.clear_data() 统一清空逻辑**：基类新增 `clear_data()` 方法（清空 JS 数据 + 重置 `self.data` + `clear_markers()`）
+  - VolumeSeries / OpenInterestSeries 继承基类默认实现，无需额外定义
+  - CandleSeries `clear_data()` 改为 `super().clear_data()` + 清理 `candle_data` 和 `_last_bar`
+  - AbstractChart `clear_data()` 简化为统一调用三个系列的 `clear_data()`
+
+---
+
+## [v2.7.2] - 2026-06-21
 
 ### Fixed
 

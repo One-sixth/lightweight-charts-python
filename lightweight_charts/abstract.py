@@ -347,12 +347,6 @@ class SeriesCommon(Pane):
         if self.markers:
             self._update_markers()
 
-    def update_bar(self, series: pd.Series):
-        """更新最新一根 bar 或追加新 bar。"""
-        self.update_bars(series.to_frame().T)
-
-    update = update_bar
-
     def _clean_df(self, df, _df_cleaned=False):
         """清洗 DataFrame（normal_df + _time_to_bar_time + merge_value_by_time）。
 
@@ -366,6 +360,12 @@ class SeriesCommon(Pane):
         df = self._time_to_bar_time(df)
         df = merge_value_by_time(df)
         return df
+
+    def update_bar(self, series: pd.Series):
+        """更新最新一根 bar 或追加新 bar。"""
+        self.update_bars(series.to_frame().T)
+
+    update = update_bar
 
     def _clean_update_bars(self, df: pd.DataFrame, exclude_lowercase=None, _df_cleaned=False):
         '''
@@ -453,43 +453,6 @@ class SeriesCommon(Pane):
 
         # 一次性执行
         self.run_script(' '.join(js_commands))
-
-    def price_scale(
-        self,
-        auto_scale: bool = True,
-        mode: PRICE_SCALE_MODE = 'normal',
-        invert_scale: bool = False,
-        align_labels: bool = True,
-        scale_margin_top: float = 0.2,
-        scale_margin_bottom: float = 0.2,
-        border_visible: bool = False,
-        border_color: Optional[str] = None,
-        text_color: Optional[str] = None,
-        entire_text_only: bool = False,
-        visible: bool = True,
-        ticks_visible: bool = False,
-        tick_mark_density: float = None,
-        minimum_width: int = 0,
-        perm_width: int = 0
-    ):
-        """配置价格坐标轴的外观与行为。"""
-        self.run_script(f'''
-            {self.id}.series.priceScale().applyOptions({{
-                autoScale: {jbool(auto_scale)},
-                mode: {as_enum(mode, PRICE_SCALE_MODE)},
-                invertScale: {jbool(invert_scale)},
-                alignLabels: {jbool(align_labels)},
-                scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}},
-                borderVisible: {jbool(border_visible)},
-                {f'borderColor: "{border_color}",' if border_color else ''}
-                {f'textColor: "{text_color}",' if text_color else ''}
-                entireTextOnly: {jbool(entire_text_only)},
-                visible: {jbool(visible)},
-                ticksVisible: {jbool(ticks_visible)},
-                {f'tickMarkDensity: {tick_mark_density},' if tick_mark_density is not None else ''}
-                minimumWidth: {minimum_width},
-                {f'permWidth: {perm_width},' if perm_width else ''}
-            }})''')
 
     def update_from_tick(self, series: pd.Series):
         """
@@ -654,6 +617,43 @@ class SeriesCommon(Pane):
 
     def _toggle_data(self, arg):
         self.run_script(f'{self.id}.series.applyOptions({{visible: {jbool(arg)}}})')
+
+    def price_scale(
+        self,
+        auto_scale: bool = True,
+        mode: PRICE_SCALE_MODE = 'normal',
+        invert_scale: bool = False,
+        align_labels: bool = True,
+        scale_margin_top: float = 0.2,
+        scale_margin_bottom: float = 0.2,
+        border_visible: bool = False,
+        border_color: Optional[str] = None,
+        text_color: Optional[str] = None,
+        entire_text_only: bool = False,
+        visible: bool = True,
+        ticks_visible: bool = False,
+        tick_mark_density: float = None,
+        minimum_width: int = 0,
+        perm_width: int = 0
+    ):
+        """配置价格坐标轴的外观与行为。"""
+        self.run_script(f'''
+            {self.id}.series.priceScale().applyOptions({{
+                autoScale: {jbool(auto_scale)},
+                mode: {as_enum(mode, PRICE_SCALE_MODE)},
+                invertScale: {jbool(invert_scale)},
+                alignLabels: {jbool(align_labels)},
+                scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}},
+                borderVisible: {jbool(border_visible)},
+                {f'borderColor: "{border_color}",' if border_color else ''}
+                {f'textColor: "{text_color}",' if text_color else ''}
+                entireTextOnly: {jbool(entire_text_only)},
+                visible: {jbool(visible)},
+                ticksVisible: {jbool(ticks_visible)},
+                {f'tickMarkDensity: {tick_mark_density},' if tick_mark_density is not None else ''}
+                minimumWidth: {minimum_width},
+                {f'permWidth: {perm_width},' if perm_width else ''}
+            }})''')
 
 
 class PriceLine(Pane):
