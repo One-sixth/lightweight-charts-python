@@ -41,8 +41,8 @@ class SeriesCommon(Pane):
         self.run_script(f'{self.id}.series.pop({count})')
 
     def delete(self):
-        """删除此系列（清除标记、移除 JS 对象、清理图例）。"""
-        self.clear_markers()
+        """删除此系列（清除标记、重置状态、移除 JS 对象、清理图例）。"""
+        self.clear_data()
 
         if self in self._chart._lines:
             self._chart._lines.remove(self)
@@ -62,8 +62,9 @@ class SeriesCommon(Pane):
     def clear_data(self):
         """清空系列数据和标记。"""
         self.clear_markers()
-        self.run_script(f'{self.id}.series.setData([])')
         self.data = pd.DataFrame()
+        self._last_bar = None
+        self.run_script(f'{self.id}.series.setData([])')
 
     def _get_df_interval_offset(self, df: pd.DataFrame) -> (int, int):
         """获取数据DF内时间点的通常间隔（秒），返回，时间间隔（秒）和偏移时间（秒）"""
@@ -992,7 +993,6 @@ class CandleSeries(SeriesCommon):
         """清空所有 K 线数据和标记。"""
         super().clear_data()
         self.candle_data = pd.DataFrame()
-        self._last_bar = None
 
     def set(self, df: Optional[pd.DataFrame] = None, _df_cleaned=False):
         """

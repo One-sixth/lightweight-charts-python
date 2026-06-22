@@ -710,7 +710,7 @@ class AbstractChart(Pane):
         TopBar widgets and styling options are preserved.
         """
         if self._is_subchart:
-            raise RuntimeError("reset() 只能在主图表上调用。子图请使用 reset_sub()。")
+            raise RuntimeError("reset() 只能在主图表上调用，并且会删除所有子图表。子图请使用 reset_sub()。")
 
         # 1. 删除 candle/volume/oi 的 JS 对象和 Python 数据
         for series in [self.candle, self.volume, self.oi]:
