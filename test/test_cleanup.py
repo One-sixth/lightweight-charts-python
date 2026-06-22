@@ -120,7 +120,7 @@ def _test_resource_full_cleanup_impl(toolbox: bool):
 
         print("\n[2] Create resources ...")
         chart.set(bars)
-        assert not chart.candle_data.empty
+        assert not chart.data.empty
         print("  2a. set() [OK]")
 
         line1 = chart.create_line('line1', color='#ff0000')
@@ -223,7 +223,7 @@ def _test_resource_full_cleanup_impl(toolbox: bool):
 
         # 4c. clear_data — 清空 K 线数据（markers 已空，不影响）
         chart.clear_data()
-        all_clean &= log_check(chart.candle_data.empty, "candle_data cleared", errors, "candle_data_not_empty")
+        all_clean &= log_check(chart.data.empty, "candle_data cleared", errors, "candle_data_not_empty")
         print("  4c. clear_data() [OK]")
 
         line1.delete()
@@ -337,7 +337,7 @@ def _test_resource_full_cleanup_impl(toolbox: bool):
         print("\n[6] Python-side final state ...")
         expected = _expected_handlers(toolbox)
         py_checks = [
-            (chart.candle_data.empty, "candle_data", "py_candle_data"),
+            (chart.data.empty, "candle_data", "py_candle_data"),
             (len(chart._lines) == 0, "_lines", "py_lines"),
             (len(chart._price_lines) == 0, "_price_lines", "py_price_lines"),
             (len(chart._drawings) == 0, "_drawings", "py_drawings"),
@@ -522,7 +522,7 @@ def test_reset_cleanup():
             chart.oi is not None, "oi created", errors, "r_oi"
         )
         all_clean &= log_check(
-            not chart.candle.candle_data.empty, "candle has data", errors, "r_candle_data"
+            not chart.candle.data.empty, "candle has data", errors, "r_candle_data"
         )
         all_clean &= log_check(
             len(chart.candle.markers) == 0, "no markers yet", errors, "r_markers_init"
@@ -552,7 +552,7 @@ def test_reset_cleanup():
         print("\n[4] reset() ...")
         chart.reset()
         all_clean &= log_check(
-            chart.candle_data.empty, "candle_data empty", errors, "r_reset_candle_empty"
+            chart.data.empty, "candle_data empty", errors, "r_reset_candle_empty"
         )
         all_clean &= log_check(
             chart.volume is not None, "volume exists (auto-recreated)", errors, "r_reset_vol_none"
@@ -591,7 +591,7 @@ def test_reset_cleanup():
             chart.oi is not None, "oi recreated", errors, "r_recreate_oi"
         )
         all_clean &= log_check(
-            not chart.candle.candle_data.empty, "candle has data again", errors, "r_recreate_candle_data"
+            not chart.candle.data.empty, "candle has data again", errors, "r_recreate_candle_data"
         )
         print(f"      volume id: {chart.volume.id}")
         print(f"      oi id:     {chart.oi.id}")

@@ -86,7 +86,7 @@ def test_basic_create_delete():
         # Set data
         print("\n[2] Set data ...")
         ref.set(df_ref)
-        all_clean &= log_check(not ref.candle_data.empty, "candle_data not empty", errors, "empty_candle")
+        all_clean &= log_check(not ref.data.empty, "candle_data not empty", errors, "empty_candle")
         all_clean &= log_check(ref._last_bar is not None, "_last_bar set", errors, "no_last_bar")
         all_clean &= log_check(len(ref.data) == 30, f"data rows={len(ref.data)}", errors, "data_rows")
         print("      [OK]")
@@ -174,48 +174,48 @@ def test_update_operations():
 
         # update() - single bar
         print("\n[1] update() single bar ...")
-        initial_count = len(ref.candle_data)
+        initial_count = len(ref.data)
         new_bar = pd.Series({
             'time': pd.Timestamp('2024-01-21'),
             'open': 205.0, 'high': 210.0, 'low': 203.0, 'close': 208.0,
         })
         ref.update(new_bar)
-        all_clean &= log_check(len(ref.candle_data) == initial_count + 1,
-                               f"candle_data rows={len(ref.candle_data)} (was {initial_count})",
+        all_clean &= log_check(len(ref.data) == initial_count + 1,
+                               f"candle_data rows={len(ref.data)} (was {initial_count})",
                                errors, "update_count")
         all_clean &= log_check(ref._last_bar is not None, "_last_bar updated", errors, "update_last_bar")
         print("      [OK]")
 
         # update() - update existing bar
         print("\n[2] update() existing bar ...")
-        count_before = len(ref.candle_data)
+        count_before = len(ref.data)
         ref.update(new_bar)  # same time → should update, not add
-        all_clean &= log_check(len(ref.candle_data) == count_before,
-                               f"no new row (still {len(ref.candle_data)})", errors, "update_existing")
+        all_clean &= log_check(len(ref.data) == count_before,
+                               f"no new row (still {len(ref.data)})", errors, "update_existing")
         print("      [OK]")
 
         # update_bars() - multiple bars
         print("\n[3] update_bars() multiple bars ...")
-        count_before = len(ref.candle_data)
+        count_before = len(ref.data)
         batch = make_ohlcv(10, 210, 99)
         # Ensure batch times are after current data
-        max_time = ref.candle_data['time'].max()
+        max_time = ref.data['time'].max()
         batch['time'] = pd.date_range(
             start=pd.Timestamp(max_time, unit='s') + pd.Timedelta(days=1),
             periods=10, freq='D'
         )
         batch['time'] = (batch['time'] - pd.Timestamp('1970-01-01')) // pd.Timedelta('1s')
         ref.update_bars(batch[['time', 'open', 'high', 'low', 'close']])
-        all_clean &= log_check(len(ref.candle_data) == count_before + 10,
-                               f"candle_data rows={len(ref.candle_data)} (was {count_before})",
+        all_clean &= log_check(len(ref.data) == count_before + 10,
+                               f"candle_data rows={len(ref.data)} (was {count_before})",
                                errors, "batch_count")
         print("      [OK]")
 
         # set() - re-initialize clears previous data
         print("\n[4] set() re-initialize ...")
         ref.set(make_ohlcv(15, 250, 77))
-        all_clean &= log_check(len(ref.candle_data) == 15,
-                               f"candle_data rows={len(ref.candle_data)}", errors, "reinit_count")
+        all_clean &= log_check(len(ref.data) == 15,
+                               f"candle_data rows={len(ref.data)}", errors, "reinit_count")
         print("      [OK]")
 
         print()
@@ -353,8 +353,8 @@ def test_multi_pane():
         print("\n[2] Set data on both ...")
         ref1.set(make_ohlcv(30, 200, 123))
         ref2.set(make_ohlcv(30, 300, 456))
-        all_clean &= log_check(not ref1.candle_data.empty, "ref1 has data", errors, "ref1_data")
-        all_clean &= log_check(not ref2.candle_data.empty, "ref2 has data", errors, "ref2_data")
+        all_clean &= log_check(not ref1.data.empty, "ref1 has data", errors, "ref1_data")
+        all_clean &= log_check(not ref2.data.empty, "ref2 has data", errors, "ref2_data")
         print("      [OK]")
 
         # Markers on both
@@ -377,15 +377,15 @@ def test_multi_pane():
             'time': pd.Timestamp('2024-01-31'), 'open': 310, 'high': 315,
             'low': 308, 'close': 313,
         }))
-        all_clean &= log_check(len(ref1.candle_data) == 31, f"ref1 rows=31", errors, "ref1_update")
-        all_clean &= log_check(len(ref2.candle_data) == 31, f"ref2 rows=31", errors, "ref2_update")
+        all_clean &= log_check(len(ref1.data) == 31, f"ref1 rows=31", errors, "ref1_update")
+        all_clean &= log_check(len(ref2.data) == 31, f"ref2 rows=31", errors, "ref2_update")
         print("      [OK]")
 
         # Delete one, other unaffected
         print("\n[5] Delete ref1, ref2 unaffected ...")
         ref1.delete()
         all_clean &= log_check(len(chart._lines) == 1, f"_lines=1 (got {len(chart._lines)})", errors, "del_lines")
-        all_clean &= log_check(not ref2.candle_data.empty, "ref2 still has data", errors, "ref2_after_del")
+        all_clean &= log_check(not ref2.data.empty, "ref2 still has data", errors, "ref2_after_del")
         all_clean &= log_check(len(ref2.markers) == 1, "ref2 still has marker", errors, "ref2_markers_after")
         print("      [OK]")
 
@@ -463,8 +463,8 @@ def test_candle_with_main():
         # clear_data on main - ref unaffected
         print("\n[3] clear_data main - ref unaffected ...")
         chart.clear_data()
-        all_clean &= log_check(chart.candle_data.empty, "main candle_data empty", errors, "main_clear")
-        all_clean &= log_check(not ref.candle_data.empty, "ref candle_data still has data", errors, "ref_after_main_clear")
+        all_clean &= log_check(chart.data.empty, "main candle_data empty", errors, "main_clear")
+        all_clean &= log_check(not ref.data.empty, "ref candle_data still has data", errors, "ref_after_main_clear")
         print("      [OK]")
 
         # Delete ref - main lines unaffected

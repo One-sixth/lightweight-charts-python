@@ -98,7 +98,7 @@ def verify_cleared(chart, errors, label_prefix):
     """验证一个 chart 的资源已被清空。"""
     print(f"\n    --- {label_prefix} Python 侧验证 ---")
     all_clean = True
-    all_clean &= log_check(chart.candle_data.empty, "candle_data empty", errors)
+    all_clean &= log_check(chart.data.empty, "candle_data empty", errors)
     all_clean &= log_check(len(chart._lines) == 0, f"_lines empty (got {len(chart._lines)})", errors)
     all_clean &= log_check(len(chart._price_lines) == 0, f"_price_lines empty (got {len(chart._price_lines)})", errors)
     all_clean &= log_check(len(chart.markers) == 0, f"markers empty (got {len(chart.markers)})", errors)
@@ -132,7 +132,7 @@ def verify_unaffected(chart, bars, errors, label_prefix):
     """验证一个 chart 的资源仍然完好。"""
     print(f"\n    --- {label_prefix} 未受影响验证 ---")
     all_ok = True
-    all_ok &= log_check(not chart.candle_data.empty, "candle_data not empty", errors)
+    all_ok &= log_check(not chart.data.empty, "candle_data not empty", errors)
     all_ok &= log_check(len(chart._lines) == 2, f"_lines count == 2 (got {len(chart._lines)})", errors)
     all_ok &= log_check(len(chart._price_lines) == 1, f"_price_lines count == 1 (got {len(chart._price_lines)})", errors)
     all_ok &= log_check(len(chart.markers) >= 2, f"markers count >= 2 (got {len(chart.markers)})", errors)
@@ -269,7 +269,7 @@ def main():
         # 验证 sub1 重新添加后资源完整
         print("\n[14] Verify sub1 re-populated (Python) ...")
         all_ok = True
-        all_ok &= log_check(not sub1.candle_data.empty, "candle_data not empty", errors)
+        all_ok &= log_check(not sub1.data.empty, "candle_data not empty", errors)
         all_ok &= log_check(len(sub1._lines) == 2, f"_lines count == 2 (got {len(sub1._lines)})", errors)
         all_ok &= log_check(len(sub1._price_lines) == 1, f"_price_lines count == 1 (got {len(sub1._price_lines)})", errors)
         all_ok &= log_check(len(sub1.markers) >= 2, f"markers count >= 2 (got {len(sub1.markers)})", errors)
@@ -289,7 +289,7 @@ def main():
         # 验证其他子图仍然不受影响
         print("\n[16] Verify other charts still unaffected after reuse ...")
         for name, c in [('main', chart), ('sub2', sub2), ('sub3', sub3)]:
-            log_check(not c.candle_data.empty, f"{name}: candle_data not empty", errors)
+            log_check(not c.data.empty, f"{name}: candle_data not empty", errors)
             log_check(len(c._lines) == 2, f"{name}: _lines count == 2", errors)
 
         # 验证 syncCharts 功能（sub1 重新加入同步）

@@ -354,8 +354,8 @@ class AbstractChart(Pane):
 
     @property
     def candle_data(self):
-        """K 线数据 DataFrame。"""
-        return self.candle.candle_data
+        """K 线数据 DataFrame（兼容旧 API，等同于 data）。"""
+        return self.candle.data
 
     @property
     def data(self):
@@ -721,13 +721,12 @@ class AbstractChart(Pane):
                     if (_idx >= 0) {self.id}._seriesList.splice(_idx, 1);
                     delete {series.id};
                 ''')
-                series.candle_data = pd.DataFrame()
+                series.data = pd.DataFrame()
                 series.data = pd.DataFrame()
                 series._last_bar = None
 
         # 2. 重置 Python 状态
         self.candle.data = pd.DataFrame()
-        self.candle.candle_data = pd.DataFrame()
         self.candle._last_bar = None
         self.candle.markers.clear()
         self._interval = None
@@ -972,7 +971,7 @@ class AbstractChart(Pane):
             'chart': {
                 'id': self.id,
                 'type': 'AbstractChart',
-                'has_data': not self.candle.candle_data.empty,
+                'has_data': not self.candle.data.empty,
                 'subchart_ids': [s for s in self.subcharts if s != self.id],
             },
             'lines': [],

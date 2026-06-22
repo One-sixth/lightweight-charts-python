@@ -945,7 +945,6 @@ class CandleSeries(SeriesCommon):
             用户独立创建时保持默认 False 即可。
         """
         super().__init__(chart, name, pane_index, _fixed_id=_fixed_id)
-        self.candle_data = pd.DataFrame()
 
         # 存储构造参数，供重建时使用
         self.up_color = up_color
@@ -992,7 +991,6 @@ class CandleSeries(SeriesCommon):
     def clear_data(self):
         """清空所有 K 线数据和标记。"""
         super().clear_data()
-        self.candle_data = pd.DataFrame()
 
     def set(self, df: Optional[pd.DataFrame] = None, _df_cleaned=False):
         """
@@ -1004,7 +1002,6 @@ class CandleSeries(SeriesCommon):
         """
         self.run_script(f"{self.id}.series.setData([])")
         self.data = pd.DataFrame()
-        self.candle_data = pd.DataFrame()
 
         if df is None or df.empty:
             return
@@ -1017,7 +1014,6 @@ class CandleSeries(SeriesCommon):
             raise ValueError(f"DataFrame 缺少必需列: {missing}")
 
         ohlc = df[['time', 'open', 'high', 'low', 'close']]
-        self.candle_data = ohlc.copy()
         self.data = ohlc.copy()
         self._last_bar = ohlc.iloc[-1]
 
@@ -1068,14 +1064,13 @@ class CandleSeries(SeriesCommon):
         for _, row in ohlc.iterrows():
             js_commands.append(f'{self.id}.series.update({js_data(row)});')
 
-        if self.candle_data.empty:
-            self.candle_data = ohlc
-        elif self.candle_data.iloc[-1]['time'] == ohlc.iloc[0]['time']:
-            self.candle_data = pd.concat([self.candle_data.iloc[:-1], ohlc], ignore_index=True)
+        if self.data.empty:
+            self.data = ohlc
+        elif self.data.iloc[-1]['time'] == ohlc.iloc[0]['time']:
+            self.data = pd.concat([self.data.iloc[:-1], ohlc], ignore_index=True)
         else:
-            self.candle_data = pd.concat([self.candle_data, ohlc], ignore_index=True)
+            self.data = pd.concat([self.data, ohlc], ignore_index=True)
 
-        self.data = self.candle_data.copy()
         self._last_bar = ohlc.iloc[-1]
 
         self.run_script(' '.join(js_commands))
