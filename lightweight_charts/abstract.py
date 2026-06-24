@@ -354,13 +354,49 @@ class AbstractChart(Pane):
 
     @property
     def candle_data(self):
-        """K 线数据 DataFrame（兼容旧 API，等同于 data）。"""
+        """K 线数据 DataFrame（time, open, high, low, close）。"""
         return self.candle.data
 
     @property
+    def vol_data(self):
+        """成交量数据 DataFrame（time, value, color）。"""
+        return self.volume.data
+
+    @property
+    def oi_data(self):
+        """持仓量数据 DataFrame（time, value）。"""
+        return self.oi.data
+
+    @property
     def data(self):
-        """系列数据 DataFrame。"""
-        return self.candle.data
+        """合并后的 K 线 + 成交量 + 持仓量 DataFrame，按时间对齐，缺失条目填 NaN。
+
+        始终返回 7 列: time, open, high, low, close, volume, open_interest。
+        """
+        _COLS = ['time', 'open', 'high', 'low', 'close', 'volume', 'open_interest']
+
+        parts = []
+
+        candle_df = self.candle.data
+        if candle_df is not None and not candle_df.empty:
+            parts.append(candle_df[['time', 'open', 'high', 'low', 'close']])
+
+        vol_df = self.volume.data
+        if vol_df is not None and not vol_df.empty:
+            parts.append(vol_df[['time', 'value']].rename(columns={'value': 'volume'}))
+
+        oi_df = self.oi.data
+        if oi_df is not None and not oi_df.empty:
+            parts.append(oi_df[['time', 'value']].rename(columns={'value': 'open_interest'}))
+
+        if not parts:
+            return pd.DataFrame(columns=_COLS)
+
+        result = pd.concat(parts, ignore_index=True).groupby('time', as_index=False).first()
+        result = result.reindex(columns=_COLS)
+        result.sort_values('time', inplace=True)
+        result.reset_index(drop=True, inplace=True)
+        return result
 
     @property
     def markers(self):
@@ -610,12 +646,6 @@ class AbstractChart(Pane):
         return Box(self, start_time, start_value, end_time, end_value, round, color, fill_color, width, style)
 
     # ── 其他委托 ──
-
-    def create_price_line(self, price=0.0, color='rgba(214, 237, 255, 0.6)',
-                          style='large_dashed', width=1, price_label=False, title=''):
-        """创建价格线。"""
-        return PriceLine(self, price, color, style, width, price_label, title)
-
     def precision(self, precision=2):
         """设置精度。"""
         return self.candle.precision(precision)
@@ -1087,6 +1117,11 @@ class AbstractChart(Pane):
         hist = Histogram(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index)
         self._lines.append(hist)
         return hist
+
+    def create_price_line(self, price=0.0, color='rgba(214, 237, 255, 0.6)',
+                          style='large_dashed', width=1, price_label=False, title=''):
+        """创建价格线。"""
+        return PriceLine(self, price, color, style, width, price_label, title)
 
     def create_candle_series(
             self, name: str = '', pane_index: int = 0,
