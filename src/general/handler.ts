@@ -627,21 +627,18 @@ export class Handler {
      * @param name - 系列名称，显示在图例中
      * @param options - 折线样式配置（颜色、线宽等）
      * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
-     * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建。
-     *   默认 false（加入列表 + 创建图例行）。
-     *   设为 true 时：
-     *   - 不进入 _seriesList（audit 的 extraSeriesCount 不计入）
-     *   - 不创建 legend 图例行（不会显示独立的颜色方块图例）
-     *   适用场景：主图表的持仓量（OpenInterest）系列。
-     *   它是图表的固有组件，生命周期由 AbstractChart 管理，
-     *   不应被视为"额外系列"，也不应在 legend 中显示独立条目。
-     *   持仓量数据通过 legendHandler 在 OHLC 文本中显示。
+     * @param dontAddList - 是否跳过 _seriesList 注册。默认 false。
+     *   设为 true 时，series 不进入 _seriesList（audit 的 extraSeriesCount 不计入）。
+     * @param legend - 是否在图例中显示此系列。默认 true。
+     *   设为 false 时，不创建 legend 图例行。
      */
-    createLineSeries(name: string, options: DeepPartial<LineStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false)
+    createLineSeries(name: string, options: DeepPartial<LineStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
     {
         const line = this.chart.addSeries(LineSeries, {...options}, paneIndex);
         if (!dontAddList) {
             this._seriesList.push(line);
+        }
+        if (legend) {
             this.legend.makeSeriesRow(name, line, paneIndex);
         }
 
@@ -657,17 +654,10 @@ export class Handler {
      * @param name - 系列名称，显示在图例中
      * @param options - 柱状图样式配置（颜色、价格格式等）
      * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
-     * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建。
-     *   默认 false（加入列表 + 创建图例行）。
-     *   设为 true 时：
-     *   - 不进入 _seriesList（audit 的 extraSeriesCount 不计入）
-     *   - 不创建 legend 图例行（不会显示独立的颜色方块图例）
-     *   适用场景：主图表的成交量（Volume）系列。
-     *   它是图表的固有组件，生命周期由 AbstractChart 管理，
-     *   不应被视为"额外系列"，也不应在 legend 中显示独立条目。
-     *   成交量数据通过 legendHandler 在 OHLC 文本中显示。
+     * @param dontAddList - 是否跳过 _seriesList 注册。默认 false。
+     * @param legend - 是否在图例中显示此系列。默认 true。
      */
-    createHistogramSeries(name: string, options: DeepPartial<HistogramStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false)
+    createHistogramSeries(name: string, options: DeepPartial<HistogramStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
     {
         const line = this.chart.addSeries(
             HistogramSeries,
@@ -676,6 +666,8 @@ export class Handler {
         );
         if (!dontAddList) {
             this._seriesList.push(line);
+        }
+        if (legend) {
             this.legend.makeSeriesRow(name, line, paneIndex);
         }
         return {
@@ -700,7 +692,7 @@ export class Handler {
      *   不应被视为"额外系列"，也不应在 legend 中显示独立条目。
      *   K 线数据通过 legendHandler 在 OHLC 文本中显示。
      */
-    createCandleSeries(name: string, options: DeepPartial<SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false)
+    createCandleSeries(name: string, options: DeepPartial<SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
     {
         const candle = this.chart.addSeries(
             CandlestickSeries,
@@ -709,6 +701,8 @@ export class Handler {
         );
         if (!dontAddList) {
             this._seriesList.push(candle);
+        }
+        if (legend) {
             this.legend.makeSeriesRow(name, candle, paneIndex);
         }
         return {
@@ -723,13 +717,16 @@ export class Handler {
      * @param name - 系列名称，显示在图例中
      * @param options - 面积图样式配置（颜色、渐变等）
      * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
-     * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建
+     * @param dontAddList - 是否跳过 _seriesList 注册
+     * @param legend - 是否在图例中显示此系列
      */
-    createAreaSeries(name: string, options: DeepPartial<AreaStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false)
+    createAreaSeries(name: string, options: DeepPartial<AreaStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
     {
         const line = this.chart.addSeries(AreaSeries, {...options}, paneIndex);
         if (!dontAddList) {
             this._seriesList.push(line);
+        }
+        if (legend) {
             this.legend.makeSeriesRow(name, line, paneIndex);
         }
         return {
@@ -744,13 +741,16 @@ export class Handler {
      * @param name - 系列名称，显示在图例中
      * @param options - 美国线样式配置（涨跌颜色等）
      * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
-     * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建
+     * @param dontAddList - 是否跳过 _seriesList 注册
+     * @param legend - 是否在图例中显示此系列
      */
-    createOHLCBarSeries(name: string, options: DeepPartial<BarStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false)
+    createOHLCBarSeries(name: string, options: DeepPartial<BarStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
     {
         const line = this.chart.addSeries(BarSeries, {...options}, paneIndex);
         if (!dontAddList) {
             this._seriesList.push(line);
+        }
+        if (legend) {
             this.legend.makeSeriesRow(name, line, paneIndex);
         }
         return {
@@ -765,13 +765,16 @@ export class Handler {
      * @param name - 系列名称，显示在图例中
      * @param options - 基准线样式配置（基准值、上下区域颜色等）
      * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
-     * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建
+     * @param dontAddList - 是否跳过 _seriesList 注册
+     * @param legend - 是否在图例中显示此系列
      */
-    createBaselineSeries(name: string, options: DeepPartial<BaselineStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false)
+    createBaselineSeries(name: string, options: DeepPartial<BaselineStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
     {
         const line = this.chart.addSeries(BaselineSeries, {...options}, paneIndex);
         if (!dontAddList) {
             this._seriesList.push(line);
+        }
+        if (legend) {
             this.legend.makeSeriesRow(name, line, paneIndex);
         }
         return {

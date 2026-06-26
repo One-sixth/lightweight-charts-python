@@ -18,13 +18,14 @@ if TYPE_CHECKING:
 
 class SeriesCommon(Pane):
     """图表的系列数据基类，管理数据更新、标记、绘图和价格线。"""
-    def __init__(self, chart: 'AbstractChart', name: str = '', pane_index: int = 0, _fixed_id: str = None, _option_columns: list[str] = None):
+    def __init__(self, chart: 'AbstractChart', name: str = '', pane_index: int = 0, _fixed_id: str = None, _option_columns: list[str] = None, legend: bool = True):
         """
         :param chart: 所属的 AbstractChart 实例
         :param name: 系列名称（用于图例标识）
         :param pane_index: 所属面板索引
         :param _fixed_id: 固定 ID（如 'window.Chart_1_candle'），跳过 IDGen 自动生成
         :param _option_columns: 可选列名列表（全小写），set/update_bars 时若输入 df 中存在这些列则自动携带
+        :param legend: 是否在图例中显示此系列。默认 True。设为 False 时不创建图例行。
         """
         if _fixed_id:
             self.id = _fixed_id
@@ -37,6 +38,7 @@ class SeriesCommon(Pane):
         self.markers = {}
         self.pane_index = pane_index
         self._option_columns = _option_columns or []
+        self._legend = legend
 
     def pop(self, count: int = 1):
         """从系列末尾移除指定数量的数据点。"""
@@ -406,10 +408,10 @@ class SeriesCommon(Pane):
 class LineSeries(SeriesCommon):
     """折线系列，用于绘制折线图。"""
     def __init__(self, chart, name, color, style, width, price_line, price_label, price_scale_id=None,
-                 crosshair_marker=True, pane_index: int = 0,
+                 crosshair_marker=True, pane_index: int = 0, legend: bool = True,
     ):
 
-        super().__init__(chart, name, pane_index)
+        super().__init__(chart, name, pane_index, legend=legend)
         self.color = color
 
         self.run_script(f'''
@@ -431,8 +433,10 @@ class LineSeries(SeriesCommon):
                         }),
                     """ if chart._scale_candles_only else ''}
                 }},
-                {pane_index}
-            );null''')  # 后面的 null 是为了防止 JS 异常，必不可少
+                {pane_index},
+                false,
+                {jbool(legend)}
+            );null''')
 
     def delete(self):
         """删除此折线系列。"""
@@ -451,9 +455,9 @@ class HistogramSeries(SeriesCommon):
         hist.set(df)
     """
     def __init__(self, chart, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom,
-                 pane_index: int = 0
+                 pane_index: int = 0, legend: bool = True
     ):
-        super().__init__(chart, name, pane_index, _option_columns=['color'])
+        super().__init__(chart, name, pane_index, _option_columns=['color'], legend=legend)
         self.color = color
         self.run_script(f'''
         {self.id} = {chart.id}.createHistogramSeries(
@@ -465,7 +469,9 @@ class HistogramSeries(SeriesCommon):
                 priceScaleId: {'undefined'},
                 priceFormat: {{type: "volume"}},
             }},
-            {pane_index}
+            {pane_index},
+            false,
+            {jbool(legend)}
         )
         {self.id}.series.priceScale().applyOptions({{
             scaleMargins: {{top:{scale_margin_top}, bottom: {scale_margin_bottom}}}
@@ -510,7 +516,8 @@ class VolumeSeries(SeriesCommon):
                  scale_margin_bottom: float = 0.0,
                  price_scale_id: str = 'volume_scale',
                  _fixed_id: str = None,
-                 _dont_add_list: bool = False):
+                 _dont_add_list: bool = False,
+                 legend: bool = True):
         """
         :param chart: 所属的 AbstractChart 实例
         :param pane_index: 面板索引，None 则为 0
@@ -528,7 +535,7 @@ class VolumeSeries(SeriesCommon):
             不应被视为"额外系列"。用户独立创建时保持默认 False 即可。
         """
         pane = pane_index if pane_index is not None else 0
-        super().__init__(chart, name='', pane_index=pane, _fixed_id=_fixed_id)
+        super().__init__(chart, name='', pane_index=pane, _fixed_id=_fixed_id, legend=legend)
 
         # 存储构造参数，供重建时使用
         self.up_color = up_color
@@ -552,7 +559,8 @@ class VolumeSeries(SeriesCommon):
                     priceFormat: {{type: "volume"}},
                 }},
                 {self.pane_index},
-                {jbool(self._dont_add_list)}
+                {jbool(self._dont_add_list)},
+                {jbool(self._legend)}
             )
             {self.id}.series.priceScale().applyOptions({{
                 scaleMargins: {{top: {self.scale_margin_top}, bottom: {self.scale_margin_bottom}}}
@@ -739,7 +747,8 @@ class OpenInterestSeries(SeriesCommon):
                  scale_margin_bottom: float = 0.0,
                  price_scale_id: str = 'oi_scale',
                  _fixed_id: str = None,
-                 _dont_add_list: bool = False):
+                 _dont_add_list: bool = False,
+                 legend: bool = True):
         """
         :param chart: 所属的 AbstractChart 实例
         :param pane_index: 面板索引，None 则为 0
@@ -757,7 +766,7 @@ class OpenInterestSeries(SeriesCommon):
             不应被视为"额外系列"。用户独立创建时保持默认 False 即可。
         """
         pane = pane_index if pane_index is not None else 0
-        super().__init__(chart, name='', pane_index=pane, _fixed_id=_fixed_id)
+        super().__init__(chart, name='', pane_index=pane, _fixed_id=_fixed_id, legend=legend)
 
         # 存储构造参数，供重建时使用
         self.color = color
@@ -782,7 +791,8 @@ class OpenInterestSeries(SeriesCommon):
                     crosshairMarkerVisible: true,
                 }},
                 {self.pane_index},
-                {jbool(self._dont_add_list)}
+                {jbool(self._dont_add_list)},
+                {jbool(self._legend)}
             )
             {self.id}.series.priceScale().applyOptions({{
                 scaleMargins: {{top: {self.scale_margin_top}, bottom: {self.scale_margin_bottom}}},
@@ -839,7 +849,8 @@ class CandleSeries(SeriesCommon):
                  price_scale_id: Optional[str] = None,
                  crosshair_marker: bool = True,
                  _fixed_id: str = None,
-                 _dont_add_list: bool = False):
+                 _dont_add_list: bool = False,
+                 legend: bool = True):
         """
         :param chart: 所属的 AbstractChart 实例
         :param name: 系列名称
@@ -853,16 +864,10 @@ class CandleSeries(SeriesCommon):
         :param price_scale_id: 价格尺度 ID
         :param crosshair_marker: 十字光标标记
         :param _fixed_id: 固定 ID，跳过 IDGen 自动生成
-        :param _dont_add_list: 是否跳过 JS 端 _seriesList 注册和 legend 图例行创建。
-            默认 False（加入列表 + 创建图例行）。
-            设为 True 时：
-            - 不进入 _seriesList（audit 的 extraSeriesCount 不计入）
-            - 不创建 legend 图例行（不会显示独立的颜色方块图例）
-            AbstractChart 默认创建时传 True，因为 K 线是图表固有组件，
-            不应被视为"额外系列"，也不应在 legend 中显示独立条目。
-            用户独立创建时保持默认 False 即可。
+        :param _dont_add_list: 是否跳过 JS 端 _seriesList 注册。默认 False。
+        :param legend: 是否在图例中显示此系列。默认 True。
         """
-        super().__init__(chart, name, pane_index, _fixed_id=_fixed_id)
+        super().__init__(chart, name, pane_index, _fixed_id=_fixed_id, legend=legend)
 
         # 存储构造参数，供重建时使用
         self.up_color = up_color
@@ -901,7 +906,8 @@ class CandleSeries(SeriesCommon):
                     priceScaleId: {f'"{self.price_scale_id}"' if self.price_scale_id else 'undefined'},
                 }},
                 {self.pane_index},
-                {jbool(self._dont_add_list)}
+                {jbool(self._dont_add_list)},
+                {jbool(self._legend)}
             );
             0;
         ''')
@@ -1118,7 +1124,7 @@ class AreaSeries(SeriesCommon):
                  price_line: bool = True, price_label: bool = True,
                  price_scale_id: Optional[str] = None,
                  crosshair_marker: bool = True,
-                 pane_index: int = 0):
+                 pane_index: int = 0, legend: bool = True):
         """
         :param chart: 所属的 AbstractChart 实例
         :param name: 系列名称（用于图例标识）
@@ -1134,8 +1140,9 @@ class AreaSeries(SeriesCommon):
         :param price_scale_id: 价格尺度 ID
         :param crosshair_marker: 十字光标标记
         :param pane_index: 面板索引
+        :param legend: 是否在图例中显示此系列
         """
-        super().__init__(chart, name, pane_index)
+        super().__init__(chart, name, pane_index, legend=legend)
         self.color = color
 
         self.run_script(f'''
@@ -1154,7 +1161,9 @@ class AreaSeries(SeriesCommon):
                     crosshairMarkerVisible: {jbool(crosshair_marker)},
                     priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
                 }},
-                {pane_index}
+                {pane_index},
+                false,
+                {jbool(legend)}
             );null''')
 
     def delete(self):
@@ -1183,7 +1192,7 @@ class OHLCBarSeries(CandleSeries):
                  price_line: bool = False, price_label: bool = True,
                  price_scale_id: Optional[str] = None,
                  crosshair_marker: bool = True,
-                 pane_index: int = 0):
+                 pane_index: int = 0, legend: bool = True):
         """
         :param chart: 所属的 AbstractChart 实例
         :param name: 系列名称
@@ -1196,10 +1205,11 @@ class OHLCBarSeries(CandleSeries):
         :param price_scale_id: 价格尺度 ID
         :param crosshair_marker: 十字光标标记
         :param pane_index: 面板索引
+        :param legend: 是否在图例中显示此系列
         """
         # 跳过 CandleSeries.__init__，直接调用 SeriesCommon.__init__
         # 避免 CandleSeries 创建 CandlestickSeries JS 对象
-        SeriesCommon.__init__(self, chart, name, pane_index)
+        SeriesCommon.__init__(self, chart, name, pane_index, legend=legend)
 
         self.up_color = up_color
         self.down_color = down_color
@@ -1228,7 +1238,9 @@ class OHLCBarSeries(CandleSeries):
                     crosshairMarkerVisible: {jbool(self.crosshair_marker)},
                     priceScaleId: {f'"{self.price_scale_id}"' if self.price_scale_id else 'undefined'},
                 }},
-                {self.pane_index}
+                {self.pane_index},
+                false,
+                {jbool(self._legend)}
             );
             0;
         ''')
@@ -1293,7 +1305,7 @@ class BaselineSeries(SeriesCommon):
                  price_line: bool = True, price_label: bool = True,
                  price_scale_id: Optional[str] = None,
                  crosshair_marker: bool = True,
-                 pane_index: int = 0):
+                 pane_index: int = 0, legend: bool = True):
         """
         :param chart: 所属的 AbstractChart 实例
         :param name: 系列名称
@@ -1312,8 +1324,9 @@ class BaselineSeries(SeriesCommon):
         :param price_scale_id: 价格尺度 ID
         :param crosshair_marker: 十字光标标记
         :param pane_index: 面板索引
+        :param legend: 是否在图例中显示此系列
         """
-        super().__init__(chart, name, pane_index)
+        super().__init__(chart, name, pane_index, legend=legend)
 
         self.run_script(f'''
             {self.id} = {self._chart.id}.createBaselineSeries(
@@ -1334,7 +1347,9 @@ class BaselineSeries(SeriesCommon):
                     crosshairMarkerVisible: {jbool(crosshair_marker)},
                     priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
                 }},
-                {pane_index}
+                {pane_index},
+                false,
+                {jbool(legend)}
             );null''')
 
     def delete(self):

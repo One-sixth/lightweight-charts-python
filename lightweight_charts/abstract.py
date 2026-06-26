@@ -328,9 +328,9 @@ class AbstractChart(Pane):
 
         # ── 组合模式：主 series 使用固定 ID 创建 ──
         base = self.id.replace('window.', '')  # 如 'Chart_1'
-        self.candle = CandleSeries(self, _fixed_id=f'window.{base}_candle', _dont_add_list=True)
-        self.volume: 'VolumeSeries' = VolumeSeries(self, _fixed_id=f'window.{base}_volume', _dont_add_list=True)
-        self.oi: 'OpenInterestSeries' = OpenInterestSeries(self, _fixed_id=f'window.{base}_oi', _dont_add_list=True)
+        self.candle = CandleSeries(self, _fixed_id=f'window.{base}_candle', _dont_add_list=True, legend=False)
+        self.volume: 'VolumeSeries' = VolumeSeries(self, _fixed_id=f'window.{base}_volume', _dont_add_list=True, legend=False)
+        self.oi: 'OpenInterestSeries' = OpenInterestSeries(self, _fixed_id=f'window.{base}_oi', _dont_add_list=True, legend=False)
 
         # 设置 Handler 的 series 引用（audit 和 _toggle_data 需要）
         # seriesMarkers 由 _update_markers() 按需在 series 级别创建，无需复制到 Handler
@@ -814,9 +814,9 @@ class AbstractChart(Pane):
 
         # 9. 重建 candle/volume/oi（始终存在，省去后续所有 None 检查）
         base = self.id.replace('window.', '')
-        self.candle = CandleSeries(self, _fixed_id=f'window.{base}_candle', _dont_add_list=True)
-        self.volume = VolumeSeries(self, _fixed_id=f'window.{base}_volume', _dont_add_list=True)
-        self.oi = OpenInterestSeries(self, _fixed_id=f'window.{base}_oi', _dont_add_list=True)
+        self.candle = CandleSeries(self, _fixed_id=f'window.{base}_candle', _dont_add_list=True, legend=False)
+        self.volume = VolumeSeries(self, _fixed_id=f'window.{base}_volume', _dont_add_list=True, legend=False)
+        self.oi = OpenInterestSeries(self, _fixed_id=f'window.{base}_oi', _dont_add_list=True, legend=False)
         self.run_script(f'''
             {self.id}.series = {self.candle.id}.series;
             {self.id}.volumeSeries = {self.volume.id}.series;
@@ -1104,22 +1104,23 @@ class AbstractChart(Pane):
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
             style: LINE_STYLE = 'solid', width: int = 2,
             price_line: bool = True, price_label: bool = True, price_scale_id: Optional[str] = None,
-            pane_index: int = 0
+            pane_index: int = 0, legend: bool = True
     ) -> LineSeries:
         """
         创建并返回一个折线图对象。
 
         :param name: 线图名称，用于图例显示
-        :param color: 线条颜色，支持 CSS 颜色格式，如 'rgba(214, 237, 255, 0.6)'
-        :param style: 线条样式，可选值：'solid', 'dotted', 'dashed', 'large_dashed', 'sparse_dotted'
-        :param width: 线条宽度（像素），默认为 2
-        :param price_line: 是否显示价格线（在图表右侧显示当前价格）
+        :param color: 线条颜色
+        :param style: 线条样式
+        :param width: 线条宽度
+        :param price_line: 是否显示价格线
         :param price_label: 是否显示价格标签
-        :param price_scale_id: 价格刻度ID，用于共享刻度
-        :param pane_index: 面板索引，用于在多个面板中放置
+        :param price_scale_id: 价格刻度ID
+        :param pane_index: 面板索引
+        :param legend: 是否在图例中显示此系列
         :return: LineSeries 实例
         """
-        line = LineSeries(self, name, color, style, width, price_line, price_label, price_scale_id, pane_index=pane_index)
+        line = LineSeries(self, name, color, style, width, price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend)
         self._lines.append(line)
         return line
 
@@ -1127,21 +1128,22 @@ class AbstractChart(Pane):
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
             price_line: bool = True, price_label: bool = True,
             scale_margin_top: float = 0.0, scale_margin_bottom: float = 0.0,
-            pane_index: int = 0,
+            pane_index: int = 0, legend: bool = True,
     ) -> HistogramSeries:
         """
         创建并返回一个柱状图（直方图）对象，通常用于显示成交量。
 
         :param name: 柱状图名称，用于图例显示
-        :param color: 柱状图颜色，支持 CSS 颜色格式
+        :param color: 柱状图颜色
         :param price_line: 是否显示价格线
         :param price_label: 是否显示价格标签
-        :param scale_margin_top: 顶部刻度边距（0-1），默认为 0.0
-        :param scale_margin_bottom: 底部刻度边距（0-1），默认为 0.0
-        :param pane_index: 面板索引，用于在多个面板中放置
+        :param scale_margin_top: 顶部刻度边距（0-1）
+        :param scale_margin_bottom: 底部刻度边距（0-1）
+        :param pane_index: 面板索引
+        :param legend: 是否在图例中显示此系列
         :return: HistogramSeries 实例
         """
-        hist = HistogramSeries(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index)
+        hist = HistogramSeries(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index, legend=legend)
         self._lines.append(hist)
         return hist
 
@@ -1157,7 +1159,7 @@ class AbstractChart(Pane):
             border_visible: bool = True, wick_visible: bool = True,
             price_line: bool = False, price_label: bool = True,
             price_scale_id: Optional[str] = None,
-            crosshair_marker: bool = True
+            crosshair_marker: bool = True, legend: bool = True
     ) -> CandleSeries:
         """
         创建并返回一个独立 K 线系列对象（无 volume/open interest）。
@@ -1180,6 +1182,7 @@ class AbstractChart(Pane):
             border_visible=border_visible, wick_visible=wick_visible,
             price_line=price_line, price_label=price_label,
             price_scale_id=price_scale_id, crosshair_marker=crosshair_marker,
+            legend=legend,
         )
         self._lines.append(candle)
         return candle
@@ -1193,7 +1196,7 @@ class AbstractChart(Pane):
             invert_filled_area: bool = False,
             price_line: bool = True, price_label: bool = True,
             price_scale_id: Optional[str] = None,
-            pane_index: int = 0
+            pane_index: int = 0, legend: bool = True
     ) -> AreaSeries:
         """
         创建并返回一个面积图对象（折线+渐变填充）。
@@ -1214,7 +1217,7 @@ class AbstractChart(Pane):
         """
         area = AreaSeries(self, name, color, style, width,
                           top_color, bottom_color, relative_gradient, invert_filled_area,
-                          price_line, price_label, price_scale_id, pane_index=pane_index)
+                          price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend)
         self._lines.append(area)
         return area
 
@@ -1224,7 +1227,7 @@ class AbstractChart(Pane):
             open_visible: bool = True, thin_bars: bool = True,
             price_line: bool = False, price_label: bool = True,
             price_scale_id: Optional[str] = None,
-            pane_index: int = 0
+            pane_index: int = 0, legend: bool = True
     ) -> OHLCBarSeries:
         """
         创建并返回一个美国线（OHLC 横向柱状图）对象。
@@ -1243,7 +1246,7 @@ class AbstractChart(Pane):
         :return: OHLCBarSeries 实例
         """
         bar = OHLCBarSeries(self, name, up_color, down_color, open_visible, thin_bars,
-                            price_line, price_label, price_scale_id, pane_index=pane_index)
+                            price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend)
         self._lines.append(bar)
         return bar
 
@@ -1260,7 +1263,7 @@ class AbstractChart(Pane):
             relative_gradient: bool = False,
             price_line: bool = True, price_label: bool = True,
             price_scale_id: Optional[str] = None,
-            pane_index: int = 0
+            pane_index: int = 0, legend: bool = True
     ) -> BaselineSeries:
         """
         创建并返回一个基准线对象，以某个基准值为界上下分色。
@@ -1286,7 +1289,7 @@ class AbstractChart(Pane):
                                   top_fill_color1, top_fill_color2, top_line_color,
                                   bottom_fill_color1, bottom_fill_color2, bottom_line_color,
                                   line_width, line_style, relative_gradient,
-                                  price_line, price_label, price_scale_id, pane_index=pane_index)
+                                  price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend)
         self._lines.append(baseline)
         return baseline
 
