@@ -4,6 +4,85 @@
 
 ---
 
+## [v2.8.1] - 2026-06-27
+
+### Added
+
+- **AreaSeries（面积图）**：折线+渐变填充，支持 topColor/bottomColor/relativeGradient/invertFilledArea
+  - 工厂方法：`chart.create_area(name, color, style, width, top_color, bottom_color, ...)`
+  - Python 类：`AreaSeries(SeriesCommon)`，数据输入与 LineSeries 完全一致（time + value）
+  - 全部继承 SeriesCommon 的 set/update_bars/update_ticks/delete/marker
+  - 示例：`examples/37_more_series_types/`
+
+- **OHLCBarSeries（美国线）**：横向 OHLC 柱状图，open 左 close 右
+  - 工厂方法：`chart.create_ohlc_bar(name, up_color, down_color, open_visible, thin_bars, ...)`
+  - Python 类：`OHLCBarSeries(CandleSeries)`，继承 CandleSeries 共享全部 OHLC 数据处理逻辑
+  - 覆盖 `__init__`（调 createOHLCBarSeries）+ `_build()` + `bar_style()`（美国线专属样式）
+  - 覆盖 `candle_style()` 抛出 AttributeError 提示使用 `bar_style()`
+  - 数据输入与 CandleSeries 完全一致（time + open + high + low + close）
+  - 示例：`examples/37_more_series_types/`
+
+- **BaselineSeries（基准线）**：以基准值为界上下分色
+  - 工厂方法：`chart.create_baseline(name, base_value, top_fill_color1/2, bottom_fill_color1/2, ...)`
+  - Python 类：`BaselineSeries(SeriesCommon)`，数据输入为 time + value
+  - 全部继承 SeriesCommon 的 set/update_bars/update_ticks/delete/marker
+  - 示例：`examples/37_more_series_types/`
+
+- **Legend OHLC 支持**：legend.ts 的 `legendHandler` 新增对 Bar/Candlestick 类型 series 的 OHLC 格式显示
+  - lines 遍历中根据 `seriesType()` 判断：Bar/Candlestick → `O ... | H ... | L ... | C ...`
+  - 修复 OHLCBarSeries 在 legend 中只显示眼睛图标无内容的问题
+
+### Changed
+
+- **handler.ts import**：新增 AreaSeries、BarSeries、BaselineSeries 及其 StyleOptions 类型导入
+- **handler.ts SKIP_KEYS**：新增 `createAreaSeries`、`createOHLCBarSeries`、`createBaselineSeries`
+- **handler.ts GLOBALS_RE**：新增 `AreaSeries_\d`、`OHLCBarSeries_\d`、`BaselineSeries_\d` 模式
+- **series.py**：新增 AreaSeries、OHLCBarSeries、BaselineSeries 三个类
+- **abstract.py**：新增 `create_area_series()`、`create_ohlc_bar_series()`、`create_baseline_series()` 工厂方法
+- **__init__.py**：导出 AreaSeries、OHLCBarSeries、BaselineSeries
+
+### 设计决策
+
+- **OHLCBarSeries 继承 CandleSeries**：两者 95% 代码相同（OHLC 数据处理），仅 JS 创建方法和样式配置不同。通过覆盖 `__init__`/`_build()`/`bar_style()` + 覆盖 `candle_style()` 抛错，避免 ~80 行重复代码
+- **AreaSeries/BaselineSeries 继承 SeriesCommon**：与 LineSeries 相同的数据输入（time + value），只需覆盖 `__init__` 调不同的 JS 创建方法
+- **legend OHLC 支持**：在 legendHandler 的 lines 遍历中，通过 `seriesType()` 检测 Bar/Candlestick 类型，显示 OHLC 四个数字而非 value
+
+---
+
+## [v2.8.0] - 2026-06-26
+
+### Breaking Changes
+
+- **函数重命名**：`update_from_tick()` → `update_tick()`，`update_from_ticks()` → `update_ticks()`（旧名保留为废弃转发）
+- **类重命名**：`Line` → `LineSeries`，`Histogram` → `HistogramSeries`（旧名保留为别名）
+- **normal_df 精简**：不再自动将列名转为小写，不再自动将 `date` 列重命名为 `time`
+- **AbstractChart 不联动 _lines**：`set()`/`update_bars()`/`update_ticks()` 不再自动转发数据给 Line/Histogram
+- **统一输入列**：所有系列的 `set()`/`update_bars()`/`update_ticks()` 统一接受 `time` + `value` 列
+- **VolumeSeries 要求 open/close**：`_prepare_vol_df` 要求 `open`/`close` 列用于涨跌着色，缺失时抛 `ValueError`
+- **移除 cumulative_volume**：`AbstractChart.update_ticks()` 不再接受 `cumulative_volume` 参数
+
+### Added
+
+- **`chart.data` 始终 7 列**：返回 `time, open, high, low, close, volume, open_interest`，缺失系列对应列填 NaN
+- **`chart.vol_data`**：只返回 `time, value`（不暴露 open/close/color）
+- **`chart.oi_data`**：返回 `time, value`
+- **VolumeSeries 维护 open/close**：`self.data` 存储 `time, value, open, close, color`，tick 累积时保留 open、更新 close、重算 color
+- **VolumeSeries.update_ticks 自动聚合 open/close**：从 tick 的 `price` 列聚合 `open`(first)/`close`(last) 供着色
+
+### Changed
+
+- **SeriesCommon set→update_bars 委托**：`set()` 简化为清空 + 委托 `update_bars()` + markers，约 8 行
+- **SeriesCommon update_bars 智能分支**：空数据用 `setData` 批量写入（高效），有数据用 per-row `update`
+- **OpenInterestSeries 大幅精简**：删除 ~90 行重复代码，`set`/`update_bars`/`update_ticks`/`delete` 全部继承自 SeriesCommon
+- **OI 只保留 `__init__` + `_build` + `config`**：三个特有方法，其余全部继承
+- **VolumeSeries _prepare_vol_df**：输出从 `time, value, color` 扩展为 `time, value, open, close, color`
+- **AbstractChart.update_ticks 转发**：candle 用 `price→value`，volume 用 `volume→value` + `open/close` from `price`，OI 用 `open_interest→value`
+- **AbstractChart.reset() 清理**：移除重复的 `series.data = pd.DataFrame()`，`markers.clear()` 移入循环
+- **`lines()` 返回类型**：`list[LineSeries]` → `list[SeriesCommon]`
+- **`vertical_span`**：不再绕道 `self.candle._single_datetime_format`，直接用 `self._single_datetime_format`
+
+---
+
 ## [v2.7.3] - 2026-06-23
 
 ### Added

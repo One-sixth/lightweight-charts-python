@@ -25,7 +25,7 @@ def make_oi_data(num_bars: int = 50):
     for i in range(num_bars):
         price += np.random.normal(0, 2)
         rows.append({
-            'date': dates[i], 'open': round(price + np.random.normal(0, 1), 2),
+            'time': dates[i], 'open': round(price + np.random.normal(0, 1), 2),
             'high': round(price + abs(np.random.normal(0, 1.5)), 2),
             'low': round(price - abs(np.random.normal(0, 1.5)), 2),
             'close': round(price, 2),
@@ -132,25 +132,25 @@ def _test_resource_full_cleanup_impl(toolbox: bool):
         assert len(chart._lines) == 3
         print("  2b2. create_histogram [OK]")
 
-        chart.marker(bars['date'].iloc[5], 'above', 'circle', '#ff0000', 'm1')
-        chart.marker(bars['date'].iloc[10], 'below', 'arrow_up', '#00ff00', 'm2')
+        chart.marker(bars['time'].iloc[5], 'above', 'circle', '#ff0000', 'm1')
+        chart.marker(bars['time'].iloc[10], 'below', 'arrow_up', '#00ff00', 'm2')
         chart.marker_list([
-            {'time': bars['date'].iloc[15], 'position': 'above', 'shape': 'square',
+            {'time': bars['time'].iloc[15], 'position': 'above', 'shape': 'square',
              'color': '#0000bf', 'text': 'm3'},
-            {'time': bars['date'].iloc[20], 'position': 'below', 'shape': 'circle',
+            {'time': bars['time'].iloc[20], 'position': 'below', 'shape': 'circle',
              'color': '#ffff00', 'text': 'm4'},
         ])
         assert len(chart.markers) >= 4
         print("  2c. markers [OK]")
 
         hl = chart.horizontal_line(105, color='#ff8800', width=3, text='HLine')
-        vl = chart.vertical_line(bars['date'].iloc[15], color='#8800ff', width=2)
-        tl = chart.trend_line(bars['date'].iloc[10], 95, bars['date'].iloc[30], 110,
+        vl = chart.vertical_line(bars['time'].iloc[15], color='#8800ff', width=2)
+        tl = chart.trend_line(bars['time'].iloc[10], 95, bars['time'].iloc[30], 110,
                               line_color='#00ffff', width=3)
-        bx = chart.box(bars['date'].iloc[5], 90, bars['date'].iloc[25], 115,
+        bx = chart.box(bars['time'].iloc[5], 90, bars['time'].iloc[25], 115,
                        color='#ff00ff', fill_color='rgba(255,0,255,0.1)')
-        rl = chart.ray_line(bars['date'].iloc[20], 100, color='#00ff88', width=2, text='Ray')
-        vs = chart.vertical_span(bars['date'].iloc[12], bars['date'].iloc[18],
+        rl = chart.ray_line(bars['time'].iloc[20], 100, color='#00ff88', width=2, text='Ray')
+        vs = chart.vertical_span(bars['time'].iloc[12], bars['time'].iloc[18],
                                  color='rgba(255,200,0,0.15)')
         assert len(chart._drawings) == 6
         print("  2d. drawables [OK]")
@@ -415,7 +415,7 @@ def _test_multi_chart_cleanup_impl(toolbox: bool):
         chart2.set(bars)
         line2a = chart2.create_line('ch2a', color='#00ff00')
         line2b = chart2.create_line('ch2b', color='#0000ff')
-        vl2 = chart2.vertical_line(bars['date'].iloc[5], color='#8800ff', width=2)
+        vl2 = chart2.vertical_line(bars['time'].iloc[5], color='#8800ff', width=2)
         print(f"      lines={len(chart2._lines)}, drawings={len(chart2._drawings)}, tables={len(chart2._tables)}")
         all_clean &= log_check(len(chart2._lines) == 2, "chart2 has 2 lines", errors, "mc2_lines")
         all_clean &= log_check(len(chart2._drawings) == 1, "chart2 has 1 drawing", errors, "mc2_draw")
@@ -533,9 +533,9 @@ def test_reset_cleanup():
 
         # --- Step 2: add markers and lines ---
         print("\n[2] Add markers + lines ...")
-        chart.marker(bars['date'].iloc[5], 'above', 'circle', 'red', 'm1')
+        chart.marker(bars['time'].iloc[5], 'above', 'circle', 'red', 'm1')
         line1 = chart.create_line('line1', color='#ff0000')
-        line1.set(bars[['date', 'close']].rename(columns={'date': 'time', 'close': 'line1'}))
+        line1.set(bars[['time', 'close']].rename(columns={'close': 'value'}))
         all_clean &= log_check(len(chart.candle.markers) == 1, "1 marker", errors, "r_marker_added")
         all_clean &= log_check(len(chart._lines) == 1, "1 line", errors, "r_line_added")
 

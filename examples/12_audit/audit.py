@@ -22,7 +22,7 @@ if __name__ == '__main__':
     for i in range(100):
         price += np.random.normal(0, 1.5)
         rows.append({
-            'date': dates[i],
+            'time': dates[i],
             'open': round(price + np.random.normal(0, 0.5), 2),
             'high': round(price + abs(np.random.normal(0, 0.8)), 2),
             'low': round(price - abs(np.random.normal(0, 0.8)), 2),

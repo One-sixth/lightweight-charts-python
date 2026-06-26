@@ -15,7 +15,7 @@ def demo():
     # chart.export('charts.html')
     chart = Chart(width=1200, height=800, title='Multi Pane Demo')
     chart.legend(visible=True)
-    df = pd.read_csv('ohlcv.csv')
+    df = pd.read_csv('ohlcv.csv').rename(columns={'date': 'time'})
     chart.set(df)
 
     # Pane 0

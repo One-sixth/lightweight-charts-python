@@ -27,7 +27,7 @@ def make_data(num_bars: int = 50, seed: int = 42):
     for i in range(num_bars):
         price += np.random.normal(0, 2)
         rows.append({
-            'date': dates[i],
+            'time': dates[i],
             'open': round(price + np.random.normal(0, 1), 2),
             'high': round(price + abs(np.random.normal(0, 1.5)), 2),
             'low': round(price - abs(np.random.normal(0, 1.5)), 2),
@@ -80,8 +80,8 @@ def add_resources_to_chart(chart, bars, prefix):
 
     line = chart.create_line(f'{prefix}_line', color='#ff0000')
     hist = chart.create_histogram(f'{prefix}_hist', color='#00ff00')
-    chart.marker(bars['date'].iloc[5], 'above', 'circle', '#ff0000', f'{prefix}_m1')
-    chart.marker(bars['date'].iloc[10], 'below', 'arrow_up', '#00ff00', f'{prefix}_m2')
+    chart.marker(bars['time'].iloc[5], 'above', 'circle', '#ff0000', f'{prefix}_m1')
+    chart.marker(bars['time'].iloc[10], 'below', 'arrow_up', '#00ff00', f'{prefix}_m2')
     pl = chart.create_price_line(price=102, title=f'{prefix}_PL', price_label=True)
 
     tbl = chart.create_table(

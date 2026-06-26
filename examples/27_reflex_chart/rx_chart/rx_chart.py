@@ -9,7 +9,7 @@ from lightweight_charts import ReflexChart
 
 # ── 1. 数据 ────────────────────────────────────────────────────
 data_path = Path(__file__).resolve().parent.parent.parent / '1_setting_data' / 'ohlcv.csv'
-ohlcv_df = pd.read_csv(data_path)
+ohlcv_df = pd.read_csv(data_path).rename(columns={'date': 'time'})
 
 # ── 2. 创建 ReflexChart ────────────────────────────────────────
 chart = ReflexChart(width=1000, height=600, auto_flush=True)
@@ -23,8 +23,8 @@ chart.legend(visible=True)
 
 sma = chart.create_line(name='sma', color='#FFD700', width=2)
 sma.set(pd.DataFrame({
-    'date': ohlcv_df['date'],
-    'sma': ohlcv_df['close'].rolling(20).mean()
+    'time': ohlcv_df['time'],
+    'value': ohlcv_df['close'].rolling(20).mean()
 }).dropna())
 
 # ── 3. 辅助: 基于最后一行生成随机新 bar ────────────────────────
@@ -33,9 +33,9 @@ _last = ohlcv_df.iloc[-1]
 def _next_bar():
     global _last
     change = random.uniform(-3, 3)
-    dt = datetime.strptime(str(_last['date']), '%Y-%m-%d') + timedelta(days=1)
+    dt = datetime.strptime(str(_last['time']), '%Y-%m-%d') + timedelta(days=1)
     bar = pd.Series({
-        'date': dt.strftime('%Y-%m-%d'),
+        'time': dt.strftime('%Y-%m-%d'),
         'open': _last['close'],
         'high': max(_last['close'], _last['close'] + change) + random.uniform(0, 0.5),
         'low':  min(_last['close'], _last['close'] + change) - random.uniform(0, 0.5),

@@ -13,7 +13,7 @@ if __name__ == '__main__':
     chart = Chart()
     chart.legend(visible=True)
 
-    df = pd.read_csv('ohlcv.csv')
+    df = pd.read_csv('ohlcv.csv').rename(columns={'date': 'time'})
     chart.set(df)
 
     line = chart.create_line('SMA 50', color='rgb(255, 0, 0)')

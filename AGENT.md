@@ -27,39 +27,96 @@
 
 ---
 
-## 🏗️ 架构概览（v2.7.0）
+## 🏗️ 架构概览（v2.8.0）
 
 ### 类层次
 
 ```
 Pane (util.py)
 ├── Window (abstract.py)           ← JS 桥接层
-├── SeriesCommon (abstract.py)     ← 数据系列基类（数据工具、标记、精度、显隐）
-│   ├── CandleSeries               ← K 线（OHLC + 样式 + tick 聚合）
-│   ├── Line                       ← 折线
-│   ├── Histogram                  ← 柱状图
-│   ├── VolumeSeries               ← 成交量（独立系列，OHLC 着色）
-│   └── OpenInterestSeries         ← 持仓量（独立系列）
+├── SeriesCommon (series.py)       ← 数据系列基类（数据工具、标记、精度、显隐）
+│   ├── LineSeries                 ← 折线（继承全部 set/update_bars/update_ticks）
+│   ├── HistogramSeries            ← 柱状图（同上，额外支持 _option_columns=['color']）
+│   ├── VolumeSeries               ← 成交量（覆盖 _prepare_vol_df/update_bars/update_ticks，OHLC 着色）
+│   ├── OpenInterestSeries         ← 持仓量（仅 __init__/_build/config，其余全部继承 SeriesCommon）
+│   └── CandleSeries               ← K 线（覆盖 set/update_bars/update_ticks，OHLC 聚合）
 └── AbstractChart (abstract.py)    ← 图表容器（组合模式）
     ├── self.candle: CandleSeries       ← 固定 ID: window.Chart_X_candle
-    ├── self.volume: VolumeSeries | None ← 固定 ID: window.Chart_X_volume
-    ├── self.oi: OpenInterestSeries | None ← 固定 ID: window.Chart_X_oi
+    ├── self.volume: VolumeSeries       ← 固定 ID: window.Chart_X_volume（始终存在）
+    ├── self.oi: OpenInterestSeries     ← 固定 ID: window.Chart_X_oi（始终存在）
     ├── self._lines / _drawings / _tables
-    └── 28+ 委托方法
+    └── 委托方法
+```
+
+### 统一的系列输入契约
+
+所有系列的 `set()` / `update_bars()` / `update_ticks()` 统一接受 `time` + `value` 列：
+
+| 方法 | 输入列 | 说明 |
+|------|--------|------|
+| `series.set(df)` | `time, value` | 统一格式 |
+| `series.update_bars(df)` | `time, value` | 统一格式 |
+| `series.update_ticks(df)` | `time, value` | 统一格式 |
+
+特殊要求：
+- **VolumeSeries**：`_prepare_vol_df` 要求 `open`/`close` 列用于涨跌着色，缺失时抛 `ValueError`
+- **VolumeSeries `self.data`**：维护 `time, value, open, close, color` 五列
+- **CandleSeries**：`set`/`update_bars` 要求 `open, high, low, close` 列
+
+### AbstractChart 接口
+
+| 方法 | 输入列 | 说明 |
+|------|--------|------|
+| `chart.set(df)` | `time, open, high, low, close, [volume], [open_interest]` | bar 数据 |
+| `chart.update_bars(df)` | 同上 | bar 数据 |
+| `chart.update_ticks(df)` | `time, price, [volume], [open_interest]` | tick 数据 |
+| `chart.data` | 返回 `time, open, high, low, close, volume, open_interest` | 始终 7 列 |
+| `chart.candle_data` | 返回 `time, open, high, low, close` | candle 原始数据 |
+| `chart.vol_data` | 返回 `time, value` | volume 原始数据（仅两列） |
+| `chart.oi_data` | 返回 `time, value` | OI 原始数据 |
+
+AbstractChart 内部自动做列重命名：`price→value`、`volume→value`、`open_interest→value` 后转发给各系列。
+
+### set → update_bars 委托模式
+
+SeriesCommon / VolumeSeries / OpenInterestSeries 统一使用此模式：
+
+```python
+def set(self, df, _df_cleaned=False):
+    self.run_script(f"{self.id}.series.setData([])")
+    self.data = pd.DataFrame()
+    self._last_bar = None
+    if df is None or df.empty:
+        return
+    self.update_bars(df, _df_cleaned)
+    if self.markers:
+        self._update_markers()
+
+def update_bars(self, df, _df_cleaned=False):
+    df = self._prepare_xxx(df, _df_cleaned)  # 清洗 + 校验 + 选列
+    if df is None or df.empty:
+        return
+    if self.data is None or self.data.empty:
+        # 首批 → setData 批量写入（高效）
+        self.data = df.copy()
+        self.run_script(f'{self.id}.series.setData({js_data(df)})')
+    else:
+        # 后续 → per-row update
+        js_commands = [...]
+        self.data = pd.concat([self.data.iloc[:-1], df], ...)
+        self._last_bar = df.iloc[-1]
 ```
 
 ### 关键设计
 
 1. **固定 ID**：主 series 使用 `Chart_X_candle`/`volume`/`oi`，不被 IDGen 生成，audit 能捕获
-2. **惰性创建**：Handler 构造函数 `this.series`/`volumeSeries`/`openInterestSeries` 全部 null
-3. **按需重建**：`reset()` 删光 JS 对象，`set()` 检测 None 后按固定 ID 重建
-4. **`@property` 代理**：`candle_data`/`data`/`markers`/`_last_bar` 有 None 保护
-5. **时间级别**：`_interval`/`offset`/`_period_locked` 在 AbstractChart 上
-6. **绘图方法只在 AbstractChart**：不在 SeriesCommon
-7. **`update_from_ticks` 双层设计**：SeriesCommon 通用版 + CandleSeries 覆盖版
-8. **`_is_subchart` 标识**：`reset()`/`_clear_handlers()` 限制仅主图可调用
-9. **seriesMarkers 按需创建**：Handler 不再持有 `seriesMarkers`，由 `_update_markers()` 在 series 级别按需创建
-10. **Handler 构造函数精简**：7 个参数（chartId/width/height/nrows/ncols/index/autoSize），`paneIndex` 和 `marker_auto_scale` 已移除
+2. **常驻系列**：candle/volume/oi 始终存在，reset 后自动重建
+3. **`@property` 代理**：`candle_data`/`vol_data`/`oi_data`/`data`/`markers`
+4. **`normal_df` 精简**：不再自动转小写，不再自动 `date→time`，只做时间转换
+5. **绘图方法只在 AbstractChart**：不在 SeriesCommon
+6. **`_is_subchart` 标识**：`reset()`/`_clear_handlers()` 限制仅主图可调用
+7. **seriesMarkers 按需创建**：由 `_update_markers()` 在 series 级别按需创建
+8. **不联动 _lines**：AbstractChart 的 set/update_bars/update_ticks 不自动转发数据给 Line/Histogram
 
 ---
 
@@ -73,7 +130,7 @@ Pane (util.py)
 5. 复制 `dist/bundle.js` → `lightweight_charts/js/bundle.js`
 
 ### 新增 Python 功能
-1. 在 `lightweight_charts/abstract.py` 中添加类/方法
+1. 在 `lightweight_charts/series.py` 或 `abstract.py` 中添加类/方法
 2. 如果涉及 `run_script` 调用，检查返回值是否包含 API 对象
 3. 更新 `lightweight_charts/__init__.py` 导出
 4. 创建示例 `examples/XX_name/`
@@ -89,8 +146,7 @@ copy dist\bundle.js lightweight_charts\js\bundle.js
 ### 测试命令
 ```bash
 cd D:\Data\github_repo\lightweight-charts-onesixth
-python test/test_candle_series.py    # CandleSeries 6 个测试
-python test/run_tests.py             # 完整测试套件（test_cleanup + test_features + test_util）
+python test/run_tests.py             # 完整测试套件（7 个测试文件）
 ```
 
 ---
@@ -100,8 +156,9 @@ python test/run_tests.py             # 完整测试套件（test_cleanup + test_
 ```
 lightweight-charts-onesixth/
 ├── lightweight_charts/         ← Python 后端
-│   ├── abstract.py             # 核心类: Window, SeriesCommon, AbstractChart, CandleSeries, Line, Histogram, VolumeSeries, OpenInterestSeries, PriceLine
-│   ├── util.py                 # 工具: Pane, IDGen, Events, 纯函数, 类型别名
+│   ├── abstract.py             # 核心类: Window, AbstractChart
+│   ├── series.py               # 系列类: SeriesCommon, LineSeries, HistogramSeries, VolumeSeries, OpenInterestSeries, CandleSeries
+│   ├── util.py                 # 工具: Pane, IDGen, Events, normal_df, 纯函数
 │   ├── chart.py                # Chart (pywebview) + CrossProcessChart
 │   ├── widgets.py              # JupyterChart, HTMLChart, HtmlTabChart, QtChart
 │   ├── drawings.py             # Drawing 基类 + HorizontalLine, TrendLine, Box, VerticalLine, RayLine, VerticalSpan
@@ -112,11 +169,15 @@ lightweight-charts-onesixth/
 │   ├── general/legend.ts       # 图例
 │   └── general/toolbox.ts      # 绘图工具箱
 ├── test/                       ← 测试
-│   ├── test_candle_series.py   # CandleSeries 6 个测试
 │   ├── test_cleanup.py         # 资源清理 + 多图表 + reset 测试
 │   ├── test_features.py        # 功能测试
-│   └── test_util.py            # 工具函数测试
-├── examples/                   ← 示例 (35 个)
+│   ├── test_util.py            # 工具函数测试
+│   ├── test_candle_series.py   # CandleSeries 测试
+│   ├── test_data_aggregation.py # 数据聚合测试（含混沌测试）
+│   ├── test_reset_sub.py       # 子图重置测试
+│   ├── test_position.py        # 布局位置测试
+│   └── run_tests.py            # 测试运行器
+├── examples/                   ← 示例 (36 个)
 ├── MEMORY.md                   # 项目长期记忆
 └── AGENT.md                    # 本文件
 ```
@@ -138,7 +199,7 @@ lightweight-charts-onesixth/
 ### 标记不显示
 1. 检查 `_update_markers` 是否有 try/catch 保护
 2. `seriesMarkers` 由 `_update_markers()` 按需创建（首次调用时自动创建）
-3. 检查 `_marker_auto_scale` 是否正确传递（Python `_update_markers` 使用 `self._chart._marker_auto_scale`）
+3. 检查 `_marker_auto_scale` 是否正确传递
 4. 所有 Series 都支持标记
 
 ### reset 后 set 失败
@@ -151,19 +212,34 @@ lightweight-charts-onesixth/
 2. 检查 handler 是否被 `_remove_my_handlers()` 误删
 3. 用 `print(chart.win.handlers)` 查看当前注册的 handler 列表
 
+### VolumeSeries 着色异常
+1. 检查输入是否包含 `open`/`close` 列（必需）
+2. AbstractChart 自动转发时会带上 `open`/`close`
+3. 独立创建 VolumeSeries 时，`set(df)` 的 df 必须包含 `time, value, open, close`
+
+---
+
+## ⚠️ 已废弃的旧名称（保留兼容）
+
+| 旧名称 | 新名称 | 说明 |
+|--------|--------|------|
+| `Line` | `LineSeries` | 类重命名 |
+| `Histogram` | `HistogramSeries` | 类重命名 |
+| `update_from_tick()` | `update_tick()` | 方法重命名 |
+| `update_from_ticks()` | `update_ticks()` | 方法重命名 |
+
+旧名称保留为别名/转发包装器，但已标记废弃，将在未来版本移除。
+
 ---
 
 ## 📋 测试覆盖
 
 | 测试 | 覆盖内容 |
 |------|---------|
-| `test_basic_create_delete` | 创建/设置数据/标记/删除/Python 状态清理 + JS audit |
-| `test_update_operations` | update 单 bar/update 已有 bar/update_bars 批量/set 重置 |
-| `test_markers` | marker 显式时间/marker 默认时间/marker_list 批量/remove/clear + JS 验证 |
-| `test_multi_pane` | 多 pane 独立 K 线/各自数据和标记/独立更新/独立删除 |
-| `test_candle_with_main` | 主 K 线 + CandleSeries + Line + Histogram 混合资源清理 |
-| `test_options` | 自定义颜色/边框/影线/价格线参数 + JS 验证 |
-| `test_cleanup.py` | 资源全链路创建/删除 + JS TOML 审计 + 多图表清理 + reset + **handlers 检查区分 toolbox/non-toolbox** |
-| `test_features.py` | 数据列重命名/line 追踪/截图/topbar 事件 |
+| `test_cleanup.py` | 资源全链路创建/删除 + JS TOML 审计 + 多图表清理 + reset + handlers 检查 |
+| `test_features.py` | 数据列处理 + Line 创建和追踪 + 截图 + topbar 事件 |
 | `test_util.py` | 工具函数测试（13 个） |
-| `test_data_aggregation.py` | 多频率 set/update_bar/update_bars/update_from_ticks/重复时间戳合并/_last_bar 过滤/Line 名字大小写保留 |
+| `test_candle_series.py` | CandleSeries 创建/更新/标记/多 pane/混合系列/样式 |
+| `test_data_aggregation.py` | 多频率 set/update_bar/update_bars/update_ticks/重复时间戳合并/纯函数/跨级别聚合/混沌测试/边界情况 |
+| `test_reset_sub.py` | 子图内容重置 + 数据隔离 + 重置后重用 |
+| `test_position.py` | 网格布局位置解析 + 经典模式 |

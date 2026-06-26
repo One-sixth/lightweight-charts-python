@@ -7,8 +7,8 @@ if __name__ == '__main__':
     chart = Chart()
     chart.legend(visible=True, ohlc=True, persistent=True)
 
-    df1 = pd.read_csv('ohlcv.csv')
-    df2 = pd.read_csv('next_ohlcv.csv')
+    df1 = pd.read_csv('ohlcv.csv').rename(columns={'date': 'time'})
+    df2 = pd.read_csv('next_ohlcv.csv').rename(columns={'date': 'time'})
 
     chart.set(df1)
 

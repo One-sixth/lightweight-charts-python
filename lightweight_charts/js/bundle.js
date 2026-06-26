@@ -326,15 +326,31 @@ var Lib = (function (exports, lightweightCharts) {
                 else {
                     data = param.seriesData.get(e.series);
                 }
-                if (!data?.value)
+                if (!data)
+                    return;
+                // OHLC 类型的 series（Bar/Candlestick）特殊处理
+                const seriesType = e.series.seriesType();
+                if (seriesType === 'Bar' || seriesType === 'Candlestick') {
+                    if (data.open === undefined)
+                        return;
+                    let ohlcStr = `<span style="color: ${e.solid};">️■</span>    ${e.name} : `;
+                    ohlcStr += `O ${this.legendItemFormat(data.open, this.handler.precision)} `;
+                    ohlcStr += `| H ${this.legendItemFormat(data.high, this.handler.precision)} `;
+                    ohlcStr += `| L ${this.legendItemFormat(data.low, this.handler.precision)} `;
+                    ohlcStr += `| C ${this.legendItemFormat(data.close, this.handler.precision)}`;
+                    e.div.innerHTML = ohlcStr;
+                    return;
+                }
+                // 普通 value 类型的 series
+                if (data.value === undefined)
                     return;
                 let price;
-                if (e.series.seriesType() == 'Histogram') {
+                if (seriesType === 'Histogram') {
                     price = this.shorthandFormat(data.value);
                 }
                 else {
                     const format = e.series.options().priceFormat;
-                    price = this.legendItemFormat(data.value, format.precision); // couldn't this just be line.options().precision?
+                    price = this.legendItemFormat(data.value, format.precision);
                 }
                 e.div.innerHTML = `<span style="color: ${e.solid};">️■</span>    ${e.name} : ${price}`;
             });
@@ -2084,10 +2100,10 @@ var Lib = (function (exports, lightweightCharts) {
                 'wrapper', 'div', 'legend', 'toolBox', '_topBar',
                 '_seriesList', 'commandFunctions',
                 'reSize', '_createChart',
-                'createLineSeries', 'createHistogramSeries', 'createCandleSeries', '_styleMap',
+                'createLineSeries', 'createHistogramSeries', 'createCandleSeries', 'createAreaSeries', 'createOHLCBarSeries', 'createBaselineSeries', '_styleMap',
             ]);
             // Regex matching our custom window global variable names
-            const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|CandleSeries_\d|VolumeSeries_\d|OpenInterestSeries_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
+            const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|CandleSeries_\d|VolumeSeries_\d|OpenInterestSeries_\d|AreaSeries_\d|OHLCBarSeries_\d|BaselineSeries_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
             // Build a lookup: handler ID → Handler instance
             const handlerMap = {};
             for (const h of Handler._all) {
@@ -2638,6 +2654,63 @@ var Lib = (function (exports, lightweightCharts) {
             return {
                 name: name,
                 series: candle,
+            };
+        }
+        /**
+         * 创建面积图系列。
+         *
+         * @param name - 系列名称，显示在图例中
+         * @param options - 面积图样式配置（颜色、渐变等）
+         * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
+         * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建
+         */
+        createAreaSeries(name, options, paneIndex = 0, dontAddList = false) {
+            const line = this.chart.addSeries(lightweightCharts.AreaSeries, { ...options }, paneIndex);
+            if (!dontAddList) {
+                this._seriesList.push(line);
+                this.legend.makeSeriesRow(name, line, paneIndex);
+            }
+            return {
+                name: name,
+                series: line,
+            };
+        }
+        /**
+         * 创建美国线（OHLC 横向柱状图）系列。
+         *
+         * @param name - 系列名称，显示在图例中
+         * @param options - 美国线样式配置（涨跌颜色等）
+         * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
+         * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建
+         */
+        createOHLCBarSeries(name, options, paneIndex = 0, dontAddList = false) {
+            const line = this.chart.addSeries(lightweightCharts.BarSeries, { ...options }, paneIndex);
+            if (!dontAddList) {
+                this._seriesList.push(line);
+                this.legend.makeSeriesRow(name, line, paneIndex);
+            }
+            return {
+                name: name,
+                series: line,
+            };
+        }
+        /**
+         * 创建基准线系列。
+         *
+         * @param name - 系列名称，显示在图例中
+         * @param options - 基准线样式配置（基准值、上下区域颜色等）
+         * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
+         * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建
+         */
+        createBaselineSeries(name, options, paneIndex = 0, dontAddList = false) {
+            const line = this.chart.addSeries(lightweightCharts.BaselineSeries, { ...options }, paneIndex);
+            if (!dontAddList) {
+                this._seriesList.push(line);
+                this.legend.makeSeriesRow(name, line, paneIndex);
+            }
+            return {
+                name: name,
+                series: line,
             };
         }
         createToolBox() {

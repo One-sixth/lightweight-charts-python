@@ -32,6 +32,7 @@ class IDGen:
         self._counter += 1
         return f'window.{prefix}{self._counter}'
 
+
 def format_datetime(dt: datetime, tz: Union[str, ZoneInfo] = None) -> str:
     """格式化时间为字符串，可选时区转换。
     :param dt: 待格式化的时间
@@ -49,6 +50,7 @@ def format_datetime(dt: datetime, tz: Union[str, ZoneInfo] = None) -> str:
         dt = dt.astimezone(tz)
     return dt.strftime('%Y-%m-%d %H:%M GMT%z')
 
+
 def parse_event_message(window, string):
     """解析 JS 端发来的事件消息，拆分为处理器名称和参数列表。
     :param window: Window 实例（持有 handlers 字典）
@@ -64,6 +66,7 @@ def parse_event_message(window, string):
         return None, args
     return func, args
 
+
 def df_data(data: Union[pd.DataFrame, pd.Series]):
     """将 DataFrame/Series 转为不含 NaN 的 dict/list 结构。
     :param data: 输入数据
@@ -75,6 +78,7 @@ def df_data(data: Union[pd.DataFrame, pd.Series]):
         d = data.to_dict()
         filtered_records = {k: v for k, v in d.items()}
     return filtered_records
+
 
 def series_data(data: Union[pd.DataFrame, pd.Series]):
     """将 Series 转为 [{index, value}] 格式，float 保留 4 位小数。
@@ -89,6 +93,7 @@ def series_data(data: Union[pd.DataFrame, pd.Series]):
         filtered_records.append({'index': idx, 'value': val_str})
     return filtered_records
 
+
 def js_data(data: Union[pd.DataFrame, pd.Series]):
     """将 DataFrame/Series 转为 JSON 字符串，已去除 NaN 值。
     :param data: 输入数据
@@ -101,12 +106,14 @@ def js_data(data: Union[pd.DataFrame, pd.Series]):
         filtered_records = {k: v for k, v in d.items()}
     return json.dumps(filtered_records)
 
+
 def snake_to_camel(s: str):
     """将蛇形命名转为驼峰命名。
     :param s: 如 'hello_world'
     :return: 如 'helloWorld'"""
     components = s.split('_')
     return components[0] + ''.join(x.title() for x in components[1:])
+
 
 def js_json(d: dict):
     """将 Python dict 转为 JS 侧 JSON.parse() 调用，键名自动转驼峰。
@@ -459,39 +466,20 @@ def get_df_interval_offset(df: pd.DataFrame) -> (int, int):
     return interval, offset
 
 
-def normal_df(df: pd.DataFrame, exclude_lowercase=None) -> pd.DataFrame:
+def normal_df(df: pd.DataFrame) -> pd.DataFrame:
     """标准化输入 DataFrame。
 
-    - 格式化列名：全部小写（exclude_lowercase 中的除外）
-    - date 列重命名为 time
     - 无 time 列时用 index
     - 时间转换为秒级时间戳
 
+    注意：不再自动将列名转为小写，也不再自动将 date 列重命名为 time。
+    输入 DataFrame 的列名必须已经是正确的小写形式（如 time, open, high, low, close, value）。
+
     :param df: 输入 DataFrame
-    :param exclude_lowercase: 不转小写的列名（str/list/tuple/set）
     :return: 标准化后的 DataFrame（副本）
     """
 
     df = df.copy()
-
-    if isinstance(exclude_lowercase, str):
-        exclude_lowercase = [exclude_lowercase]
-
-    exclude_lowercase = set() if exclude_lowercase is None else set(exclude_lowercase)
-
-    new_labels = []
-    for n in df.columns:
-        n = str(n)
-        new_labels.append(n if n in exclude_lowercase else n.lower())
-
-    if any(df.columns != new_labels):
-        df.columns = new_labels
-
-    if 'date' in new_labels and 'time' in new_labels:
-        raise ValueError("date and time cannot be used at the same time.")
-
-    if 'date' in df.columns:
-        df.rename(columns={'date': 'time'}, inplace=True)
 
     if 'time' not in df.columns:
         df['time'] = df.index

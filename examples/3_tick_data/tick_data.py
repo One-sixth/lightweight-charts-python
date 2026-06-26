@@ -4,7 +4,7 @@ from lightweight_charts import Chart
 
 if __name__ == '__main__':
 
-    df1 = pd.read_csv('ohlc.csv')
+    df1 = pd.read_csv('ohlc.csv').rename(columns={'date': 'time'})
 
     # Columns: time | price
     df2 = pd.read_csv('ticks.csv')

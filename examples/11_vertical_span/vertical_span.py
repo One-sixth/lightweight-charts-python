@@ -7,7 +7,7 @@ from lightweight_charts import Chart
 if __name__ == '__main__':
     chart = Chart()
 
-    df = pd.read_csv('../1_setting_data/ohlcv.csv')
+    df = pd.read_csv('../1_setting_data/ohlcv.csv').rename(columns={'date': 'time'})
     chart.set(df)
 
     # Highlight a range between two dates

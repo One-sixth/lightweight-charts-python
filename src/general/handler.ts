@@ -2,6 +2,9 @@ import {
     ColorType,
     CrosshairMode,
     DeepPartial,
+    AreaStyleOptions,
+    BarStyleOptions,
+    BaselineStyleOptions,
     HistogramStyleOptions,
     IChartApi,
     ISeriesApi,
@@ -11,6 +14,9 @@ import {
     SeriesOptionsCommon,
     SeriesType,
     createChart,
+    AreaSeries,
+    BarSeries,
+    BaselineSeries,
     CandlestickSeries,
     HistogramSeries,
     LineSeries,
@@ -80,11 +86,11 @@ export class Handler {
             'wrapper', 'div', 'legend', 'toolBox', '_topBar',
             '_seriesList', 'commandFunctions',
             'reSize', '_createChart',
-            'createLineSeries', 'createHistogramSeries', 'createCandleSeries', '_styleMap',
+            'createLineSeries', 'createHistogramSeries', 'createCandleSeries', 'createAreaSeries', 'createOHLCBarSeries', 'createBaselineSeries', '_styleMap',
         ]);
 
         // Regex matching our custom window global variable names
-        const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|CandleSeries_\d|VolumeSeries_\d|OpenInterestSeries_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
+        const GLOBALS_RE = /^(window\.|Chart_\d|Line_\d|Histogram_\d|CandleSeries_\d|VolumeSeries_\d|OpenInterestSeries_\d|AreaSeries_\d|OHLCBarSeries_\d|BaselineSeries_\d|PriceLine_\d|HorizontalLine_\d|VerticalLine_\d|TrendLine_\d|Box_\d|RayLine_\d|VerticalSpan_\d|AbstractChart_\d|Table_\d|Marker_\d|Drawing_\d)/;
 
         // Build a lookup: handler ID → Handler instance
         const handlerMap: Record<string, Handler> = {};
@@ -709,6 +715,69 @@ export class Handler {
             name: name,
             series: candle,
         };
+    }
+
+    /**
+     * 创建面积图系列。
+     *
+     * @param name - 系列名称，显示在图例中
+     * @param options - 面积图样式配置（颜色、渐变等）
+     * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
+     * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建
+     */
+    createAreaSeries(name: string, options: DeepPartial<AreaStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false)
+    {
+        const line = this.chart.addSeries(AreaSeries, {...options}, paneIndex);
+        if (!dontAddList) {
+            this._seriesList.push(line);
+            this.legend.makeSeriesRow(name, line, paneIndex);
+        }
+        return {
+            name: name,
+            series: line,
+        }
+    }
+
+    /**
+     * 创建美国线（OHLC 横向柱状图）系列。
+     *
+     * @param name - 系列名称，显示在图例中
+     * @param options - 美国线样式配置（涨跌颜色等）
+     * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
+     * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建
+     */
+    createOHLCBarSeries(name: string, options: DeepPartial<BarStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false)
+    {
+        const line = this.chart.addSeries(BarSeries, {...options}, paneIndex);
+        if (!dontAddList) {
+            this._seriesList.push(line);
+            this.legend.makeSeriesRow(name, line, paneIndex);
+        }
+        return {
+            name: name,
+            series: line,
+        }
+    }
+
+    /**
+     * 创建基准线系列。
+     *
+     * @param name - 系列名称，显示在图例中
+     * @param options - 基准线样式配置（基准值、上下区域颜色等）
+     * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
+     * @param dontAddList - 是否跳过 _seriesList 注册和 legend 图例行创建
+     */
+    createBaselineSeries(name: string, options: DeepPartial<BaselineStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false)
+    {
+        const line = this.chart.addSeries(BaselineSeries, {...options}, paneIndex);
+        if (!dontAddList) {
+            this._seriesList.push(line);
+            this.legend.makeSeriesRow(name, line, paneIndex);
+        }
+        return {
+            name: name,
+            series: line,
+        }
     }
 
     createToolBox() {

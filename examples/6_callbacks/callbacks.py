@@ -6,7 +6,7 @@ def get_bar_data(symbol, timeframe):
     if symbol not in ('AAPL', 'GOOGL', 'TSLA'):
         print(f'No data for "{symbol}"')
         return pd.DataFrame()
-    return pd.read_csv(f'bar_data/{symbol}_{timeframe}.csv')
+    return pd.read_csv(f'bar_data/{symbol}_{timeframe}.csv').rename(columns={'date': 'time'})
 
 
 def on_search(chart, searched_string):  # Called when the user searches.

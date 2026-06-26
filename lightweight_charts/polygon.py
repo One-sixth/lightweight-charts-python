@@ -243,7 +243,7 @@ class PolygonAPI:
 
     async def async_set(self, sec_type: Literal['stocks', 'options', 'indices', 'forex', 'crypto'], ticker, timeframe,
                         start_date, end_date, limit, live):
-        await unsubscribe(self._chart.update_from_tick)
+        await unsubscribe(self._chart.update_tick)
 
         df = await async_get_bar_data(ticker, timeframe, start_date, end_date, limit)
 
@@ -252,7 +252,7 @@ class PolygonAPI:
 
         if not live:
             return True
-        await subscribe(ticker, sec_type, self._chart.update_from_tick, (True,), self._chart.num_decimals)
+        await subscribe(ticker, sec_type, self._chart.update_tick, (True,), self._chart.num_decimals)
         return True
 
     def stock(

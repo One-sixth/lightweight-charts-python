@@ -10,7 +10,7 @@ import numpy as np
 from .table import Table
 from .toolbox import ToolBox
 from .drawings import Box, HorizontalLine, RayLine, TrendLine, VerticalLine, VerticalSpan, PriceLine
-from .series import Line, Histogram, VolumeSeries, OpenInterestSeries, CandleSeries
+from .series import SeriesCommon, LineSeries, HistogramSeries, VolumeSeries, OpenInterestSeries, CandleSeries, AreaSeries, OHLCBarSeries, BaselineSeries, Line, Histogram
 from .topbar import TopBar
 from .util import (
     BulkRunScript, Pane, Events, IDGen, as_enum, jbool, js_json, TIME, NUM, FLOAT,
@@ -359,8 +359,11 @@ class AbstractChart(Pane):
 
     @property
     def vol_data(self):
-        """成交量数据 DataFrame（time, value, color）。"""
-        return self.volume.data
+        """成交量数据 DataFrame（time, value）。"""
+        df = self.volume.data
+        if df is None or df.empty:
+            return df
+        return df[['time', 'value']]
 
     @property
     def oi_data(self):
@@ -425,10 +428,6 @@ class AbstractChart(Pane):
             arg = (pd.to_datetime(arg, unit='s').tz_localize(None) - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
         return int(self._time_to_bar_time(arg))
 
-    def _line_names(self):
-        """返回所有 _lines 的名字集合，用于 normal_df 的 exclude_lowercase。"""
-        return {line.name for line in self._lines if line.name}
-
     def _clean_df(self, df, _df_cleaned=False):
         """清洗 DataFrame（normal_df + _time_to_bar_time + merge_value_by_time）。
 
@@ -438,7 +437,7 @@ class AbstractChart(Pane):
         """
         if _df_cleaned:
             return df
-        df = normal_df(df, exclude_lowercase=self._line_names())
+        df = normal_df(df)
         df = self._time_to_bar_time(df)
         df = merge_value_by_time(df)
         return df
@@ -466,24 +465,27 @@ class AbstractChart(Pane):
     # ── 高频数据方法（显式委托，IDE 友好）──
 
     def set(self, df=None, keep_drawings=False):
-        """设置 K 线数据。自动检测 volume/OI 列并转发数据给独立 series。"""
+        """设置 K 线数据。自动检测 volume/OI 列并转发数据给独立 series。
+
+        .. deprecated::
+            不再联动设置 _lines。Line/Histogram 需要各自调用 ``line.set(df)`` 独立设置数据。
+        """
         if df is not None and not df.empty:
             # 需要先 normal ，才能设定 interval 。 所以这里的两次 normal_df 无法避免。
-            df = normal_df(df, exclude_lowercase=self._line_names())
+            df = normal_df(df)
             self._set_interval(df)
             # 设置数据（AbstractChart 统一清洗一次，子 series 跳过重复清洗）
             df = self._clean_df(df)
 
             self.candle.set(df, _df_cleaned=True)
             if 'volume' in df.columns:
-                self.volume.set(df, _df_cleaned=True)
+                vol_cols = ['time', 'volume']
+                for c in ('open', 'close'):
+                    if c in df.columns:
+                        vol_cols.append(c)
+                self.volume.set(df[vol_cols].rename(columns={'volume': 'value'}), _df_cleaned=True)
             if 'open_interest' in df.columns:
-                self.oi.set(df, _df_cleaned=True)
-
-            # 转发数据给 _lines（Line/Histogram）—— 大小写精确匹配
-            for line in self._lines:
-                if line.name and line.name in df.columns:
-                    line.set(df, _df_cleaned=True)
+                self.oi.set(df[['time', 'open_interest']].rename(columns={'open_interest': 'value'}), _df_cleaned=True)
 
             # keep_drawings 处理
             if self.toolbox is not None:
@@ -505,31 +507,38 @@ class AbstractChart(Pane):
     update = update_bar
 
     def update_bars(self, df):
-        """批量更新多根 K 线。
+        """批量更新多根 K 线（OHLC + volume + OI）。
 
-        更新顺序：candle → volume → oi → _lines。
+        更新顺序：candle → volume → oi。
         每个 series 独立维护 _last_bar，顺序不影响正确性。
-        candle 放最前是惯例（主系列优先）。
+
+        .. deprecated::
+            不再联动更新 _lines。Line/Histogram 需要各自调用 ``line.update_bars(df)`` 独立更新。
         """
         df = self._clean_df(df)
         self.candle.update_bars(df, _df_cleaned=True)
         if 'volume' in df.columns:
-            self.volume.update_bars(df, _df_cleaned=True)
+            vol_cols = ['time', 'volume']
+            for c in ('open', 'close'):
+                if c in df.columns:
+                    vol_cols.append(c)
+            self.volume.update_bars(df[vol_cols].rename(columns={'volume': 'value'}), _df_cleaned=True)
         if 'open_interest' in df.columns:
-            self.oi.update_bars(df, _df_cleaned=True)
-        for line in self._lines:
-            if line.name and line.name in df.columns:
-                line.update_bars(df)
+            self.oi.update_bars(df[['time', 'open_interest']].rename(columns={'open_interest': 'value'}), _df_cleaned=True)
 
-    def update_from_tick(self, series, cumulative_volume=False):
-        """使用单个 tick 更新图表。委托给 update_from_ticks 统一处理 volume/OI 转发。"""
-        return self.update_from_ticks(series.to_frame().T, cumulative_volume)
+    def update_tick(self, series):
+        """使用单个 tick 更新图表。委托给 update_ticks 统一处理。"""
+        return self.update_ticks(series.to_frame().T)
 
-    def update_from_ticks(self, df, cumulative_volume=False):
-        """批量使用 tick 更新图表。
+    def update_ticks(self, df):
+        """批量使用 tick 更新图表（OHLC + volume + OI）。
 
+        接受 4 列 tick 数据：time, price, volume, open_interest。
         只做 normal_df + time_to_bar_time（不做 merge_value_by_time），
         然后交给 CandleSeries/VolumeSeries/OISeries 各自做 tick→bar 聚合。
+
+        .. deprecated::
+            不再联动更新 _lines。Line/Histogram 需要各自独立更新。
         """
         if df.empty:
             return
@@ -537,26 +546,47 @@ class AbstractChart(Pane):
         df = normal_df(df)
         df = self._time_to_bar_time(df)
 
-        # ── candle 最先更新（惯例：主系列优先）──
-        candle_df = df.drop(columns=[c for c in ('volume', 'open_interest') if c in df.columns], errors='ignore')
-        self.candle.update_from_ticks(candle_df, cumulative_volume, _df_cleaned=True)
+        # ── candle：price → value ──
+        if 'price' in df.columns:
+            candle_df = df[['time', 'price']].rename(columns={'price': 'value'})
+        else:
+            candle_df = df[['time']]
+        self.candle.update_ticks(candle_df, _df_cleaned=True)
 
-        # ── volume/OI 聚合 tick ──
+        # ── volume：volume → value，附带 open/close 供着色 ──
         if 'volume' in df.columns:
-            self.volume.update_from_ticks(df, cumulative_volume, _df_cleaned=True)
-        if 'open_interest' in df.columns:
-            self.oi.update_from_ticks(df, _df_cleaned=True)
+            vol_cols = ['time', 'volume']
+            # 从 price 计算 open/close 供 VolumeSeries 着色
+            if 'price' in df.columns:
+                group = df.groupby('time')
+                open_close = pd.DataFrame({
+                    'time': list(group.groups),
+                    'open': group['price'].first().values,
+                    'close': group['price'].last().values,
+                })
+                vol_merged = df[['time', 'volume']].merge(open_close, on='time', how='left')
+                vol_cols = ['time', 'volume', 'open', 'close']
+            else:
+                vol_merged = df
+            self.volume.update_ticks(
+                vol_merged[vol_cols].rename(columns={'volume': 'value'}),
+                _df_cleaned=True
+            )
 
-        # ── _lines 聚合 tick 后转发（每个 line 按 time 取 last）──
-        if self._lines:
-            group_df = df.groupby('time')
-            for line in self._lines:
-                if line.name and line.name in df.columns:
-                    line_data = pd.DataFrame({
-                        'time': list(group_df.groups),
-                        'value': group_df[line.name].last().array,
-                    })
-                    line.update_bars(line_data)
+        # ── OI：open_interest → value ──
+        if 'open_interest' in df.columns:
+            self.oi.update_ticks(
+                df[['time', 'open_interest']].rename(columns={'open_interest': 'value'}),
+                _df_cleaned=True
+            )
+
+    def update_from_tick(self, series, **kwargs):
+        """.. deprecated:: 使用 update_tick() 代替。"""
+        return self.update_tick(series)
+
+    def update_from_ticks(self, df, **kwargs):
+        """.. deprecated:: 使用 update_ticks() 代替。"""
+        return self.update_ticks(df)
 
     def clear_data(self):
         """清空所有 K 线数据（K线 + 成交量 + 持仓量）。"""
@@ -636,8 +666,8 @@ class AbstractChart(Pane):
     def vertical_span(self, start_time, end_time=None, color='rgba(252, 219, 3, 0.2)', round=False):
         """创建垂直区间。"""
         if round:
-            start_time = self.candle._single_datetime_format(start_time)
-            end_time = self.candle._single_datetime_format(end_time) if end_time else None
+            start_time = self._single_datetime_format(start_time)
+            end_time = self._single_datetime_format(end_time) if end_time else None
         return VerticalSpan(self, start_time, end_time, color)
 
     def box(self, start_time, start_value, end_time, end_value,
@@ -752,13 +782,10 @@ class AbstractChart(Pane):
                     delete {series.id};
                 ''')
                 series.data = pd.DataFrame()
-                series.data = pd.DataFrame()
                 series._last_bar = None
-
-        # 2. 重置 Python 状态
-        self.candle.data = pd.DataFrame()
-        self.candle._last_bar = None
         self.candle.markers.clear()
+
+        # 2. 重置图表状态
         self._interval = None
         self._offset = 0
         self._period_locked = False
@@ -1078,7 +1105,7 @@ class AbstractChart(Pane):
             style: LINE_STYLE = 'solid', width: int = 2,
             price_line: bool = True, price_label: bool = True, price_scale_id: Optional[str] = None,
             pane_index: int = 0
-    ) -> Line:
+    ) -> LineSeries:
         """
         创建并返回一个折线图对象。
 
@@ -1090,9 +1117,9 @@ class AbstractChart(Pane):
         :param price_label: 是否显示价格标签
         :param price_scale_id: 价格刻度ID，用于共享刻度
         :param pane_index: 面板索引，用于在多个面板中放置
-        :return: Line 实例
+        :return: LineSeries 实例
         """
-        line = Line(self, name, color, style, width, price_line, price_label, price_scale_id, pane_index=pane_index)
+        line = LineSeries(self, name, color, style, width, price_line, price_label, price_scale_id, pane_index=pane_index)
         self._lines.append(line)
         return line
 
@@ -1101,7 +1128,7 @@ class AbstractChart(Pane):
             price_line: bool = True, price_label: bool = True,
             scale_margin_top: float = 0.0, scale_margin_bottom: float = 0.0,
             pane_index: int = 0,
-    ) -> Histogram:
+    ) -> HistogramSeries:
         """
         创建并返回一个柱状图（直方图）对象，通常用于显示成交量。
 
@@ -1112,9 +1139,9 @@ class AbstractChart(Pane):
         :param scale_margin_top: 顶部刻度边距（0-1），默认为 0.0
         :param scale_margin_bottom: 底部刻度边距（0-1），默认为 0.0
         :param pane_index: 面板索引，用于在多个面板中放置
-        :return: Histogram 实例
+        :return: HistogramSeries 实例
         """
-        hist = Histogram(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index)
+        hist = HistogramSeries(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index)
         self._lines.append(hist)
         return hist
 
@@ -1157,7 +1184,113 @@ class AbstractChart(Pane):
         self._lines.append(candle)
         return candle
 
-    def lines(self) -> list[Line]:
+    def create_area_series(
+            self, name: str = '', color: str = '#2196F3',
+            style: LINE_STYLE = 'solid', width: int = 2,
+            top_color: str = 'rgba(33, 150, 243, 0.4)',
+            bottom_color: str = 'rgba(33, 150, 243, 0)',
+            relative_gradient: bool = False,
+            invert_filled_area: bool = False,
+            price_line: bool = True, price_label: bool = True,
+            price_scale_id: Optional[str] = None,
+            pane_index: int = 0
+    ) -> AreaSeries:
+        """
+        创建并返回一个面积图对象（折线+渐变填充）。
+
+        :param name: 面积图名称，用于图例显示
+        :param color: 线条颜色
+        :param style: 线条样式
+        :param width: 线条宽度
+        :param top_color: 面积顶部渐变颜色（RGBA）
+        :param bottom_color: 面积底部渐变颜色（RGBA）
+        :param relative_gradient: 渐变是否相对于基准值
+        :param invert_filled_area: 是否反转填充区域
+        :param price_line: 是否显示价格线
+        :param price_label: 是否显示价格标签
+        :param price_scale_id: 价格刻度ID
+        :param pane_index: 面板索引
+        :return: AreaSeries 实例
+        """
+        area = AreaSeries(self, name, color, style, width,
+                          top_color, bottom_color, relative_gradient, invert_filled_area,
+                          price_line, price_label, price_scale_id, pane_index=pane_index)
+        self._lines.append(area)
+        return area
+
+    def create_ohlc_bar_series(
+            self, name: str = '',
+            up_color: str = '#26a69a', down_color: str = '#ef5350',
+            open_visible: bool = True, thin_bars: bool = True,
+            price_line: bool = False, price_label: bool = True,
+            price_scale_id: Optional[str] = None,
+            pane_index: int = 0
+    ) -> OHLCBarSeries:
+        """
+        创建并返回一个美国线（OHLC 横向柱状图）对象。
+
+        与 K 线使用同一套 OHLC 数据，但用横向短横表示 open/close。
+
+        :param name: 系列名称，用于图例显示
+        :param up_color: 上涨颜色
+        :param down_color: 下跌颜色
+        :param open_visible: 是否显示 open 横线
+        :param thin_bars: 是否用细棒显示
+        :param price_line: 是否显示价格线
+        :param price_label: 是否显示价格标签
+        :param price_scale_id: 价格刻度ID
+        :param pane_index: 面板索引
+        :return: OHLCBarSeries 实例
+        """
+        bar = OHLCBarSeries(self, name, up_color, down_color, open_visible, thin_bars,
+                            price_line, price_label, price_scale_id, pane_index=pane_index)
+        self._lines.append(bar)
+        return bar
+
+    def create_baseline_series(
+            self, name: str = '',
+            base_value: float = 0,
+            top_fill_color1: str = 'rgba(38, 166, 154, 0.28)',
+            top_fill_color2: str = 'rgba(38, 166, 154, 0.05)',
+            top_line_color: str = 'rgba(38, 166, 154, 1)',
+            bottom_fill_color1: str = 'rgba(239, 83, 80, 0.05)',
+            bottom_fill_color2: str = 'rgba(239, 83, 80, 0.28)',
+            bottom_line_color: str = 'rgba(239, 83, 80, 1)',
+            line_width: int = 2, line_style: LINE_STYLE = 'solid',
+            relative_gradient: bool = False,
+            price_line: bool = True, price_label: bool = True,
+            price_scale_id: Optional[str] = None,
+            pane_index: int = 0
+    ) -> BaselineSeries:
+        """
+        创建并返回一个基准线对象，以某个基准值为界上下分色。
+
+        :param name: 系列名称
+        :param base_value: 基准值
+        :param top_fill_color1: 上方区域渐变起始色
+        :param top_fill_color2: 上方区域渐变结束色
+        :param top_line_color: 上方区域线条颜色
+        :param bottom_fill_color1: 下方区域渐变起始色
+        :param bottom_fill_color2: 下方区域渐变结束色
+        :param bottom_line_color: 下方区域线条颜色
+        :param line_width: 线条宽度
+        :param line_style: 线条样式
+        :param relative_gradient: 渐变是否相对于基准值
+        :param price_line: 是否显示价格线
+        :param price_label: 是否显示价格标签
+        :param price_scale_id: 价格刻度ID
+        :param pane_index: 面板索引
+        :return: BaselineSeries 实例
+        """
+        baseline = BaselineSeries(self, name, base_value,
+                                  top_fill_color1, top_fill_color2, top_line_color,
+                                  bottom_fill_color1, bottom_fill_color2, bottom_line_color,
+                                  line_width, line_style, relative_gradient,
+                                  price_line, price_label, price_scale_id, pane_index=pane_index)
+        self._lines.append(baseline)
+        return baseline
+
+    def lines(self) -> list[SeriesCommon]:
         """
         Returns all lines for the chart.
         """

@@ -206,15 +206,17 @@ def compute_expected(expected, new_bars, chart, is_ticks=False, cumulative_volum
     if not is_ticks:
         df = merge_value_by_time(df)
 
-    # 2. update_from_ticks 的 OHLC 聚合（tick 路径：groupby time → OHLC from price）
+    # 2. tick 路径 OHLC 聚合：AbstractChart 将 price → value 后交给 CandleSeries
     if is_ticks and 'price' in df.columns:
+        df = df.rename(columns={'price': 'value'})
+    if is_ticks and 'value' in df.columns:
         group_df = df.groupby('time')
         bars = pd.DataFrame({
             'time': list(group_df.groups),
-            'open': group_df['price'].first().values,
-            'high': group_df['price'].max().values,
-            'low': group_df['price'].min().values,
-            'close': group_df['price'].last().values,
+            'open': group_df['value'].first().values,
+            'high': group_df['value'].max().values,
+            'low': group_df['value'].min().values,
+            'close': group_df['value'].last().values,
         })
         df = bars
 
@@ -270,6 +272,8 @@ def test_set_different_frequencies():
     print("\n[1a] set() daily bars ...")
     df = make_bar_data(30, 'D', 100, 42)
     chart.set(df)
+    line_sma.set(df[['time', 'SMA_5']].rename(columns={'SMA_5': 'value'}))
+    line_rsi.set(df[['time', 'RSI_14']].rename(columns={'RSI_14': 'value'}))
     all_clean &= verify_set(chart, df, "daily", errors)
     all_clean &= log_check(len(line_sma.data) == 30, f"daily SMA rows={len(line_sma.data)}", errors, "daily_sma")
     all_clean &= log_check(len(line_rsi.data) == 30, f"daily RSI rows={len(line_rsi.data)}", errors, "daily_rsi")
@@ -278,18 +282,24 @@ def test_set_different_frequencies():
     print("\n[1b] set() 5min bars ...")
     df = make_bar_data(50, '5min', 200, 55)
     chart.set(df)
+    line_sma.set(df[['time', 'SMA_5']].rename(columns={'SMA_5': 'value'}))
+    line_rsi.set(df[['time', 'RSI_14']].rename(columns={'RSI_14': 'value'}))
     all_clean &= verify_set(chart, df, "5min", errors)
 
     # 1c. 1 分钟线
     print("\n[1c] set() 1min bars ...")
     df = make_bar_data(60, 'min', 150, 77)
     chart.set(df)
+    line_sma.set(df[['time', 'SMA_5']].rename(columns={'SMA_5': 'value'}))
+    line_rsi.set(df[['time', 'RSI_14']].rename(columns={'RSI_14': 'value'}))
     all_clean &= verify_set(chart, df, "1min", errors)
 
     # 1d. 1 小时线
     print("\n[1d] set() 1h bars ...")
     df = make_bar_data(40, 'h', 300, 88)
     chart.set(df)
+    line_sma.set(df[['time', 'SMA_5']].rename(columns={'SMA_5': 'value'}))
+    line_rsi.set(df[['time', 'RSI_14']].rename(columns={'RSI_14': 'value'}))
     all_clean &= verify_set(chart, df, "1h", errors)
 
     chart.exit()
@@ -315,6 +325,8 @@ def test_update_bar():
 
     df = make_bar_data(20, 'D', 100, 42)
     chart.set(df)
+    line_sma.set(df[['time', 'SMA_5']].rename(columns={'SMA_5': 'value'}))
+    line_rsi.set(df[['time', 'RSI_14']].rename(columns={'RSI_14': 'value'}))
     initial_rows = len(chart.data)
 
     # 单条新 bar
@@ -326,6 +338,8 @@ def test_update_bar():
         'SMA_5': 104, 'RSI_14': 55,
     }, index=['time', 'open', 'high', 'low', 'close', 'volume', 'open_interest', 'SMA_5', 'RSI_14'])
     chart.update_bar(new_bar)
+    line_sma.update_bar(pd.Series({'time': new_bar['time'], 'value': new_bar['SMA_5']}))
+    line_rsi.update_bar(pd.Series({'time': new_bar['time'], 'value': new_bar['RSI_14']}))
     all_clean &= log_check(len(chart.data) == initial_rows + 1, f"rows={len(chart.data)} == {initial_rows + 1}", errors, "append_rows")
     all_clean &= log_check(len(line_sma.data) == initial_rows + 1, f"SMA rows={len(line_sma.data)}", errors, "append_sma")
 
@@ -347,6 +361,8 @@ def test_update_bar():
         'SMA_5': 106, 'RSI_14': 60,
     }, index=['time', 'open', 'high', 'low', 'close', 'volume', 'open_interest', 'SMA_5', 'RSI_14'])
     chart.update_bar(update_bar)
+    line_sma.update_bar(pd.Series({'time': update_bar['time'], 'value': update_bar['SMA_5']}))
+    line_rsi.update_bar(pd.Series({'time': update_bar['time'], 'value': update_bar['RSI_14']}))
     all_clean &= log_check(len(chart.data) == initial_rows + 1, f"rows still {len(chart.data)} (no duplicate)", errors, "update_no_dup")
     # 值校验：更新后的 bar 所有字段
     last = chart.data.iloc[-1]
@@ -379,6 +395,8 @@ def test_update_bars():
 
     df = make_bar_data(20, 'D', 100, 42)
     chart.set(df)
+    line_sma.set(df[['time', 'SMA_5']].rename(columns={'SMA_5': 'value'}))
+    line_rsi.set(df[['time', 'RSI_14']].rename(columns={'RSI_14': 'value'}))
     initial_rows = len(chart.data)
 
     # 批量追加
@@ -386,6 +404,8 @@ def test_update_bars():
     batch = make_bar_data(10, 'D', 100, 99)
     batch['time'] = pd.date_range('2024-01-21', periods=10, freq='D')
     chart.update_bars(batch)
+    line_sma.update_bars(batch[['time', 'SMA_5']].rename(columns={'SMA_5': 'value'}))
+    line_rsi.update_bars(batch[['time', 'RSI_14']].rename(columns={'RSI_14': 'value'}))
     all_clean &= log_check(len(chart.data) == initial_rows + 10, f"rows={len(chart.data)} == {initial_rows + 10}", errors, "batch_rows")
     all_clean &= log_check(len(line_sma.data) == initial_rows + 10, f"SMA rows={len(line_sma.data)}", errors, "batch_sma")
 
@@ -442,7 +462,7 @@ def test_update_bars():
 #  测试 4: update_from_ticks() tick 聚合
 # ═══════════════════════════════════════════════════════
 
-def test_update_from_ticks():
+def test_update_ticks():
     sep = "=" * 60
     print(sep)
     print("  test_update_from_ticks")
@@ -461,7 +481,7 @@ def test_update_from_ticks():
     print("\n[1] update_from_ticks() basic ...")
     last_time = chart.candle._last_bar['time']
     ticks = make_tick_data(100, start_time=ts_to_dt(last_time) + pd.Timedelta(days=1), base_price=100, seed=99)
-    chart.update_from_ticks(ticks)
+    chart.update_ticks(ticks)
 
     # tick 聚合后应该产生新 bar
     ok = len(chart.data) > initial_rows
@@ -484,7 +504,7 @@ def test_update_from_ticks():
     expected_high = grouped['price'].max()
     expected_low = grouped['price'].min()
     expected_close = grouped['price'].last()
-    expected_vol = grouped['volume'].last()
+    expected_vol = grouped['volume'].sum()
     expected_oi = grouped['open_interest'].last()
     expected_times = list(grouped.groups)
 
@@ -529,7 +549,7 @@ def test_update_from_ticks():
     print("\n[2] update_from_ticks() cumulative volume ...")
     rows_before = len(chart.data)
     ticks2 = make_tick_data(50, start_time=ts_to_dt(chart.candle._last_bar['time']) + pd.Timedelta(days=1), base_price=100, seed=77)
-    chart.update_from_ticks(ticks2, cumulative_volume=True)
+    chart.update_ticks(ticks2)
     all_clean &= log_check(len(chart.data) >= rows_before, f"rows >= {rows_before}", errors, "cum_vol_rows")
 
     chart.exit()
@@ -691,13 +711,13 @@ def test_last_bar_filter():
 
 
 # ═══════════════════════════════════════════════════════
-#  测试 7: Line/Histogram 名字大小写保留
+#  测试 7: Line/Histogram 使用 value 列设置数据
 # ═══════════════════════════════════════════════════════
 
-def test_line_name_case_preserved():
+def test_line_value_column():
     sep = "=" * 60
     print(sep)
-    print("  test_line_name_case_preserved")
+    print("  test_line_value_column")
     print(sep)
 
     chart = Chart(width=800, height=600)
@@ -705,35 +725,56 @@ def test_line_name_case_preserved():
     errors = []
     all_clean = True
 
-    # 创建大小写混合名字的 Line
-    line_upper = chart.create_line(name='MySMA', color='yellow', width=2)
-    line_lower = chart.create_line(name='rsi', color='cyan', width=1)
+    line_sma = chart.create_line(name='MySMA', color='yellow', width=2)
+    line_rsi = chart.create_line(name='rsi', color='cyan', width=1)
+    hist = chart.create_histogram(name='vol_hist', color='green')
 
     df = make_bar_data(20, 'D', 100, 42)
-    df['MySMA'] = df['close'].rolling(5, min_periods=1).mean()
-    df['rsi'] = 50 + np.random.RandomState(42).randn(20) * 10
+    sma_values = df['close'].rolling(5, min_periods=1).mean()
+    rsi_values = pd.Series(50 + np.random.RandomState(42).randn(20) * 10)
 
-    print("\n[1] set() with mixed-case line names ...")
+    print("\n[1] set() with value column ...")
     chart.set(df)
+    line_sma.set(pd.DataFrame({'time': df['time'], 'value': sma_values}))
+    line_rsi.set(pd.DataFrame({'time': df['time'], 'value': rsi_values}))
+    hist.set(pd.DataFrame({'time': df['time'], 'value': df['volume']}))
 
     all_clean &= log_check(
-        len(line_upper.data) == 20,
-        f"MySMA rows={len(line_upper.data)}",
-        errors, "case_upper"
+        len(line_sma.data) == 20,
+        f"MySMA rows={len(line_sma.data)}",
+        errors, "value_upper"
     )
     all_clean &= log_check(
-        len(line_lower.data) == 20,
-        f"rsi rows={len(line_lower.data)}",
-        errors, "case_lower"
+        len(line_rsi.data) == 20,
+        f"rsi rows={len(line_rsi.data)}",
+        errors, "value_lower"
+    )
+    all_clean &= log_check(
+        len(hist.data) == 20,
+        f"hist rows={len(hist.data)}",
+        errors, "value_hist"
     )
 
-    # 验证数据值正确（不被小写化后丢失）
+    # 验证数据值正确
     print("\n[2] Verify data values match ...")
     all_clean &= log_check(
-        abs(line_upper.data.iloc[-1]['value'] - df['MySMA'].iloc[-1]) < 0.01,
+        abs(line_sma.data.iloc[-1]['value'] - sma_values.iloc[-1]) < 0.01,
         f"MySMA last value matches",
-        errors, "case_upper_val"
+        errors, "value_upper_val"
     )
+    all_clean &= log_check(
+        abs(line_rsi.data.iloc[-1]['value'] - rsi_values.iloc[-1]) < 0.01,
+        f"rsi last value matches",
+        errors, "value_lower_val"
+    )
+
+    # 验证缺少 value 列时抛出异常
+    print("\n[3] Verify missing value column raises error ...")
+    try:
+        line_sma.set(pd.DataFrame({'time': df['time'], 'close': df['close']}))
+        all_clean &= log_check(False, "should have raised ValueError", errors, "value_missing_raises")
+    except ValueError:
+        all_clean &= log_check(True, "ValueError raised for missing value column", errors, "value_missing_raises")
 
     chart.exit()
 
@@ -775,16 +816,6 @@ def test_util_functions():
 
     # ── normal_df 格式处理 ──
     print("\n[2] normal_df() format handling ...")
-    # date 列 → time
-    df_date = pd.DataFrame({'date': pd.date_range('2024-01-01', periods=5, freq='D'), 'value': range(5)})
-    ndf = normal_df(df_date)
-    all_clean &= log_check('time' in ndf.columns and 'date' not in ndf.columns,
-                            "date→time rename", errors, "normal_df_date")
-    # 大写列名 → 小写
-    df_upper = pd.DataFrame({'Time': pd.date_range('2024-01-01', periods=5, freq='D'), 'Value': range(5)})
-    ndf = normal_df(df_upper)
-    all_clean &= log_check('time' in ndf.columns and 'value' in ndf.columns,
-                            "uppercase→lowercase", errors, "normal_df_upper")
     # index 作为 time
     df_idx = pd.DataFrame({'value': range(5)}, index=pd.date_range('2024-01-01', periods=5, freq='D'))
     ndf = normal_df(df_idx)
@@ -1106,7 +1137,7 @@ def test_chaos_random_mixed():
             cumvol = rng.random() < 0.5
             ticks = make_random_ticks(n_ticks, start, seed=step)
             prev = chart.candle._last_bar.copy() if chart.candle._last_bar is not None else None
-            chart.update_from_ticks(ticks, cumulative_volume=cumvol)
+            chart.update_ticks(ticks)
             expected = compute_expected(expected, ticks, chart,
                                         is_ticks=True, cumulative_volume=cumvol,
                                         prev_last_bar=prev)
@@ -1128,7 +1159,7 @@ def test_chaos_random_mixed():
             start_t = last_ts + rng.randint(60, 1800)
             ticks = make_random_ticks(n_ticks, start_t, seed=step)
             prev = chart.candle._last_bar.copy() if chart.candle._last_bar is not None else None
-            chart.update_from_ticks(ticks, cumulative_volume=False)
+            chart.update_ticks(ticks)
             expected = compute_expected(expected, ticks, chart,
                                         is_ticks=True, cumulative_volume=False,
                                         prev_last_bar=prev)
@@ -1190,7 +1221,7 @@ def test_chaos_multi_level_fusion():
             cumvol = rng.random() < 0.5
             ticks = make_random_ticks(count, start, seed=100 + i)
             prev = chart.candle._last_bar.copy() if chart.candle._last_bar is not None else None
-            chart.update_from_ticks(ticks, cumulative_volume=cumvol)
+            chart.update_ticks(ticks)
             expected = compute_expected(expected, ticks, chart,
                                         is_ticks=True, cumulative_volume=cumvol,
                                         prev_last_bar=prev)
@@ -1238,7 +1269,7 @@ def test_chaos_last_bar_inheritance():
             seed=500 + batch,
         )
         prev = chart.candle._last_bar.copy() if chart.candle._last_bar is not None else None
-        chart.update_from_ticks(ticks, cumulative_volume=False)
+        chart.update_ticks(ticks)
         expected = compute_expected(expected, ticks, chart,
                                     is_ticks=True, cumulative_volume=False,
                                     prev_last_bar=prev)
@@ -1259,7 +1290,7 @@ def test_chaos_last_bar_inheritance():
             seed=600 + batch,
         )
         prev2 = chart2.candle._last_bar.copy() if chart2.candle._last_bar is not None else None
-        chart2.update_from_ticks(ticks, cumulative_volume=True)
+        chart2.update_ticks(ticks)
         expected2 = compute_expected(expected2, ticks, chart2,
                                      is_ticks=True, cumulative_volume=True,
                                      prev_last_bar=prev2)
@@ -1296,7 +1327,7 @@ def test_edge_cases():
     chart.update_bars(pd.DataFrame())
     all_clean &= log_check(len(chart.candle.data) == n_before,
                             "update_bars(empty) no change", errors, "empty_update_bars")
-    chart.update_from_ticks(pd.DataFrame())
+    chart.update_ticks(pd.DataFrame())
     all_clean &= log_check(len(chart.candle.data) == n_before,
                             "update_from_ticks(empty) no change", errors, "empty_update_ticks")
     chart.exit()
@@ -1345,12 +1376,12 @@ def test_edge_cases():
         'time': [pd.Timestamp(t, unit='s') for t in tick_times],
         'price': tick_prices,
     })
-    chart.update_from_ticks(ticks)
+    chart.update_ticks(ticks)
     # groupby 不依赖顺序，结果应与排序后一致
     sorted_ticks = ticks.sort_values('time').reset_index(drop=True)
     chart2 = Chart()
     chart2.set(make_bar_data(5, 'D', 100, 42))
-    chart2.update_from_ticks(sorted_ticks)
+    chart2.update_ticks(sorted_ticks)
     all_clean &= log_check(
         np.allclose(chart.candle.data.values, chart2.candle.data.values, atol=1e-6),
         "out-of-order ticks same result", errors, "ooo_ticks")
@@ -1416,10 +1447,10 @@ if __name__ == '__main__':
     results.append(('set_different_frequencies', test_set_different_frequencies()))
     results.append(('update_bar', test_update_bar()))
     results.append(('update_bars', test_update_bars()))
-    results.append(('update_from_ticks', test_update_from_ticks()))
+    results.append(('update_ticks', test_update_ticks()))
     results.append(('duplicate_time_merge', test_duplicate_time_merge()))
     results.append(('last_bar_filter', test_last_bar_filter()))
-    results.append(('line_name_case_preserved', test_line_name_case_preserved()))
+    results.append(('line_value_column', test_line_value_column()))
     results.append(('util_functions', test_util_functions()))
     results.append(('cross_level_aggregation', test_cross_level_aggregation()))
     results.append(('chaos_random_mixed', test_chaos_random_mixed()))

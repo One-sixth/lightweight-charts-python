@@ -39,3 +39,4 @@
 | 31 | `31_chart_sync` | 图表同步：`sync_id` 参数实现多图表时间轴和十字光标同步 | ✅ 已实现  |
 | 32 | `32_html_tab_chart` | HtmlTabChart + HTMLChart 演示：2 subcharts × 2 panes 布局、Tab 切换、绝对定位 | ✅ 已实现  |
 | 33 | `33_reset_sub` | reset_sub 子图内容重置：清空+重填+同步恢复+独立子图 | ✅ 已实现  |
+| 37 | `37_more_series_types` | 更多 Series 类型：AreaSeries 面积图 / OHLCBarSeries 美国线 / BaselineSeries 基准线 | ✅ 已实现  |

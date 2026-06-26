@@ -1,4 +1,4 @@
-import { ISeriesApi, LineData, Logical, MouseEventParams, PriceFormatBuiltIn, SeriesType } from "lightweight-charts";
+import { ISeriesApi, Logical, MouseEventParams, PriceFormatBuiltIn, SeriesType } from "lightweight-charts";
 import { Handler } from "./handler";
 import { htmlToElement } from "./global-params";
 
@@ -321,18 +321,34 @@ export class Legend {
 
             let data
             if (usingPoint && logical) {
-                data = e.series.dataByIndex(logical) as LineData
+                data = e.series.dataByIndex(logical) as any
             }
             else {
-                data = param.seriesData.get(e.series) as LineData
+                data = param.seriesData.get(e.series) as any
             }
-            if (!data?.value) return;
+            if (!data) return;
+
+            // OHLC 类型的 series（Bar/Candlestick）特殊处理
+            const seriesType = e.series.seriesType();
+            if (seriesType === 'Bar' || seriesType === 'Candlestick') {
+                if (data.open === undefined) return;
+                let ohlcStr = `<span style="color: ${e.solid};">️■</span>    ${e.name} : `
+                ohlcStr += `O ${this.legendItemFormat(data.open, this.handler.precision)} `
+                ohlcStr += `| H ${this.legendItemFormat(data.high, this.handler.precision)} `
+                ohlcStr += `| L ${this.legendItemFormat(data.low, this.handler.precision)} `
+                ohlcStr += `| C ${this.legendItemFormat(data.close, this.handler.precision)}`
+                e.div.innerHTML = ohlcStr
+                return
+            }
+
+            // 普通 value 类型的 series
+            if (data.value === undefined) return;
             let price;
-            if (e.series.seriesType() == 'Histogram') {
+            if (seriesType === 'Histogram') {
                 price = this.shorthandFormat(data.value)
             } else {
                 const format = e.series.options().priceFormat as PriceFormatBuiltIn
-                price = this.legendItemFormat(data.value, format.precision)   // couldn't this just be line.options().precision?
+                price = this.legendItemFormat(data.value, format.precision)
             }
             e.div.innerHTML = `<span style="color: ${e.solid};">️■</span>    ${e.name} : ${price}`
         })

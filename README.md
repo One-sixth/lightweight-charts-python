@@ -45,7 +45,7 @@ https://github.com/EsIstJosh/lightweight-charts-python
 以下是合并优化后的 Markdown 版本，保留了所有信息，并采用有序列表 + 表情符号，结构清晰易读：
 
 1. ✅ **序列批量更新 API** — `Line.update_bars()` / `Histogram.update_bars()` 一次性更新多个数据点，性能大幅提升
-2. 🚀 **K线批量更新** — `chart.update_bars()` / `chart.update_from_ticks()` 批量数据处理加速 10x
+2. 🚀 **K线批量更新** — `chart.update_bars()` / `chart.update_ticks()` 批量数据处理加速 10x
 3. 📊 **持仓量可视化** — Open Interest 独立 Y 轴缩放，与成交量叠加显示
 4. 🔄 **Reflex 集成** — `ReflexChart(StaticLWC)` 在 [Reflex](https://reflex.dev) 应用中嵌入 K线图；通过 postMessage 桥接实现增量实时更新；JS→Python 回调桥接将 crosshair_move 等事件自动转发到 State
 5. 🧩 **初始化幂等性** — 解决 Reflex 编译/运行时模块双重导入导致的图表重复创建问题
@@ -116,6 +116,137 @@ sub2 = chart.create_subchart(sync_id='main')    # 自动互相同步
 
 
 ---
+
+## ⚠️ 破坏性更改记录
+
+> **本栏目持续记录所有破坏性更改，除非明确说明，否则不会删除。**
+
+### v2.8.0 — 函数重命名
+
+| 旧名称 | 新名称 | 适用类 |
+|--------|--------|--------|
+| `update_from_tick()` | `update_tick()` | AbstractChart, SeriesCommon, CandleSeries |
+| `update_from_ticks()` | `update_ticks()` | AbstractChart, SeriesCommon, CandleSeries, VolumeSeries, OpenInterestSeries |
+
+旧名称暂时保留为转发包装器，但已标记为废弃，将在未来版本移除。
+
+```python
+# ❌ 旧写法
+chart.update_from_tick(tick)
+chart.update_from_ticks(ticks_df)
+
+# ✅ 新写法
+chart.update_tick(tick)
+chart.update_ticks(ticks_df)
+```
+
+### v2.8.0 — AbstractChart 不再联动设置 _lines
+
+`chart.set(df)` / `chart.update_bars(df)` / `chart.update_ticks(df)` **不再自动转发数据给 Line/Histogram 系列**。
+
+Line/Histogram 需要各自独立调用 `line.set(df)` / `line.update_bars(df)` 设置数据，DataFrame 必须包含 `time` 和 `value` 列。
+
+```python
+# ❌ 旧写法 — chart.set() 自动填充 sma line
+chart.set(df)  # df 包含 time, OHLC, volume, SMA_5 列
+sma.data  # 自动有数据
+
+# ✅ 新写法 — 手动设置 line
+chart.set(df)  # 只处理 OHLC + volume + OI
+sma.set(sma_df)  # sma_df 包含 time, value 列
+```
+
+### v2.8.0 — Line/Histogram 不再使用 self.name 匹配列名
+
+SeriesCommon（Line / Histogram）的 `set()` / `update_bars()` / `update_ticks()` 不再通过 `self.name` 自动匹配 DataFrame 列名。统一要求输入 DataFrame 包含 `value` 列。
+
+```python
+# ❌ 旧写法 — 用 series name 做列名
+sma = chart.create_line(name='SMA_5')
+df = pd.DataFrame({'time': ..., 'SMA_5': ...})
+sma.set(df)  # 自动匹配 SMA_5 列
+
+# ✅ 新写法 — 统一用 value 列
+sma = chart.create_line(name='SMA_5')
+df = pd.DataFrame({'time': ..., 'value': ...})
+sma.set(df)
+```
+
+### v2.8.0 — normal_df 移除小写转换和 date 列支持
+
+`normal_df()` 不再自动将列名转为小写，也不再自动将 `date` 列重命名为 `time`。
+
+输入 DataFrame 的列名**必须已经是正确的小写形式**（如 `time`, `open`, `high`, `low`, `close`, `value`）。
+
+```python
+# ❌ 旧写法 — normal_df 自动转小写 + date→time
+df = pd.DataFrame({'Date': dates, 'Open': ..., 'Close': ...})
+chart.set(df)  # 自动变成 time, open, close
+
+# ✅ 新写法 — 列名必须是小写 time
+df = pd.DataFrame({'time': dates, 'open': ..., 'close': ...})
+chart.set(df)
+
+# 从 CSV 读取时手动重命名
+df = pd.read_csv('data.csv').rename(columns={'date': 'time'})
+```
+
+### v2.8.0 — VolumeSeries / OpenInterestSeries 统一使用 value 列
+
+VolumeSeries 和 OpenInterestSeries 的 `set()` / `update_bars()` / `update_ticks()` 现在统一要求 `value` 列，不再使用 `volume` / `open_interest` 列名。
+
+AbstractChart 的 `set()` / `update_bars()` / `update_ticks()` 内部自动将 `volume` → `value`、`open_interest` → `value` 后转发，用户通过 chart 调用时无感知。
+
+```python
+# 独立创建时使用 value 列
+vol_df = pd.DataFrame({'time': ..., 'value': [100, 200, 300]})
+vol_series.set(vol_df)
+
+oi_df = pd.DataFrame({'time': ..., 'value': [5000, 6000, 7000]})
+oi_series.set(oi_df)
+```
+
+### v2.8.0 — 移除 AbstractChart.update_ticks 的 cumulative_volume 参数
+
+`chart.update_ticks(df)` 不再接受 `cumulative_volume` 参数。VolumeSeries 内部始终对 tick volume 求和。
+
+```python
+# ❌ 旧写法
+chart.update_ticks(ticks, cumulative_volume=True)
+
+# ✅ 新写法
+chart.update_ticks(ticks)
+```
+
+### v2.8.0 — 类重命名：Line → LineSeries，Histogram → HistogramSeries
+
+所有 Series 类现在统一使用 `XxxSeries` 命名。旧名称保留为别名，但已标记为废弃。
+
+| 旧名称 | 新名称 |
+|--------|--------|
+| `Line` | `LineSeries` |
+| `Histogram` | `HistogramSeries` |
+
+工厂方法 `create_line()` / `create_histogram()` 名称不变，但返回类型从 `Line` / `Histogram` 改为 `LineSeries` / `HistogramSeries`。
+
+```python
+# ❌ 旧写法
+from lightweight_charts import Line, Histogram
+line: Line = chart.create_line('SMA')
+
+# ✅ 新写法
+from lightweight_charts import LineSeries, HistogramSeries
+line: LineSeries = chart.create_line('SMA')
+```
+
+### v2.8.0 — VolumeSeries.update_ticks 不再接受 cumulative_volume 参数
+
+`VolumeSeries.update_ticks()`（原 `update_from_ticks()`）始终对同一时间窗口内的 tick volume 求和，不再提供 `cumulative_volume` 参数控制行为。
+
+`AbstractChart.update_ticks()` 的 `cumulative_volume` 参数仍然保留，透传给 CandleSeries。
+
+---
+
 
 # 🤖建议让 AI编程助手 先阅读 QUICK_REFERENCE.md 文件，快速了解全项目
 

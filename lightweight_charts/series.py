@@ -81,64 +81,37 @@ class SeriesCommon(Pane):
         """格式化单个时间值（委托到所属图表的时间级别）。"""
         return self._chart._single_datetime_format(arg)
 
-    def _check_value_name_conflict_and_rename(self, df: pd.DataFrame):
-        """检查 'value' 列和系列名是否同时存在。如果同时存在则报错。最后自动重命名系列名到value列。
+    def _check_has_value_column(self, df: pd.DataFrame):
+        """检查 DataFrame 是否包含 'value' 列，不包含则抛出异常。"""
+        if 'value' not in df.columns:
+            raise ValueError("DataFrame 缺少必需的 'value' 列。")
 
-        返回 rename 后的 df（不修改原 df），调用者需接收返回值。
-        注意：列名匹配为精确匹配，调用者需确保 df 中的列名与 self.name 一致。
-        """
-        is_value_in_df_cols = 'value' in df.columns
-        is_name_in_df_cols = self.name != '' and self.name in df.columns
-        if is_value_in_df_cols and is_name_in_df_cols:
-            raise ValueError(f'Column "value" and "{self.name}" cannot be used simultaneously.')
-        elif not is_value_in_df_cols and not is_name_in_df_cols:
-            raise ValueError(f'Column "value" or "{self.name}" is required.')
-        elif is_name_in_df_cols:
-            # 非 inplace rename，返回新 df，不修改调用者的 df
-            return df.rename(columns={self.name: 'value'})
-        else:
-            return df
+    def _prepare_line_data(self, df, _df_cleaned=False):
+        """清洗、校验、选列，返回准备好的 df（time + value + option_columns），或 None（空时）。"""
+        df = self._clean_update_bars(df, _df_cleaned)
+        if df is None or df.empty:
+            return None
+        self._check_has_value_column(df)
+        cols = ['time', 'value']
+        for c in self._option_columns:
+            if c in df.columns and c not in cols:
+                cols.append(c)
+        return df[cols]
 
     def set(self, df: Optional[pd.DataFrame] = None, _df_cleaned=False):
         """
         设置或更新系列数据。
 
-        :param df: 包含时间序列数据的 DataFrame，需要包含 'time' 列 或 'date' 列，否则使用 'index' 作为 ‘time’ 列。
-            对于 Line 系列，还需要 'value' 列或与系列同名的列。
-            对于 CandleSeries 系列，需要 'open', 'high', 'low', 'close' 列。
+        :param df: 包含 time 和 value 列的 DataFrame。
             如果为 None 或空 DataFrame，则清空数据。
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
-        # 重置系列
         self.run_script(f"{self.id}.series.setData([])")
         self.data = pd.DataFrame()
-
+        self._last_bar = None
         if df is None or df.empty:
             return
-
-        # 检查时间级别是否已初始化
-        if self._chart._interval is None:
-            raise RuntimeError(
-                f"时间级别未初始化。请先调用 chart.set(df) 或 chart.set_period(seconds)。"
-            )
-
-        if not _df_cleaned:
-            df = normal_df(df, exclude_lowercase=self.name)
-            df = self._time_to_bar_time(df)
-            df = merge_value_by_time(df)
-
-        df = self._check_value_name_conflict_and_rename(df)
-
-        # 构建输出列：time + value + 存在的 option_columns
-        cols = ['time', 'value']
-        for c in self._option_columns:
-            if c in df.columns and c not in cols:
-                cols.append(c)
-        df = df[cols]
-
-        self.data = df.copy()
-        self._last_bar = df.iloc[-1]
-        self.run_script(f'{self.id}.series.setData({js_data(df)}); ')
+        self.update_bars(df, _df_cleaned)
         if self.markers:
             self._update_markers()
 
@@ -172,7 +145,7 @@ class SeriesCommon(Pane):
 
         # 先直接清理格式
         if not _df_cleaned:
-            df = normal_df(df, exclude_lowercase=self.name)
+            df = normal_df(df)
             df = self._time_to_bar_time(df)
             df = merge_value_by_time(df)
 
@@ -191,109 +164,83 @@ class SeriesCommon(Pane):
 
         return df
 
-    def update_bars(self, df: pd.DataFrame):
+    def update_bars(self, df: pd.DataFrame, _df_cleaned=False):
         """
-        Batch-updates the series with multiple data points at once.
+        批量更新系列数据。
 
-        Processes each row from the DataFrame using the same logic as
-        update(), but collects all JavaScript commands into a single
-        batch for efficiency.  This mirrors CandleSeries.update_bars()
-        for Line and Histogram series.
-
-        :param df: DataFrame, must contain a 'time' column plus the
-                   series value column(s) (e.g. the line name column
-                   or a 'value' column for Histogram).
+        :param df: DataFrame，需要包含 time 和 value 列。
+        :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
-        if df.empty:
+        if df is None or df.empty:
             return
 
-        # 先直接清理格式
-        df = self._clean_update_bars(df)
-        df = self._check_value_name_conflict_and_rename(df)
-
-        # 构建输出列：time + value + 存在的 option_columns
-        cols = ['time', 'value']
-        for c in self._option_columns:
-            if c in df.columns and c not in cols:
-                cols.append(c)
-        df = df[cols]
-
-        # 确保时间是单调递增
-        if len(df) > 1:
-            if not df['time'].is_monotonic_increasing:
-                raise ValueError("Time column must be monotonic increasing.")
-
-        # 确保时间都在 _last_bar 后面
-        if self._last_bar is not None:
-            mask = df['time'] >= self._last_bar['time']
-            df = df[mask]
-            n_drop = len(mask) - mask.sum()
-            if n_drop > 0:
-                print(f'Warning! Drop {n_drop} lines because early than _last_bar.')
-
-            if df.empty:
-                return
-
-        # 生成 js 命令
-        js_commands = []
-        for _, row in df.iterrows():
-            js_commands.append(f'{self.id}.series.update({js_data(row)});')
+        df = self._prepare_line_data(df, _df_cleaned)
+        if df is None or df.empty:
+            return
 
         if self.data is None or self.data.empty:
-            # 如果数据为空，则直接设置新数据
-            self.data = df
-        elif self.data['time'].iloc[-1] == df['time'].iloc[0]:
-            # 如果最后一个时间点和第一个时间点相同，则去除原数据的最后一个点，合并新数据
-            self.data = pd.concat([self.data.iloc[:-1], df], ignore_index=True)
+            # 首批数据 -> setData 批量写入
+            self.data = df.copy()
+            self._last_bar = df.iloc[-1]
+            self.run_script(f'{self.id}.series.setData({js_data(df)})')
         else:
-            # 如果最后一个时间点和第一个时间点不同，则直接合并新数据
-            self.data = pd.concat([self.data, df], ignore_index=True)
+            # 后续数据 -> per-row update
+            js_commands = [f'{self.id}.series.update({js_data(row)});' for _, row in df.iterrows()]
+            self.run_script(' '.join(js_commands))
+            if self.data['time'].iloc[-1] == df['time'].iloc[0]:
+                self.data = pd.concat([self.data.iloc[:-1], df], ignore_index=True)
+            else:
+                self.data = pd.concat([self.data, df], ignore_index=True)
+            self._last_bar = df.iloc[-1]
 
-        self._last_bar = df.iloc[-1]
-
-        # 一次性执行
-        self.run_script(' '.join(js_commands))
-
-    def update_from_tick(self, series: pd.Series):
+    def update_tick(self, series: pd.Series):
         """
         使用单个 tick 更新图表。
         :param series: 包含 time 和 value 的 Series
         """
-        self.update_from_ticks(series.to_frame().T)
+        self.update_ticks(series.to_frame().T)
 
-    def update_from_ticks(self, df: pd.DataFrame, _df_cleaned=False):
+    def update_ticks(self, df: pd.DataFrame, _df_cleaned=False):
         """
         批量使用 tick 更新图表，内部自动按时间分片取 last 值。
 
         通用版本：按 time 分组，取每组最后一条数据的 value。
         CandleSeries 会覆盖此方法，实现 OHLC 聚合。
 
-        :param df: DataFrame，需要 time 列和 value 列（或与系列同名的列）
+        :param df: DataFrame，需要 time 列和 value 列
         :param _df_cleaned: True 表示数据已清洗过，跳过重复清洗。
         """
         if df.empty:
             return
 
         if self._last_bar is None:
-            raise AssertionError('update_from_ticks() must be called after set()')
+            raise AssertionError('update_ticks() must be called after set()')
 
         if not _df_cleaned:
-            df = normal_df(df, exclude_lowercase=self.name)
+            df = normal_df(df)
             df = self._time_to_bar_time(df)
 
-        # 确定值列名
-        value_col = self.name if self.name and self.name in df.columns else 'value'
-        if value_col not in df.columns:
-            raise ValueError(f"DataFrame 缺少值列 '{value_col}'")
+        if 'value' not in df.columns:
+            raise ValueError("DataFrame 缺少必需的 'value' 列。")
 
         # 按时间分组，取每组最后一条
         group_df = df.groupby('time')
         bars = pd.DataFrame({
             'time': list(group_df.groups),
-            value_col: group_df[value_col].last().array,
+            'value': group_df['value'].last().array,
         })
 
         self.update_bars(bars)
+
+    # ── 已废弃的旧名称，保留转发兼容 ──
+
+    def update_from_tick(self, series: pd.Series):
+        """.. deprecated:: 使用 update_tick() 代替。"""
+        return self.update_tick(series)
+
+    def update_from_ticks(self, df: pd.DataFrame, _df_cleaned=False):
+        """.. deprecated:: 使用 update_ticks() 代替。"""
+        return self.update_ticks(df, _df_cleaned)
 
     def _update_markers(self):
         auto_scale = jbool(self._chart._marker_auto_scale)
@@ -456,7 +403,7 @@ class SeriesCommon(Pane):
             }})''')
 
 
-class Line(SeriesCommon):
+class LineSeries(SeriesCommon):
     """折线系列，用于绘制折线图。"""
     def __init__(self, chart, name, color, style, width, price_line, price_label, price_scale_id=None,
                  crosshair_marker=True, pane_index: int = 0,
@@ -492,7 +439,7 @@ class Line(SeriesCommon):
         super().delete()
 
 
-class Histogram(SeriesCommon):
+class HistogramSeries(SeriesCommon):
     """柱状图系列，常用于成交量或持仓量展示。
 
     支持通过 ``option_columns`` 传入可选列（如 ``['color']``），set/update_bars 时若输入 df 中存在这些列则自动携带到 JS 端。
@@ -611,35 +558,36 @@ class VolumeSeries(SeriesCommon):
                 scaleMargins: {{top: {self.scale_margin_top}, bottom: {self.scale_margin_bottom}}}
             }});0''')
 
+    def _prepare_vol_df(self, df, _df_cleaned=False):
+        """清洗并准备成交量 DataFrame。
+
+        :return: 准备好的 vol_df（time, value, open, close, color），或 None（无 value 列时）。
+        :raises ValueError: 缺少 open 或 close 列时抛出异常。
+        """
+        df = self._clean_df(df, _df_cleaned)
+        if 'value' not in df.columns:
+            return None
+        for col in ('open', 'close'):
+            if col not in df.columns:
+                raise ValueError(f"VolumeSeries 需要 '{col}' 列用于涨跌着色。")
+        vol_df = df[['time', 'value', 'open', 'close']].copy()
+        # 根据 OHLC 着色
+        vol_df['color'] = self.down_color
+        vol_df.loc[df['close'] > df['open'], 'color'] = self.up_color
+        return vol_df
+
     def set(self, df: pd.DataFrame, _df_cleaned=False):
         """设置成交量数据。自动根据 OHLC 着色。
 
-        :param df: DataFrame，需要包含 time 和 volume 列。如果包含 open/close 列则自动着色，否则使用默认色。
+        :param df: DataFrame，需要包含 time 和 value 列。如果包含 open/close 列则自动着色，否则使用默认色。
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
         self.run_script(f'{self.id}.series.setData([])')
         self.data = pd.DataFrame()
-
+        self._last_bar = None
         if df is None or df.empty:
             return
-
-        if 'volume' not in df.columns:
-            return
-
-        df = self._clean_df(df, _df_cleaned)
-
-        vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
-
-        # 根据 OHLC 着色
-        if 'open' in df.columns and 'close' in df.columns:
-            vol_df['color'] = self.down_color
-            vol_df.loc[df['close'] > df['open'], 'color'] = self.up_color
-        else:
-            vol_df['color'] = self.down_color
-
-        self.data = vol_df.copy()
-        self._last_bar = vol_df.iloc[-1]
-        self.run_script(f'{self.id}.series.setData({js_data(vol_df)})')
+        self.update_bars(df, _df_cleaned)
 
     def update_bar(self, series: pd.Series):
         """更新最新一根 bar 的成交量或追加新 bar。"""
@@ -647,73 +595,94 @@ class VolumeSeries(SeriesCommon):
 
     update = update_bar
 
-    def update_bars(self, df: pd.DataFrame, _df_cleaned=False):
+    def update_bars(self, df: pd.DataFrame, _df_cleaned=False, _cumulative_volume=False):
         """批量更新成交量。
 
-        :param df: DataFrame，需要包含 time 和 volume 列
+        :param df: DataFrame，需要包含 time 和 value 列
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
+        :param _cumulative_volume: 内部参数，True 时将新 volume 累加到已有 bar（由 update_ticks 传入）。
         """
         if df is None or df.empty:
             return
 
-        df = self._clean_df(df, _df_cleaned)
-
-        if 'volume' not in df.columns:
+        vol_df = self._prepare_vol_df(df, _df_cleaned)
+        if vol_df is None or vol_df.empty:
             return
 
-        vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
-
-        if 'open' in df.columns and 'close' in df.columns:
-            vol_df['color'] = self.down_color
-            vol_df.loc[df['close'] > df['open'], 'color'] = self.up_color
-        else:
-            vol_df['color'] = self.down_color
-
-        # 过滤旧数据（与 CandleSeries/SeriesCommon 一致）
+        # 过滤旧数据
         if self._last_bar is not None:
             mask = vol_df['time'] >= self._last_bar['time']
             vol_df = vol_df[mask]
             if vol_df.empty:
                 return
 
-        js_commands = []
-        for _, row in vol_df.iterrows():
-            js_commands.append(f'{self.id}.series.update({js_data(row)})')
-        self.run_script('; '.join(js_commands))
-
-        # 维护 Python 端数据（与 SeriesCommon 一致）
         if self.data is None or self.data.empty:
-            self.data = vol_df[['time', 'value']].copy()
-        elif self.data['time'].iloc[-1] == vol_df['time'].iloc[0]:
-            self.data = pd.concat([self.data.iloc[:-1], vol_df[['time', 'value']]], ignore_index=True)
+            # 首批数据 → setData 批量写入
+            self.data = vol_df.copy()
+            self.run_script(f'{self.id}.series.setData({js_data(vol_df)})')
+
         else:
-            self.data = pd.concat([self.data, vol_df[['time', 'value']]], ignore_index=True)
+            # 后续数据 → per-row update
+            df_len = len(vol_df)
+            if self.data['time'].iloc[-1] == vol_df['time'].iloc[0]:
+                if _cumulative_volume:
+                    # 累加 volume
+                    value_col_idx = int(vol_df.columns.get_loc("value"))
+                    new_vol = self.data['value'].iloc[-1] + vol_df.iat[0, value_col_idx]
+                    vol_df.iat[0, value_col_idx] = new_vol
+                    # 保留已有 open，更新 close
+                    if 'open' in vol_df.columns and 'open' in self.data.columns:
+                        vol_df.iat[0, int(vol_df.columns.get_loc("open"))] = self.data['open'].iloc[-1]
+                    if 'close' in vol_df.columns and 'close' in self.data.columns:
+                        pass  # close 保持新 batch 的值（最新价）
+                    # 重算颜色
+                    if 'color' in vol_df.columns:
+                        o = vol_df.iat[0, int(vol_df.columns.get_loc("open"))]
+                        c = vol_df.iat[0, int(vol_df.columns.get_loc("close"))]
+                        vol_df.iat[0, int(vol_df.columns.get_loc("color"))] = self.up_color if c > o else self.down_color
+                    # -------------------------------------------------------
+                self.data = pd.concat([self.data.iloc[:-1], vol_df], ignore_index=True)
+            else:
+                self.data = pd.concat([self.data, vol_df], ignore_index=True)
+            vol_df = self.data.iloc[-df_len:]
+            js_commands = [f'{self.id}.series.update({js_data(row)})' for _, row in vol_df.iterrows()]
+            self.run_script('; '.join(js_commands))
+
         self._last_bar = vol_df.iloc[-1]
 
-    def update_from_ticks(self, df, cumulative_volume=False, _df_cleaned=False):
+    def update_ticks(self, df, _df_cleaned=False):
         """tick 数据聚合为 bar 后更新成交量。
 
-        cumulative_volume=True 时对同一 bar 内的 volume 求和，
-        False 时取最后一条。聚合后委托 update_bars 统一处理过滤/更新/维护。
+        同一时间窗口内的 tick volume 始终求和（每笔 tick 都是增量）。
+        如果输入包含 open/close 列则用于涨跌着色，否则使用默认色。
+        聚合后委托 update_bars 统一处理过滤/更新/维护。
         """
         if df is None or df.empty:
             return
+
         if self._last_bar is None:
-            raise AssertionError('update_from_ticks() must be called after set()')
+            raise AssertionError('update_ticks() must be called after set()')
 
         df = self._clean_df(df, _df_cleaned)
 
-        if 'volume' not in df.columns:
+        if 'value' not in df.columns:
             return
 
         group_df = df.groupby('time')
-        if cumulative_volume:
-            vol_series = group_df['volume'].sum()
-        else:
-            vol_series = group_df['volume'].last()
+        vol_series = group_df['value'].sum()
 
-        bars = pd.DataFrame({'time': vol_series.index, 'volume': vol_series.values})
-        self.update_bars(bars, _df_cleaned=True)
+        bars = pd.DataFrame({'time': vol_series.index, 'value': vol_series.values})
+
+        # 如果有 open/close 列，保留供着色用
+        if 'open' in df.columns and 'close' in df.columns:
+            bars['open'] = group_df['open'].first().values
+            bars['close'] = group_df['close'].last().values
+
+        self.update_bars(bars, _df_cleaned=True, _cumulative_volume=True)
+
+    def update_from_ticks(self, df, _df_cleaned=False):
+        """.. deprecated:: 使用 update_ticks() 代替。"""
+        return self.update_ticks(df, _df_cleaned)
 
     def config(self, scale_margin_top: float = None, scale_margin_bottom: float = None,
                up_color: str = None, down_color: str = None):
@@ -822,88 +791,6 @@ class OpenInterestSeries(SeriesCommon):
             0
         ''')
 
-    def set(self, df: pd.DataFrame, _df_cleaned=False):
-        """设置持仓量数据。
-
-        :param df: DataFrame，需要包含 time 和 open_interest 列
-        :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
-        """
-        self.run_script(f'{self.id}.series.setData([])')
-        self.data = pd.DataFrame()
-
-        if df is None or df.empty:
-            return
-
-        if 'open_interest' not in df.columns:
-            return
-
-        df = self._clean_df(df, _df_cleaned)
-
-        oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
-        self.data = oi_df.copy()
-        self._last_bar = oi_df.iloc[-1]
-        self.run_script(f'{self.id}.series.setData({js_data(oi_df)})')
-
-    def update_bar(self, series: pd.Series):
-        """更新最新一根 bar 的持仓量或追加新 bar。"""
-        self.update_bars(series.to_frame().T)
-
-    update = update_bar
-
-    def update_bars(self, df: pd.DataFrame, _df_cleaned=False):
-        """批量更新持仓量。
-
-        :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
-        """
-        if df is None or df.empty:
-            return
-
-        df = self._clean_df(df, _df_cleaned)
-
-        if 'open_interest' not in df.columns:
-            return
-
-        oi_df = df[['time', 'open_interest']].rename(columns={'open_interest': 'value'})
-
-        # 过滤旧数据（与 CandleSeries/SeriesCommon 一致）
-        if self._last_bar is not None:
-            mask = oi_df['time'] >= self._last_bar['time']
-            oi_df = oi_df[mask]
-            if oi_df.empty:
-                return
-
-        js_commands = []
-        for _, row in oi_df.iterrows():
-            js_commands.append(f'{self.id}.series.update({js_data(row)})')
-        self.run_script('; '.join(js_commands))
-
-        # 维护 Python 端数据（与 SeriesCommon 一致）
-        if self.data is None or self.data.empty:
-            self.data = oi_df[['time', 'value']].copy()
-        elif self.data['time'].iloc[-1] == oi_df['time'].iloc[0]:
-            self.data = pd.concat([self.data.iloc[:-1], oi_df[['time', 'value']]], ignore_index=True)
-        else:
-            self.data = pd.concat([self.data, oi_df[['time', 'value']]], ignore_index=True)
-        self._last_bar = oi_df.iloc[-1]
-
-    def update_from_ticks(self, df, cumulative_volume=False, _df_cleaned=False):
-        """tick 数据聚合为 bar 后更新持仓量。聚合后委托 update_bars 统一处理过滤/更新/维护。"""
-        if df is None or df.empty:
-            return
-        if self._last_bar is None:
-            raise AssertionError('update_from_ticks() must be called after set()')
-
-        df = self._clean_df(df, _df_cleaned)
-
-        if 'open_interest' not in df.columns:
-            return
-
-        group_df = df.groupby('time')
-        oi_series = group_df['open_interest'].last()
-
-        bars = pd.DataFrame({'time': oi_series.index, 'open_interest': oi_series.values})
-        self.update_bars(bars, _df_cleaned=True)
-
     def config(self, color: str = None, line_width: int = None,
                scale_margin_top: float = None, scale_margin_bottom: float = None):
         """配置持仓量样式。"""
@@ -926,11 +813,6 @@ class OpenInterestSeries(SeriesCommon):
                     autoScale: true,
                 }})
             ''')
-
-    def delete(self):
-        """删除持仓量系列。"""
-        super().delete()
-
 
 class CandleSeries(SeriesCommon):
     """独立K线系列，可在任意 pane 上绘制 OHLC 数据，无 volume/open interest。
@@ -1129,38 +1011,39 @@ class CandleSeries(SeriesCommon):
 
         self.run_script(' '.join(js_commands))
 
-    def update_from_tick(self, series: pd.Series, cumulative_volume: bool = False):
+    def update_tick(self, series: pd.Series):
         """
         使用单个 tick 更新图表。
         :param series: labels: date/time, price, [volume, open_interest]
-        :param cumulative_volume: 是否累加成交量
         """
-        self.update_from_ticks(series.to_frame().T, cumulative_volume=cumulative_volume)
+        self.update_ticks(series.to_frame().T)
 
-    def update_from_ticks(self, df: pd.DataFrame, cumulative_volume: bool = False, _df_cleaned=False):
+    def update_ticks(self, df: pd.DataFrame, _df_cleaned=False):
         """
         批量使用 tick 更新图表，内部自动聚合成 bar。
 
-        :param df: DataFrame with columns: date/time, price, [volume, open_interest]
-        :param cumulative_volume: If True, adds tick volume onto the latest bar's volume.
+        :param df: DataFrame with columns: time, value (= price)
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
         if df.empty:
             return
 
         if self._last_bar is None:
-            raise AssertionError('update_from_ticks() must be called after set()')
+            raise AssertionError('update_ticks() must be called after set()')
 
         df = self._clean_df(df, _df_cleaned)
+
+        if 'value' not in df.columns:
+            raise ValueError("DataFrame 缺少必需的 'value' 列。")
 
         group_df = df.groupby('time')
 
         bars = pd.DataFrame({
             'time': list(group_df.groups),
-            'open': group_df['price'].first().array,
-            'high': group_df['price'].max().array,
-            'low': group_df['price'].min().array,
-            'close': group_df['price'].last().array,
+            'open': group_df['value'].first().array,
+            'high': group_df['value'].max().array,
+            'low': group_df['value'].min().array,
+            'close': group_df['value'].last().array,
         })
 
         if self._last_bar['time'] == bars['time'].iloc[0]:
@@ -1169,6 +1052,9 @@ class CandleSeries(SeriesCommon):
             bars.iloc[0, 3] = min(self._last_bar['low'], bars.iloc[0, 3])
 
         self.update_bars(bars)
+
+    update_from_tick = update_tick
+    update_from_ticks = update_ticks
 
     def price_scale(
         self,
@@ -1210,3 +1096,256 @@ class CandleSeries(SeriesCommon):
     def delete(self):
         """删除此 K 线系列。"""
         super().delete()
+
+
+class AreaSeries(SeriesCommon):
+    """面积图系列，折线下方填充渐变色。
+
+    适用于展示指标的 magnitude，如均线面积、波动率面积等。
+
+    用法示例::
+
+        df = pd.DataFrame({'time': [1,2,3], 'value': [10,20,15]})
+        area = chart.create_area(name='SMA', color='#2196F3')
+        area.set(df)
+    """
+    def __init__(self, chart, name: str = '', color: str = '#2196F3',
+                 line_style: LINE_STYLE = 'solid', line_width: int = 2,
+                 top_color: str = 'rgba(33, 150, 243, 0.4)',
+                 bottom_color: str = 'rgba(33, 150, 243, 0)',
+                 relative_gradient: bool = False,
+                 invert_filled_area: bool = False,
+                 price_line: bool = True, price_label: bool = True,
+                 price_scale_id: Optional[str] = None,
+                 crosshair_marker: bool = True,
+                 pane_index: int = 0):
+        """
+        :param chart: 所属的 AbstractChart 实例
+        :param name: 系列名称（用于图例标识）
+        :param color: 线条颜色
+        :param line_style: 线条样式（solid/dotted/dashed 等）
+        :param line_width: 线条宽度
+        :param top_color: 面积顶部渐变颜色（RGBA，含透明度）
+        :param bottom_color: 面积底部渐变颜色（RGBA，含透明度）
+        :param relative_gradient: 渐变是否相对于基准值
+        :param invert_filled_area: 是否反转填充区域（填充线上方而非下方）
+        :param price_line: 是否显示价格线
+        :param price_label: 是否显示价格标签
+        :param price_scale_id: 价格尺度 ID
+        :param crosshair_marker: 十字光标标记
+        :param pane_index: 面板索引
+        """
+        super().__init__(chart, name, pane_index)
+        self.color = color
+
+        self.run_script(f'''
+            {self.id} = {self._chart.id}.createAreaSeries(
+                "{name}",
+                {{
+                    lineColor: '{color}',
+                    topColor: '{top_color}',
+                    bottomColor: '{bottom_color}',
+                    lineWidth: {line_width},
+                    lineStyle: {as_enum(line_style, LINE_STYLE)},
+                    relativeGradient: {jbool(relative_gradient)},
+                    invertFilledArea: {jbool(invert_filled_area)},
+                    lastValueVisible: {jbool(price_label)},
+                    priceLineVisible: {jbool(price_line)},
+                    crosshairMarkerVisible: {jbool(crosshair_marker)},
+                    priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
+                }},
+                {pane_index}
+            );null''')
+
+    def delete(self):
+        """删除此面积图系列。"""
+        super().delete()
+
+
+class OHLCBarSeries(CandleSeries):
+    """美国线（OHLC 横向柱状图）系列。
+
+    继承自 CandleSeries，共享全部 OHLC 数据处理逻辑（set/update_bars/update_ticks）。
+    仅覆盖 JS 创建方法（BarSeries 替代 CandlestickSeries）和样式配置。
+
+    与 K 线使用同一套 OHLC 数据，但用横向短横表示 open（左）和 close（右），
+    无矩形实体，适合习惯美股经典图表风格的用户。
+
+    用法示例::
+
+        df = pd.DataFrame({'time': [1,2,3], 'open': [10,12,11], 'high': [15,16,14], 'low': [8,10,9], 'close': [13,11,14]})
+        bar = chart.create_ohlc_bar(name='美国线')
+        bar.set(df)
+    """
+    def __init__(self, chart, name: str = '',
+                 up_color: str = '#26a69a', down_color: str = '#ef5350',
+                 open_visible: bool = True, thin_bars: bool = True,
+                 price_line: bool = False, price_label: bool = True,
+                 price_scale_id: Optional[str] = None,
+                 crosshair_marker: bool = True,
+                 pane_index: int = 0):
+        """
+        :param chart: 所属的 AbstractChart 实例
+        :param name: 系列名称
+        :param up_color: 上涨颜色（close > open）
+        :param down_color: 下跌颜色（close <= open）
+        :param open_visible: 是否显示 open 横线
+        :param thin_bars: 是否用细棒显示
+        :param price_line: 是否显示价格线
+        :param price_label: 是否显示价格标签
+        :param price_scale_id: 价格尺度 ID
+        :param crosshair_marker: 十字光标标记
+        :param pane_index: 面板索引
+        """
+        # 跳过 CandleSeries.__init__，直接调用 SeriesCommon.__init__
+        # 避免 CandleSeries 创建 CandlestickSeries JS 对象
+        SeriesCommon.__init__(self, chart, name, pane_index)
+
+        self.up_color = up_color
+        self.down_color = down_color
+        self.open_visible = open_visible
+        self.thin_bars = thin_bars
+        self.price_line = price_line
+        self.price_label = price_label
+        self.price_scale_id = price_scale_id
+        self.crosshair_marker = crosshair_marker
+        self._dont_add_list = False
+
+        self._build()
+
+    def _build(self):
+        """创建 JS 端 BarSeries 对象。"""
+        self.run_script(f'''
+            {self.id} = {self._chart.id}.createOHLCBarSeries(
+                "{self.name}",
+                {{
+                    upColor: '{self.up_color}',
+                    downColor: '{self.down_color}',
+                    openVisible: {jbool(self.open_visible)},
+                    thinBars: {jbool(self.thin_bars)},
+                    lastValueVisible: {jbool(self.price_label)},
+                    priceLineVisible: {jbool(self.price_line)},
+                    crosshairMarkerVisible: {jbool(self.crosshair_marker)},
+                    priceScaleId: {f'"{self.price_scale_id}"' if self.price_scale_id else 'undefined'},
+                }},
+                {self.pane_index}
+            );
+            0;
+        ''')
+
+    def candle_style(self, *args, **kwargs):
+        """美国线不支持 candle_style，请使用 bar_style() 代替。"""
+        raise AttributeError("OHLCBarSeries 没有 candle_style，请使用 bar_style() 代替")
+
+    def bar_style(self, up_color: str = '', down_color: str = '',
+                  open_visible: bool = None, thin_bars: bool = None):
+        """
+        修改美国线样式。
+
+        :param up_color: 上涨颜色（留空则不变）
+        :param down_color: 下跌颜色（留空则不变）
+        :param open_visible: 是否显示 open 横线（None 则不变）
+        :param thin_bars: 是否用细棒显示（None 则不变）
+        """
+        opts = {}
+        if up_color:
+            self.up_color = up_color
+            opts['upColor'] = up_color
+        if down_color:
+            self.down_color = down_color
+            opts['downColor'] = down_color
+        if open_visible is not None:
+            self.open_visible = open_visible
+            opts['openVisible'] = open_visible
+        if thin_bars is not None:
+            self.thin_bars = thin_bars
+            opts['thinBars'] = thin_bars
+        if opts:
+            self.run_script(f"{self.id}.series.applyOptions({js_json(opts)})")
+
+    def delete(self):
+        """删除此美国线系列。"""
+        super().delete()
+
+
+class BaselineSeries(SeriesCommon):
+    """基准线系列，以某个基准值为界，上方/下方分别着色。
+
+    适合展示相对于某个参考值（如零轴、均线、开盘价）的变化。
+
+    用法示例::
+
+        df = pd.DataFrame({'time': [1,2,3], 'value': [10, -5, 8]})
+        baseline = chart.create_baseline(name='RSI偏差', base_value=0)
+        baseline.set(df)
+    """
+    def __init__(self, chart, name: str = '',
+                 base_value: float = 0,
+                 top_fill_color1: str = 'rgba(38, 166, 154, 0.28)',
+                 top_fill_color2: str = 'rgba(38, 166, 154, 0.05)',
+                 top_line_color: str = 'rgba(38, 166, 154, 1)',
+                 bottom_fill_color1: str = 'rgba(239, 83, 80, 0.05)',
+                 bottom_fill_color2: str = 'rgba(239, 83, 80, 0.28)',
+                 bottom_line_color: str = 'rgba(239, 83, 80, 1)',
+                 line_width: int = 2,
+                 line_style: LINE_STYLE = 'solid',
+                 relative_gradient: bool = False,
+                 price_line: bool = True, price_label: bool = True,
+                 price_scale_id: Optional[str] = None,
+                 crosshair_marker: bool = True,
+                 pane_index: int = 0):
+        """
+        :param chart: 所属的 AbstractChart 实例
+        :param name: 系列名称
+        :param base_value: 基准值，上方区域和下方区域的分界线
+        :param top_fill_color1: 上方区域渐变起始色
+        :param top_fill_color2: 上方区域渐变结束色
+        :param top_line_color: 上方区域线条颜色
+        :param bottom_fill_color1: 下方区域渐变起始色
+        :param bottom_fill_color2: 下方区域渐变结束色
+        :param bottom_line_color: 下方区域线条颜色
+        :param line_width: 线条宽度
+        :param line_style: 线条样式
+        :param relative_gradient: 渐变是否相对于基准值
+        :param price_line: 是否显示价格线
+        :param price_label: 是否显示价格标签
+        :param price_scale_id: 价格尺度 ID
+        :param crosshair_marker: 十字光标标记
+        :param pane_index: 面板索引
+        """
+        super().__init__(chart, name, pane_index)
+
+        self.run_script(f'''
+            {self.id} = {self._chart.id}.createBaselineSeries(
+                "{name}",
+                {{
+                    baseValue: {{ type: 'price', price: {base_value} }},
+                    topFillColor1: '{top_fill_color1}',
+                    topFillColor2: '{top_fill_color2}',
+                    topLineColor: '{top_line_color}',
+                    bottomFillColor1: '{bottom_fill_color1}',
+                    bottomFillColor2: '{bottom_fill_color2}',
+                    bottomLineColor: '{bottom_line_color}',
+                    lineWidth: {line_width},
+                    lineStyle: {as_enum(line_style, LINE_STYLE)},
+                    relativeGradient: {jbool(relative_gradient)},
+                    lastValueVisible: {jbool(price_label)},
+                    priceLineVisible: {jbool(price_line)},
+                    crosshairMarkerVisible: {jbool(crosshair_marker)},
+                    priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
+                }},
+                {pane_index}
+            );null''')
+
+    def delete(self):
+        """删除此基准线系列。"""
+        super().delete()
+
+
+# ── 已废弃的旧名称，保留兼容 ──
+
+Line = LineSeries
+""".. deprecated:: 使用 LineSeries 代替。"""
+
+Histogram = HistogramSeries
+""".. deprecated:: 使用 HistogramSeries 代替。"""
