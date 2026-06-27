@@ -73,4 +73,5 @@ if __name__ == '__main__':
     print("    Coordinates will print here in real-time.\n")
     print("    (press Ctrl+C in console to exit)\n")
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()

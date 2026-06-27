@@ -95,7 +95,8 @@ def demo_watchlist_table():
     row_googl.text_color('Price', '#ff0000')  # 价格为红色
     row_msft.text_color('Chg%', '#00ff00')  # 涨幅为绿色
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()
 
 
 def demo_position_table():
@@ -135,7 +136,8 @@ def demo_position_table():
     pos_tsla.text_color('P&L', '#ff0000')  # 亏损
     pos_nvda.text_color('P&L', '#00ff00')  # 盈利
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()
 
 
 def demo_dynamic_update():
@@ -196,7 +198,8 @@ def demo_dynamic_update():
         print(f"更新 #{i+1}: {current_time}")
 
     print("动态更新演示完成！")
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()
 
 
 def demo_multi_tables():
@@ -257,7 +260,8 @@ def demo_multi_tables():
     orders.new_row('SELL', 'TSLA', '250.00', 'Filled')
     orders.new_row('BUY', 'AMD', '150.00', 'Pending')
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()
 
 
 if __name__ == '__main__':

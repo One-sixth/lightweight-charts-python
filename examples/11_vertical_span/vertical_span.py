@@ -36,4 +36,5 @@ if __name__ == '__main__':
         color='rgba(250, 30, 128, 0.7)',
     )
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()

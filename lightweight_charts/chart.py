@@ -13,7 +13,7 @@ import webview
 from webview.errors import JavascriptException
 
 from . import abstract
-from .util import parse_event_message, FLOAT, Position
+from .util import parse_event_message, Position
 
 
 def _get_native_handle(window):
@@ -79,7 +79,25 @@ class PyWV:
 
         self.callback_api = CallbackAPI(emit_q)
         self.windows: typing.List[webview.Window] = []
-        self.loop()
+
+        self._init_phase()
+
+    def _init_phase(self):
+        """初始化阶段：处理 create_window 命令，等待 start 命令启动 GUI 循环。"""
+        while True:
+            try:
+                i, arg = self.queue.get(timeout=2)
+            except Empty:
+                continue
+
+            if i == 'start':
+                webview.start(debug=arg, func=self._event_loop)
+                self.is_alive = False
+                self.emit_queue.put('exit')
+                return
+
+            if i == 'create_window':
+                self.create_window(*arg)
 
     def create_window(
         self, width, height, x, y, screen=None, on_top=False,
@@ -114,66 +132,71 @@ class PyWV:
         self.windows[-1].events.loaded += lambda: self.loaded_event.set()
         self.windows[-1].events.closed += lambda: setattr(self, 'is_alive', False)
 
-
-    def loop(self):
-        """主事件循环，处理来自队列的指令并执行对应 JS 操作。"""
-
-        # self.loaded_event.set()
+    def _event_loop(self):
+        """GUI 事件循环：处理来自主进程的窗口控制和 JS 求值命令。"""
         while self.is_alive:
-            i, arg = self.queue.get()
+            try:
+                window_idx, arg = self.queue.get(timeout=2)
+            except Empty:
+                continue
+
             if not self.is_alive:
                 return
 
-            if i == 'start':
-                webview.start(debug=arg, func=self.loop)
-                self.is_alive = False
-                self.emit_queue.put('exit')
-                return
-            if i == 'create_window':
-                self.create_window(*arg)
-                continue
+            window = self.windows[window_idx]
+            self._handle_command(window, arg)
 
-            window = self.windows[i]
-            if arg == 'show':
-                window.show()
-            elif arg == 'hide':
-                window.hide()
-            elif arg == '_~_~NATIVE_HANDLE~_~_':
-                try:
-                    hwnd = _get_native_handle(window)
-                except Exception:
-                    hwnd = None
-                self.return_queue.put(hwnd)
-                continue
-            elif arg.startswith('_~_~RESIZE~_~_'):
-                try:
-                    w, h = arg[14:].split(',')
-                    window.resize(int(w), int(h))
-                except Exception:
-                    pass
-                continue
+    def _handle_command(self, window, arg):
+        """处理单个窗口命令。"""
+        if arg == 'show':
+            window.show()
+        elif arg == 'hide':
+            window.hide()
+        elif arg == '_~_~NATIVE_HANDLE~_~_':
+            self._handle_native_handle(window)
+        elif arg.startswith('_~_~RESIZE~_~_'):
+            self._handle_resize(window, arg)
+        else:
+            self._handle_js_evaluation(window, arg)
+
+    def _handle_native_handle(self, window):
+        """获取原生窗口句柄并放入返回队列。"""
+        try:
+            hwnd = _get_native_handle(window)
+        except Exception:
+            hwnd = None
+        self.return_queue.put(hwnd)
+
+    def _handle_resize(self, window, arg):
+        """调整窗口大小。"""
+        try:
+            w, h = arg[14:].split(',')
+            window.resize(int(w), int(h))
+        except Exception:
+            pass
+
+    def _handle_js_evaluation(self, window, arg):
+        """执行 JavaScript 脚本并处理返回值。"""
+        try:
+            if '_~_~RETURN~_~_' in arg:
+                result = window.evaluate_js(arg[14:])
+                self.return_queue.put(result)
             else:
-                try:
-                    if '_~_~RETURN~_~_' in arg:
-                        result = window.evaluate_js(arg[14:])
-                        self.return_queue.put(result)
-                    else:
-                        window.evaluate_js(arg)
-                except KeyError as e:
-                    pp(f'[FATAL] KeyError in message loop: {e}')
-                    if '_~_~RETURN~_~_' in arg:
-                        self.return_queue.put(None)
-                    break
-                except JavascriptException as e:
-                    msg = str(e)
-                    pp(msg)
-                    if '_~_~RETURN~_~_' in arg:
-                        self.return_queue.put(None)
-                except Exception as e:
-                    pp(f'[FATAL] Unknown exception in message loop: {type(e).__name__}: {e}')
-                    if '_~_~RETURN~_~_' in arg:
-                        self.return_queue.put(None)
-                    break
+                window.evaluate_js(arg)
+        except KeyError as e:
+            pp(f'[FATAL] KeyError in message loop: {e}')
+            if '_~_~RETURN~_~_' in arg:
+                self.return_queue.put(None)
+            self.is_alive = False
+        except JavascriptException as e:
+            pp(str(e))
+            if '_~_~RETURN~_~_' in arg:
+                self.return_queue.put(None)
+        except Exception as e:
+            pp(f'[FATAL] Unknown exception in message loop: {type(e).__name__}: {e}')
+            if '_~_~RETURN~_~_' in arg:
+                self.return_queue.put(None)
+            self.is_alive = False
 
 
 class WebviewHandler:
@@ -374,24 +397,32 @@ class Chart(abstract.AbstractChart):
         if sync_id:
             self.join_sync_group(sync_id, sync_crosshairs_only)
 
-    def show(self, block: bool = False):
+    def show(self, block: bool = False, wait: Union[int, float, None] = None):
         """
         显示图表窗口。
 
         :param block: 如果为 True，阻塞当前线程直到窗口关闭；
                      如果为 False，窗口显示后立即返回，适用于异步场景。
+        :param wait: 等待秒数后自动关闭窗口。指定此参数时 block 会被忽略，
+                     等待窗口进程结束或超时后自动退出。窗口被用户关闭时会提前返回。
+                     适用于截图/演示场景。
         :type block: bool
+        :type wait: int | float | None
 
         Example:
             >>> chart.show()  # 非阻塞模式
             >>> chart.show(block=True)  # 阻塞模式，等待窗口关闭
+            >>> chart.show(wait=5)  # 显示 5 秒后自动关闭
         """
         if not self.win.loaded:
             self.wv.start()
             self.win.on_js_load()
         else:
             self.wv.show(self._i)
-        if block:
+        if wait is not None:
+            self.wv.wv_process.join(timeout=wait)
+            self.exit()
+        elif block:
             asyncio.run(self.show_async())
 
     async def show_async(self):
@@ -440,6 +471,9 @@ class Chart(abstract.AbstractChart):
         self.wv.exit()
         self.is_alive = False
         self.win.destroyed = True
+
+    def __del__(self):
+        self.exit()
 
 
 class CrossProcessChart:

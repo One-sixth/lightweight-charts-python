@@ -73,7 +73,8 @@ def demo_chart_sync():
     print("│      底部子图        │  ← 同步组 'main'（仅十字光标）")
     print("└─────────────────────┘")
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()
 
 
 if __name__ == '__main__':

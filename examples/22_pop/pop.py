@@ -52,4 +52,5 @@ if __name__ == '__main__':
         chart.pop(n)
 
     print("\n[OK] Watch the chart shrink from the right!\n")
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()

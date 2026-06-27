@@ -97,7 +97,8 @@ def main():
     print(f"  Positive (buy-dominant): {(delta_df['value'] >= 0).sum()}")
     print(f"  Negative (sell-dominant): {(delta_df['value'] < 0).sum()}")
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()
 
 
 if __name__ == '__main__':

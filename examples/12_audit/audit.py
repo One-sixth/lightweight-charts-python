@@ -143,4 +143,5 @@ if __name__ == '__main__':
     print("  Done — chart window stays open. Close it to exit.")
     print("=" * 60)
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()

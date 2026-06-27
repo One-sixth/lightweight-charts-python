@@ -8,4 +8,5 @@ if __name__ == '__main__':
     df = pd.read_csv('ohlcv.csv').rename(columns={'date': 'time'})
     chart.set(df)
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()

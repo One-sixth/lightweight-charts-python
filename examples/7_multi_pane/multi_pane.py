@@ -36,7 +36,8 @@ def demo():
     line50 = chart.create_line('SMA 50', color='green', price_line=False, price_label=False, pane_index=2)
     line50.set(sma50_data)
 
-    chart.show(True)
+    chart.show(wait=120)
+    chart.exit()
 
 
 if __name__ == '__main__':

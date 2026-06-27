@@ -56,4 +56,5 @@ if __name__ == '__main__':
         sleep(5)  # let user observe
 
     print("\n[OK] All three densities shown — compare the Y-axis label spacing!\n")
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()

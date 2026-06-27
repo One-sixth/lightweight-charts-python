@@ -91,7 +91,8 @@ def main():
     print("All markers should be visible on their respective series!")
     print("Close the window to exit.")
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()
 
 
 if __name__ == '__main__':

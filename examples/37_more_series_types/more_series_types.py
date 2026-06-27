@@ -303,7 +303,8 @@ def main():
     print(f"  Pane 3: SMA 60 面积 + SMA 120 隐藏 + 波动率隐藏")
     print(f"  共 4 个面板，14 个系列（7 个隐藏 legend=False）")
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()
 
 
 if __name__ == '__main__':

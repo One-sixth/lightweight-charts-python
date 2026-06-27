@@ -197,4 +197,5 @@ if __name__ == '__main__':
     print("Tip: Always prefer update_bars() when appending many points!")
     print()
 
-    chart.show(True)
+    chart.show(wait=120)
+    chart.exit()

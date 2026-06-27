@@ -6,8 +6,21 @@
 
 ## [v2.8.1] - 2026-06-27
 
+### Breaking Changes
+
+- **Drawing 重构**：`chart._drawings` 列表已移除，改为 `chart._drawing_series` 字典（`{pane_index: DrawingSeries}`）。`chart.drawings` 属性保留兼容性，遍历所有 pane 的 drawing 列表。
+
 ### Added
 
+- **DrawingSeries 绘图管理重构**：每个 pane 拥有独立的 `DrawingSeries(Pane)` 管理 drawing 对象
+  - 新文件 `drawing_series.py`：惰性创建不可见 JS LineSeries，5 个工厂方法
+  - AbstractChart 用 `_drawing_series` 字典按 pane_index 管理
+  - ToolBox 持有独立的 DrawingSeries，与 chart 完全隔离
+  - Drawing 基类改为持有 `drawing_series`（不再直接持有 chart）
+  - 工厂方法新增 `pane_index` 参数：`chart.horizontal_line(price, pane_index=1)`
+- **`chart.show(wait=5)`**：显示窗口后等待指定秒数自动关闭，适用于截图/演示场景
+  - 内部使用 `Process.join(timeout=wait)` 替代 `time.sleep`，窗口被用户关闭时会提前返回
+  - PyWV 事件循环在 `queue.get` 超时后增加 `is_alive` 二次检查，窗口关闭后最多等待 2 秒即退出
 - **AreaSeries（面积图）**：折线+渐变填充，支持 topColor/bottomColor/relativeGradient/invertFilledArea
   - 工厂方法：`chart.create_area(name, color, style, width, top_color, bottom_color, ...)`
   - Python 类：`AreaSeries(SeriesCommon)`，数据输入与 LineSeries 完全一致（time + value）
@@ -46,6 +59,11 @@
 - **OHLCBarSeries 继承 CandleSeries**：两者 95% 代码相同（OHLC 数据处理），仅 JS 创建方法和样式配置不同。通过覆盖 `__init__`/`_build()`/`bar_style()` + 覆盖 `candle_style()` 抛错，避免 ~80 行重复代码
 - **AreaSeries/BaselineSeries 继承 SeriesCommon**：与 LineSeries 相同的数据输入（time + value），只需覆盖 `__init__` 调不同的 JS 创建方法
 - **legend OHLC 支持**：在 legendHandler 的 lines 遍历中，通过 `seriesType()` 检测 Bar/Candlestick 类型，显示 OHLC 四个数字而非 value
+
+### Fixed
+
+- **PyWV 事件循环退出延迟**：窗口关闭后 `_event_loop` 最多等待 4 秒才退出（`queue.get` 2s + `while` 2s）。修复：在 `queue.get` 超时后增加 `is_alive` 二次检查，窗口关闭后最多 2 秒即退出
+- **`chart.show(wait=N)` 提前返回**：旧实现用 `time.sleep(wait)` 傻等，用户关窗口后仍需等满 N 秒。修复：改用 `Process.join(timeout=wait)`，进程结束时立即返回
 
 ---
 

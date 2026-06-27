@@ -46,4 +46,5 @@ if __name__ == '__main__':
     # 例如，实际价格 100.00 将显示为 1.00
     chart.set_price_format(type='base', base=100, precision=2)
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()

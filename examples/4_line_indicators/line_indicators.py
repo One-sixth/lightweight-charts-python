@@ -24,4 +24,5 @@ if __name__ == '__main__':
     sma_data = calculate_sma(df, period=120)
     line2.set(sma_data)
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()

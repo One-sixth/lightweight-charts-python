@@ -74,8 +74,9 @@ Pane (util.py)                          ← 所有组件的基类 (拥有 id, ru
 │   │     self.volume  → VolumeSeries   ← 独立成交量 (始终存在, reset 后自动重建)
 │   │     self.oi      → OpenInterestSeries ← 独立持仓量 (始终存在, reset 后自动重建)
 │   │   持有:
-│   │     self._lines  → list[Line|Histogram|CandleSeries]  ← 所有附加系列
-│   │     self._drawings / self._tables / self._price_lines ← 各类资源
+│   │     self._lines  → list[LineSeries|HistogramSeries]  ← 所有附加系列
+│   │     self._drawing_series → dict[int, DrawingSeries]  ← 按 pane 管理绘图 (兼容: self.drawings 属性)
+│   │     self._tables / self._price_lines ← 各类资源
 │   │     self.topbar / self.toolbox    ← 顶栏和工具箱
 │   │
 │   ├── Chart (chart.py)                ← pywebview 桌面窗口
@@ -89,7 +90,8 @@ Pane (util.py)                          ← 所有组件的基类 (拥有 id, ru
 │   └── ReflexChart (reflex_chart.py)   ← Reflex 框架嵌入 (iframe + postMessage)
 │
 ├── PriceLine (drawings.py)             ← 价格线 (create_price_line 返回, 支持 update/delete)
-├── Drawing (drawings.py)               ← 绘图基类 (detach + delete)
+├── DrawingSeries (drawing_series.py)   ← 每 pane 独立的绘图管理 (惰性创建不可见 JS LineSeries)
+├── Drawing (drawings.py)               ← 绘图基类 (持有 drawing_series, detach + delete)
 │   ├── TwoPointDrawing                 ← 两点绘图基类
 │   ├── HorizontalLine / TrendLine / Box / VerticalLine / RayLine / VerticalSpan
 ├── TopBar + Widget 系列 (topbar.py)
@@ -1356,6 +1358,11 @@ npx rollup -c rollup.config.js
 
 ```
 初始化 → 设置数据 → 可选: 添加指标/绘图/事件 → show(block=True)
+
+show() 三种模式:
+  chart.show()           # 非阻塞，窗口显示后立即返回
+  chart.show(block=True) # 阻塞，等待窗口关闭
+  chart.show(wait=5)     # 等待 5 秒后自动关闭（截图/演示场景）
 
 实时数据:
   chart.set(initial_df)

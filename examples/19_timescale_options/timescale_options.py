@@ -65,4 +65,5 @@ if __name__ == '__main__':
     print("\n>>> Zoom out using mouse wheel or drag …")
     print("    Data points will automatically merge for smoother rendering.\n")
 
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()
