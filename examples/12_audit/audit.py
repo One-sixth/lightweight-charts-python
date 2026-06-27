@@ -55,7 +55,7 @@ if __name__ == '__main__':
         line = chart.create_line(name, color=color, width=2)
         fake_data = pd.DataFrame({
             'time': dates,
-            name: [price + np.random.normal(0, 2) for _ in range(100)],
+            'value': [price + np.random.normal(0, 2) for _ in range(100)],
         })
         line.set(fake_data)
         print(f"  created {name}")
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     hist = chart.create_histogram('Volume Osc', color='rgba(0,150,255,0.5)')
     hist_df = pd.DataFrame({
         'time': dates,
-        'Volume Osc': np.random.rand(100) * 1000,
+        'value': np.random.rand(100) * 1000,
     })
     hist.set(hist_df)
     print("  created Volume Osc")
@@ -104,7 +104,7 @@ if __name__ == '__main__':
     sub.set(pd.DataFrame({'time': sub_time, 'open': 50, 'high': 55,
                           'low': 45, 'close': 52, 'volume': 1000}))
     sub.create_line('RSI').set(pd.DataFrame({
-        'time': sub_time, 'RSI': np.random.rand(100) * 40 + 30,
+        'time': sub_time, 'value': np.random.rand(100) * 40 + 30,
     }))
     print("  created subchart with indicators")
 

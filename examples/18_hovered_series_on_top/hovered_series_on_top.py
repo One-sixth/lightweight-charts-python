@@ -64,7 +64,7 @@ if __name__ == '__main__':
 
     # Add SMA line to both panes
     sma_values = df['close'].rolling(window=20).mean()
-    sma_df = pd.DataFrame({'time': df['time'], 'SMA 20': sma_values})
+    sma_df = pd.DataFrame({'time': df['time'], 'value': sma_values})
 
     line_left = left.create_line('SMA 20', color='#f0c040', width=2, price_label=True)
     line_left.set(sma_df)

@@ -95,7 +95,7 @@ if __name__ == '__main__':
     sma = initial_df['close'].rolling(20).mean()
     sma_df = pd.DataFrame({
         'time': initial_df['time'],
-        'SMA 20': sma,
+        'value': sma,
     }).dropna()
 
     sma_line = chart.create_line(name='SMA 20', color='rgba(255, 165, 0, 0.6)')

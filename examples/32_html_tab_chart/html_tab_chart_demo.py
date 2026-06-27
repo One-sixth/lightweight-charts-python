@@ -48,7 +48,7 @@ def calculate_sma(df, period=20):
     """Simple Moving Average"""
     return pd.DataFrame({
         'time': df['time'],
-        f'SMA {period}': df['close'].rolling(window=period).mean()
+        'value': df['close'].rolling(window=period).mean()
     }).dropna()
 
 
@@ -152,7 +152,7 @@ def demo():
 
     print("Generating data...")
     df = generate_ohlcv_data(100)
-    vol_df = df[['time', 'volume']].rename(columns={'volume': 'Volume'})
+    vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
 
     # ================================================================
     # Main chart: 2x1 grid, position=211 (left cell)
@@ -212,9 +212,12 @@ def demo():
 
     # Subchart 1 K-line: pane 0
     bb = calculate_bollinger_bands(df, period=20, std_dev=2)
-    chart.create_line('BB Middle', color='orange', price_line=False, price_label=False).set(bb[['time', 'BB Middle']])
-    chart.create_line('BB Upper', color='red', price_line=False, price_label=False).set(bb[['time', 'BB Upper']])
-    chart.create_line('BB Lower', color='green', price_line=False, price_label=False).set(bb[['time', 'BB Lower']])
+    chart.create_line('BB Middle', color='orange', price_line=False, price_label=False).set(
+        pd.DataFrame({'time': bb['time'], 'value': bb['BB Middle']}))
+    chart.create_line('BB Upper', color='red', price_line=False, price_label=False).set(
+        pd.DataFrame({'time': bb['time'], 'value': bb['BB Upper']}))
+    chart.create_line('BB Lower', color='green', price_line=False, price_label=False).set(
+        pd.DataFrame({'time': bb['time'], 'value': bb['BB Lower']}))
 
     # Subchart 1 Volume: pane 1
     chart.create_histogram('Volume', color='#26a69a', price_line=False, price_label=False, pane_index=1).set(vol_df)

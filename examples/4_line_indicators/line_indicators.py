@@ -4,8 +4,8 @@ from lightweight_charts import Chart
 
 def calculate_sma(df, period: int = 50):
     return pd.DataFrame({
-        'time': df['date'],
-        f'SMA {period}': df['close'].rolling(window=period).mean()
+        'time': df['time'],
+        'value': df['close'].rolling(window=period).mean()
     }).dropna()
 
 

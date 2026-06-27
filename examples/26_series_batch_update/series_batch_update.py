@@ -42,7 +42,7 @@ def calc_sma(df: pd.DataFrame, period: int, col: str = 'close') -> pd.DataFrame:
     sma = df[col].rolling(window=period).mean()
     return pd.DataFrame({
         'time': df['time'],
-        f'SMA {period}': sma,
+        'value': sma,
     }).dropna()
 
 
@@ -51,7 +51,7 @@ def calc_ema(df: pd.DataFrame, period: int, col: str = 'close') -> pd.DataFrame:
     ema = df[col].ewm(span=period, adjust=False).mean()
     return pd.DataFrame({
         'time': df['time'],
-        f'EMA {period}': ema,
+        'value': ema,
     }).dropna()
 
 
@@ -66,7 +66,7 @@ def calc_rsi(df: pd.DataFrame, period: int = 14, col: str = 'close') -> pd.DataF
     rsi = 100 - (100 / (1 + rs))
     return pd.DataFrame({
         'time': df['time'],
-        'RSI 14': rsi,
+        'value': rsi,
     }).dropna()
 
 

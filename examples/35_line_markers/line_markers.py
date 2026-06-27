@@ -33,11 +33,11 @@ def main():
 
     # SMA lines (use Series for rolling)
     close_s = pd.Series(close)
-    sma20 = pd.DataFrame({'time': dates, 'SMA20': close_s.rolling(20).mean()})
-    sma50 = pd.DataFrame({'time': dates, 'SMA50': close_s.rolling(50).mean()})
+    sma20 = pd.DataFrame({'time': dates, 'value': close_s.rolling(20).mean()})
+    sma50 = pd.DataFrame({'time': dates, 'value': close_s.rolling(50).mean()})
 
     # Volume histogram
-    vol_df = pd.DataFrame({'time': dates, 'Volume': volume})
+    vol_df = pd.DataFrame({'time': dates, 'value': volume})
 
     # Create chart
     chart = Chart(width=1200, height=700, title='Line Series Markers Demo')

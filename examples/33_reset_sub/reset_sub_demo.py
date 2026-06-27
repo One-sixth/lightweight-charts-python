@@ -56,7 +56,7 @@ def add_full_resources(chart, bars, prefix, line_color):
     ma5 = bars[['time', 'close']].copy()
     ma5['close'] = bars['close'].rolling(5).mean()
     ma5 = ma5.dropna()
-    ma5.rename(columns={'close': f'{prefix} MA5'}, inplace=True)
+    ma5.rename(columns={'close': 'value'}, inplace=True)
     chart.create_line(f'{prefix} MA5', color=line_color, width=2).set(ma5)
 
     # 标记
@@ -268,7 +268,8 @@ def main():
         print("    2. 移动 sub_c 的十字光标 → 仅 sub_c 移动")
         print("    3. 三个图表的 reset + 重填均已完成")
         print("\n关闭窗口退出 ...")
-        chart.show(True)
+        chart.show(wait=120)
+        chart.exit()
 
     except Exception as e:
         step_label.set(f'❌ 错误: {type(e).__name__}')

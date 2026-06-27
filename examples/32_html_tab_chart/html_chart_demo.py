@@ -47,7 +47,7 @@ def calculate_sma(df, period=20):
     """Simple Moving Average"""
     return pd.DataFrame({
         'time': df['time'],
-        f'SMA {period}': df['close'].rolling(window=period).mean()
+        'value': df['close'].rolling(window=period).mean()
     }).dropna()
 
 
@@ -55,10 +55,12 @@ def calculate_bollinger_bands(df, period=20, std_dev=2):
     """Bollinger Bands"""
     sma = df['close'].rolling(window=period).mean()
     std = df['close'].rolling(window=period).std()
+    bb_upper = sma + std * std_dev
+    bb_lower = sma - std * std_dev
     return pd.DataFrame({
         'time': df['time'],
-        'BB Upper': sma + std * std_dev,
-        'BB Lower': sma - std * std_dev
+        'BB Upper': bb_upper,
+        'BB Lower': bb_lower,
     }).dropna()
 
 
@@ -98,7 +100,7 @@ def demo():
     # Generate data
     print("[1/4] Generating data...")
     df = generate_ohlcv_data(120)
-    vol_df = df[['time', 'volume']].rename(columns={'volume': 'Volume'})
+    vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
 
     # ================================================================
     # Main chart: 2x1 grid, position=211 (top)
@@ -116,8 +118,10 @@ def demo():
 
     # Bollinger Bands
     bb = calculate_bollinger_bands(df, 20, 2)
-    chart.create_line('BB Upper', color='#9c27b0', width=1, style='dotted').set(bb[['time', 'BB Upper']])
-    chart.create_line('BB Lower', color='#9c27b0', width=1, style='dotted').set(bb[['time', 'BB Lower']])
+    bb_upper = pd.DataFrame({'time': bb['time'], 'value': bb['BB Upper']})
+    bb_lower = pd.DataFrame({'time': bb['time'], 'value': bb['BB Lower']})
+    chart.create_line('BB Upper', color='#9c27b0', width=1, style='dotted').set(bb_upper)
+    chart.create_line('BB Lower', color='#9c27b0', width=1, style='dotted').set(bb_lower)
 
     # Buy/sell markers
     for sig in generate_signals(df):
@@ -159,7 +163,7 @@ def demo_absolute():
 
     print("[1/3] Generating data...")
     df = generate_ohlcv_data(120)
-    vol_df = df[['time', 'volume']].rename(columns={'volume': 'Volume'})
+    vol_df = df[['time', 'volume']].rename(columns={'volume': 'value'})
 
     # ================================================================
     # Chart 1: top-left quarter (0, 0, 50%, 50%)
