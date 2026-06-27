@@ -4,15 +4,18 @@ import inspect
 import warnings
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from typing import Literal, Union, Tuple
+from typing import Literal, Union, Tuple, TYPE_CHECKING
 import pandas as pd
 import numpy as np
+
+
+if TYPE_CHECKING:
+    from .abstract import Window
 
 
 class Pane:
     """所有可放置在图表上的组件的基类。自动分配唯一 ID 并持有窗口引用。"""
     def __init__(self, window, prefix=''):
-        from .abstract import Window
         self.win: Window = window
         self.run_script = window.run_script
         self.bulk_run = window.bulk_run
