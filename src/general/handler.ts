@@ -178,6 +178,29 @@ export class Handler {
 
             // — extra series count —
             lines.push(`extraSeriesCount = ${h._seriesList.length}`);
+
+            // — ToolBox drawing count —
+            if (h.toolBox) {
+                try {
+                    const dt = (h.toolBox as any)._drawingTool;
+                    if (dt) {
+                        lines.push(`toolboxDrawings = ${dt.drawings.length}`);
+                        lines.push(`toolboxHasOnChanged = ${!!dt.onChanged}`);
+                    }
+                } catch (_) {}
+            }
+
+            // — Pane primitives —
+            try {
+                const panes = h.chart.panes();
+                lines.push(`paneCount = ${panes.length}`);
+                for (let pi = 0; pi < panes.length; pi++) {
+                    const pane = panes[pi];
+                    const series = pane.getSeries();
+                    lines.push(`pane.${pi}.seriesCount = ${series.length}`);
+                    lines.push(`pane.${pi}.height = ${pane.getHeight()}`);
+                }
+            } catch (_) {}
         };
 
         // — Single pass: iterate window globals, merge handler + non-handler —
@@ -784,8 +807,9 @@ export class Handler {
     }
 
     createToolBox() {
-        if (!this.series) return;
-        this.toolBox = new ToolBox(this.id, this.chart, this.series, this.commandFunctions);
+        const panes = this.chart.panes();
+        if (!panes || panes.length === 0) return;
+        this.toolBox = new ToolBox(this.id, this.chart, panes[0], this.commandFunctions);
         this.div.appendChild(this.toolBox.div);
     }
 

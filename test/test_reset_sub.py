@@ -102,7 +102,7 @@ def verify_cleared(chart, errors, label_prefix):
     all_clean &= log_check(len(chart._lines) == 0, f"_lines empty (got {len(chart._lines)})", errors)
     all_clean &= log_check(len(chart._price_lines) == 0, f"_price_lines empty (got {len(chart._price_lines)})", errors)
     all_clean &= log_check(len(chart.markers) == 0, f"markers empty (got {len(chart.markers)})", errors)
-    all_clean &= log_check(len(chart._drawings) == 0, f"_drawings empty (got {len(chart._drawings)})", errors)
+    all_clean &= log_check(len(chart.drawings) == 0, f"_drawings empty (got {len(chart.drawings)})", errors)
     all_clean &= log_check(len(chart._tables) == 0, f"_tables empty (got {len(chart._tables)})", errors)
     return all_clean
 

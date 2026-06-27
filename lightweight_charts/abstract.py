@@ -277,7 +277,7 @@ class AbstractChart(Pane):
 
         self._lines = []
         self.subcharts = []
-        self._drawings = []
+        self._drawing_series = {}  # {pane_index: DrawingSeries}
         self._tables = []
         self._price_lines: list['PriceLine'] = []
         self._scale_candles_only = scale_candles_only
@@ -345,6 +345,23 @@ class AbstractChart(Pane):
 
         self.topbar: TopBar = TopBar(self)
         self.toolbox: ToolBox = ToolBox(self) if toolbox else None
+
+    # ── DrawingSeries 管理 ──
+
+    def _get_drawing_series(self, pane_index=0):
+        """内部方法：获取或创建指定 pane 的 DrawingSeries。"""
+        if pane_index not in self._drawing_series:
+            from .drawing_series import DrawingSeries
+            self._drawing_series[pane_index] = DrawingSeries(self, pane_index)
+        return self._drawing_series[pane_index]
+
+    @property
+    def drawings(self):
+        """返回所有 pane 的 drawing 列表（兼容旧代码）。"""
+        result = []
+        for ds in self._drawing_series.values():
+            result.extend(ds._drawings)
+        return result
 
     # ═══════════════════════════════════════════════════════
     #  委托方法 — 向后兼容 chart.set() / chart.update() 等 API
@@ -641,27 +658,28 @@ class AbstractChart(Pane):
         """设置价格格式。"""
         return self.candle.set_price_format(**kwargs)
 
-    # ── 绘图方法（直接在 AbstractChart 上创建，不委托到 candle）──
-    # Drawing 构造函数需要 chart 参数来注册到 chart._drawings，
-    # 所以必须传 self（AbstractChart）而非 self.candle。
+    # ── 绘图方法（委托到内部 DrawingSeries）──
 
     def horizontal_line(self, price, color='rgb(122, 146, 202)', width=2,
-                        style='solid', text='', axis_label_visible=True, func=None):
+                        style='solid', text='', axis_label_visible=True, func=None, pane_index=0):
         """创建水平线。"""
-        return HorizontalLine(self, price, color, width, style, text, axis_label_visible, func)
+        return self._get_drawing_series(pane_index).horizontal_line(
+            price, color, width, style, text, axis_label_visible, func)
 
     def trend_line(self, start_time, start_value, end_time, end_value,
-                   round=False, line_color='#1E80F0', width=2, style='solid'):
+                   round=False, line_color='#1E80F0', width=2, style='solid', pane_index=0):
         """创建趋势线。"""
-        return TrendLine(self, start_time, start_value, end_time, end_value, round, line_color, width, style)
+        return self._get_drawing_series(pane_index).trend_line(
+            start_time, start_value, end_time, end_value, round, line_color, width, style)
 
-    def ray_line(self, start_time, value, round=False, color='#1E80F0', width=2, style='solid', text=''):
+    def ray_line(self, start_time, value, round=False, color='#1E80F0', width=2, style='solid', text='', pane_index=0):
         """创建射线。"""
-        return RayLine(self, start_time, value, round, color, width, style, text)
+        return self._get_drawing_series(pane_index).ray_line(
+            start_time, value, round, color, width, style, text)
 
-    def vertical_line(self, time, color='#1E80F0', width=2, style='solid', text=''):
+    def vertical_line(self, time, color='#1E80F0', width=2, style='solid', text='', pane_index=0):
         """创建垂直线。"""
-        return VerticalLine(self, time, color, width, style, text)
+        return self._get_drawing_series(pane_index).vertical_line(time, color, width, style, text)
 
     def vertical_span(self, start_time, end_time=None, color='rgba(252, 219, 3, 0.2)', round=False):
         """创建垂直区间。"""
@@ -671,9 +689,10 @@ class AbstractChart(Pane):
         return VerticalSpan(self, start_time, end_time, color)
 
     def box(self, start_time, start_value, end_time, end_value,
-            round=False, color='#1E80F0', fill_color='rgba(255, 255, 255, 0.2)', width=2, style='solid'):
+            round=False, color='#1E80F0', fill_color='rgba(255, 255, 255, 0.2)', width=2, style='solid', pane_index=0):
         """创建矩形。"""
-        return Box(self, start_time, start_value, end_time, end_value, round, color, fill_color, width, style)
+        return self._get_drawing_series(pane_index).box(
+            start_time, start_value, end_time, end_value, round, color, fill_color, width, style)
 
     # ── 其他委托 ──
     def precision(self, precision=2):
@@ -772,6 +791,10 @@ class AbstractChart(Pane):
         if self._is_subchart:
             raise RuntimeError("reset() 只能在主图表上调用，并且会删除所有子图表。子图请使用 reset_sub()。")
 
+        # 0. 销毁 ToolBox（JS toolBox + drawings + 回调 + handler）
+        if self.toolbox is not None:
+            self.toolbox._delete()
+
         # 1. 删除 candle/volume/oi 的 JS 对象和 Python 数据
         for series in [self.candle, self.volume, self.oi]:
             if series is not None:
@@ -794,11 +817,6 @@ class AbstractChart(Pane):
         for line in list(self._lines):
             line.delete()
 
-        # 4. 清理绘图
-        self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.clearDrawings()')
-        if self.toolbox is not None:
-            self.toolbox.drawings.clear()
-
         # 6. 清理子图表
         for sub_id in list(self.subcharts):
             if sub_id != self.id:
@@ -807,10 +825,6 @@ class AbstractChart(Pane):
 
         # 7. 清理事件处理器（包括子图的 ToolBox/topbar/events 等回调）
         self._clear_handlers()
-
-        # 8. 恢复主图 ToolBox handler（_clear_handlers 把它也清了，但 ToolBox 对象还在）
-        if self.toolbox is not None:
-            self.win.handlers[f'save_drawings{self.id}'] = self.toolbox._save_drawings
 
         # 9. 重建 candle/volume/oi（始终存在，省去后续所有 None 检查）
         base = self.id.replace('window.', '')
@@ -823,6 +837,10 @@ class AbstractChart(Pane):
             {self.id}.openInterestSeries = {self.oi.id}.series;
             0;
         ''')
+
+        # 10. 重建 ToolBox（创建 JS toolBox + 注册 handler）
+        if self.toolbox is not None:
+            self.toolbox._build()
 
     def remove_subchart(self, subchart_id: str):
         """
@@ -886,22 +904,17 @@ class AbstractChart(Pane):
         self.clear_markers()
 
         # 5. 绘图
-        for d in list(self._drawings):
-            d.delete()
+        for ds in list(self._drawing_series.values()):
+            ds.delete()
+        self._drawing_series.clear()
 
         # 6. 表格
         for t in list(self._tables):
             t.delete()
 
-        # 7. ToolBox 清理
-        # 注意: 必须先移除 handler，再调用 JS cleanup。
-        # 因为 JS _cleanup() → clearDrawings() → saveDrawings() 会向 Python
-        # 发送 save_drawings 回调。如果先调 _cleanup()，回调会排队，之后移除 handler
-        # 时消息已经在队列里，show_async() 处理到时 handler 已不在 → KeyError。
-        # 先移除 handler 后，排队的消息到达时找不到 handler，被 try/except 静默忽略。
+        # 7. ToolBox 销毁（JS toolBox + drawings + 回调 + handler）
         if self.toolbox is not None:
-            self.win.handlers.pop(f'save_drawings{self.id}', None)
-            self.toolbox._cleanup()
+            self.toolbox._delete()
 
         # 8. TopBar 清理
         if hasattr(self, 'topbar') and self.topbar._created:
@@ -929,6 +942,10 @@ class AbstractChart(Pane):
         # 重建后 div 恢复到"已创建但隐藏"(display:none) 的初始状态，
         # 等待 Python 端 legend(visible=True) 激活。
         self.run_script(f'{self.id}.legend.recreate()')
+
+        # 14. ToolBox 重建（在所有清理之后）
+        if self.toolbox is not None:
+            self.toolbox._build()
 
     def _cleanup_events(self):
         """清理 JSEmitter 事件订阅。"""
@@ -1030,6 +1047,9 @@ class AbstractChart(Pane):
                 'type': 'AbstractChart',
                 'has_data': not self.candle.data.empty,
                 'subchart_ids': [s for s in self.subcharts if s != self.id],
+                'interval': self._interval,
+                'offset': self._offset,
+                'period_locked': self._period_locked,
             },
             'lines': [],
             'price_lines': [],
@@ -1037,7 +1057,39 @@ class AbstractChart(Pane):
             'subcharts': [],
             'tables': [],
             'drawings': [],
+            'drawing_series': [],
+            'toolbox': {},
+            'volume_oi': {},
         }
+
+        # --- volume/oi 数据状态 ---
+        if self.volume is not None:
+            info['volume_oi']['volume'] = {
+                'has_data': not self.volume.data.empty,
+                'data_points': len(self.volume.data) if not self.volume.data.empty else 0,
+            }
+        if self.oi is not None:
+            info['volume_oi']['open_interest'] = {
+                'has_data': not self.oi.data.empty,
+                'data_points': len(self.oi.data) if not self.oi.data.empty else 0,
+            }
+
+        # --- toolbox ---
+        if self.toolbox is not None:
+            info['toolbox'] = {
+                'has_toolbox': True,
+                'on_change_callbacks': len(self.toolbox.on_change),
+                'tracked_drawings': len(self.toolbox.drawings_list),
+                'saved_tags': list(self.toolbox.drawings.keys()),
+            }
+
+        # --- drawing_series（per-pane 管理器）---
+        for pane_idx, ds in self._drawing_series.items():
+            info['drawing_series'].append({
+                'pane_index': pane_idx,
+                'id': ds.id,
+                'drawings_count': len(ds._drawings),
+            })
 
         # --- lines (including histograms) ---
         for line in self._lines:
@@ -1078,7 +1130,7 @@ class AbstractChart(Pane):
                 })
 
         # --- drawings ---
-        for d in self._drawings:
+        for d in self.drawings:
             entry = {
                 'id': d.id,
                 'type': type(d).__name__,

@@ -15,9 +15,10 @@ export class VerticalLinePaneView extends DrawingPaneView {
     update() {
         const point = this._source._point;
         const timeScale = this._source.chart.timeScale()
-        const series = this._source.series;
+        const series = this._source.pane.getSeries();
+        const s = series && series.length > 0 ? series[0] : null;
         this._point.x = point.time ? timeScale.timeToCoordinate(point.time) : timeScale.logicalToCoordinate(point.logical)
-        this._point.y = series.priceToCoordinate(point.price);
+        this._point.y = s ? s.priceToCoordinate(point.price) : null;
     }
 
     renderer() {

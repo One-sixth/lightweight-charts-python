@@ -4,7 +4,7 @@ import { Box } from "../box/box";
 import { Drawing } from "../drawing/drawing";
 import { ContextMenu } from "../context-menu/context-menu";
 import { GlobalParams } from "./global-params";
-import { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
+import { IChartApi, IPaneApi, Time } from "lightweight-charts";
 import { HorizontalLine } from "../horizontal-line/horizontal-line";
 import { RayLine } from "../horizontal-line/ray-line";
 import { VerticalLine } from "../vertical-line/vertical-line";
@@ -39,31 +39,22 @@ export class ToolBox {
 
     private _commandFunctions: Function[];
     private _handlerID: string;
+    private _pane: IPaneApi<Time>;
 
     private _drawingTool: DrawingTool;
     private _contextMenu: ContextMenu;
-    private _undoHandler: Function;
 
-    constructor(handlerID: string, chart: IChartApi, series: ISeriesApi<SeriesType>, commandFunctions: Function[]) {
+    constructor(handlerID: string, chart: IChartApi, pane: IPaneApi<Time>, commandFunctions: Function[]) {
         this._handlerID = handlerID;
         this._commandFunctions = commandFunctions;
-        this._drawingTool = new DrawingTool(chart, series, () => this.removeActiveAndSave());
+        this._pane = pane;
+        this._drawingTool = new DrawingTool(chart, pane, () => this.removeActiveAndSave());
+        this._drawingTool.onChanged = () => this.saveDrawings();
         this.div = this._makeToolBox()
         this._contextMenu = new ContextMenu(this.saveDrawings, this._drawingTool);
-
-        this._undoHandler = (event: KeyboardEvent) => {
-            if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ') {
-                const drawingToDelete = this._drawingTool.drawings.pop();
-                if (drawingToDelete) this._drawingTool.delete(drawingToDelete)
-                return true;
-            }
-            return false;
-        };
-        commandFunctions.push(this._undoHandler);
     }
 
     toJSON() {
-        // Exclude the chart attribute from serialization
         const { ...serialized} = this;
         return serialized;
     }
@@ -109,7 +100,7 @@ export class ToolBox {
                 this._onIconClick(icon);
                 return true
             }
-            return false;
+            return false
         })
 
         if (rotate == true) {
@@ -123,7 +114,6 @@ export class ToolBox {
 
     private _onIconClick(icon: Icon) {
         if (this.activeIcon) {
-
             this.activeIcon.div.classList.remove('active-toolbox-button');
             window.setCursor('crosshair');
             this._drawingTool?.stopDrawing()
@@ -170,43 +160,32 @@ export class ToolBox {
         drawings.forEach((d) => {
             switch (d.type) {
                 case "Box":
-                    this._drawingTool.addNewDrawing(new Box(d.points[0], d.points[1], d.options));
+                    this._drawingTool.addNewDrawing(new Box(this._pane, d.points[0], d.points[1], d.options));
                     break;
                 case "TrendLine":
-                    this._drawingTool.addNewDrawing(new TrendLine(d.points[0], d.points[1], d.options));
+                    this._drawingTool.addNewDrawing(new TrendLine(this._pane, d.points[0], d.points[1], d.options));
                     break;
                 case "HorizontalLine":
-                    this._drawingTool.addNewDrawing(new HorizontalLine(d.points[0], d.options));
+                    this._drawingTool.addNewDrawing(new HorizontalLine(this._pane, d.points[0], d.options));
                     break;
                 case "RayLine":
-                    this._drawingTool.addNewDrawing(new RayLine(d.points[0], d.options));
+                    this._drawingTool.addNewDrawing(new RayLine(this._pane, d.points[0], d.options));
                     break;
                 case "VerticalLine":
-                    this._drawingTool.addNewDrawing(new VerticalLine(d.points[0], d.options));
+                    this._drawingTool.addNewDrawing(new VerticalLine(this._pane, d.points[0], d.options));
                     break;
             }
         })
     }
 
-    /**
-     * 清理 ToolBox 的所有 JS 资源：DrawingTool 事件、ContextMenu、commandFunction、DOM。
-     * 用于 reset_sub() 时清理子图的绘图工具箱。
-     */
     public _cleanup() {
-        // 取消 DrawingTool 的 chart 事件订阅
         this._drawingTool._chart.unsubscribeClick(this._drawingTool._clickHandler);
         this._drawingTool._chart.unsubscribeCrosshairMove(this._drawingTool._moveHandler);
-        // 清理 drawings
         this.clearDrawings();
-        // 清理 ContextMenu
         if (this._contextMenu) {
             document.body.removeEventListener('contextmenu', this._contextMenu._onRightClick);
             this._contextMenu.div.remove();
         }
-        // 清理 commandFunctions
-        const idx = this._commandFunctions.indexOf(this._undoHandler);
-        if (idx >= 0) this._commandFunctions.splice(idx, 1);
-        // 移除 DOM
         this.div.remove();
     }
 }

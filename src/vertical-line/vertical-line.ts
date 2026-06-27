@@ -1,6 +1,8 @@
 import {
     DeepPartial,
-    MouseEventParams
+    IPaneApi,
+    MouseEventParams,
+    Time,
 } from "lightweight-charts";
 import { Point } from "../drawing/data-source";
 import { Drawing, InteractionState } from "../drawing/drawing";
@@ -21,8 +23,8 @@ export class VerticalLine extends Drawing {
 
     protected _startDragPoint: Point | null = null;
 
-    constructor(point: Point, options: DeepPartial<DrawingOptions>, callbackName=null) {
-        super(options)
+    constructor(pane: IPaneApi<Time>, point: Point, options: DeepPartial<DrawingOptions>, callbackName=null) {
+        super(pane, options)
         this._point = point;
         this._paneViews = [new VerticalLinePaneView(this)];
         this._callbackName = callbackName;
@@ -43,7 +45,10 @@ export class VerticalLine extends Drawing {
         for (const p of points) {
             if (!p) continue;
             if (!p.time && p.logical) {
-                p.time = this.series.dataByIndex(p.logical)?.time || null
+                // 用 chart.timeScale() 从 logical 恢复 time，不再依赖 series.dataByIndex
+                const timeScale = this.chart.timeScale();
+                const coord = timeScale.logicalToCoordinate(p.logical);
+                p.time = coord !== null ? (timeScale.coordinateToTime(coord) || null) : null;
             }
             this._point = p;
         }
@@ -92,7 +97,8 @@ export class VerticalLine extends Drawing {
         else {
             x = timeScale.logicalToCoordinate(this._point.logical);
         }
-        if (!x) return false;
+
+        if (x === null || x === undefined) return false;
         return (Math.abs(x-param.point.x) < tolerance);
     }
 

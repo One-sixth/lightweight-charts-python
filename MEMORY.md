@@ -491,4 +491,335 @@ AbstractChart
 
 ---
 
-*最后更新：2026-06-27（v2.8.1 DrawingSeries 重构 + show(wait=) 优化 + PyWV 退出修复 + examples 批量更新）*
+## 🔍 Pane Primitives vs Series Primitives 深度调研（2026-06-28）
+
+### 背景：DrawingSeries 空 series 不渲染 primitive
+
+v2.8.1 的 DrawingSeries 设计：每个 pane 创建一个不可见的 JS LineSeries，drawing 通过 `attachPrimitive` 挂在上面。
+
+**测试结果**：
+| Pane | 系列内容 | DrawingSeries 有数据？ | Primitive 可见？ |
+|------|---------|---------------------|-----------------|
+| Pane 0 | candle + volume + SMA7 + SMA14 | ❌ 空 | ❌ 不可见 |
+| Pane 1 | histogram + RSI line | ❌ 空 | ❌ 不可见 |
+| Pane 2 | SMA50 line | ❌ 空 | ✅ 可见！ |
+
+**结论**：`attachPrimitive` 本身不需要数据，但 **pane 的渲染循环对无数据 series 的处理不一致**。无数据 series 的 paneViews() 可能不被调用，导致 primitive 不渲染。Pane 2 能渲染可能是因为它是较轻量的 pane（只有 1-2 个 series）。
+
+### 已验证的修复方案：附着到有数据的 series
+
+将 `attachPrimitive` 从空 LineSeries 改为附着到 pane 上已有的数据 series（pane 0 用 candle，其他 pane 用第一条线）。测试确认：
+- ✅ Pane 0 的所有 drawing（水平线、趋势线、框、垂直线）全部可见
+- ✅ ToolBox 恢复正常，能在 Pane 0 绘制 drawing
+- ❌ Pane 1/2 的 drawing 不可见（因为 `_attach_target` 始终返回 candle series，附着到了错误的 pane）
+
+### 发现的新 API：Pane Primitives
+
+参考文件：`C:\Users\TWD\Downloads\temp2\` 下的 `pane-primitives.md`、`ipane-api.ts`、`ipane-primitive-api.ts`
+
+**Pane Primitives** 是 lightweight-charts v4 新增的 primitive 类型，**直接附着到 pane 而非 series**：
+
+```javascript
+// 旧方式（Series Primitive）—— 需要一个 series
+const series = chart.addSeries(LineSeries, {...});
+series.attachPrimitive(myDrawing);
+
+// 新方式（Pane Primitive）—— 直接附着到 pane
+const pane = chart.panes()[0];
+pane.attachPrimitive(myDrawing);
+```
+
+#### IPaneApi 接口关键方法
+- `pane.attachPrimitive(primitive: IPanePrimitive)` — 附着 pane primitive
+- `pane.detachPrimitive(primitive: IPanePrimitive)` — 移除 pane primitive
+- `pane.getSeries(): ISeriesApi[]` — 获取 pane 上所有 series
+- `pane.paneIndex(): number` — 获取 pane 索引
+- `pane.priceScale(priceScaleId: string): IPriceScaleApi` — 获取价格轴（可用于坐标转换！）
+- `chart.panes(): IPaneApi[]` — 获取所有 pane
+
+#### IPanePrimitive 接口
+```typescript
+interface PaneAttachedParameter<HorzScaleItem = Time> {
+    chart: IChartApiBase<HorzScaleItem>;  // 图表实例
+    requestUpdate: () => void;            // 请求重绘
+}
+
+type IPanePrimitive<HorzScaleItem = Time> = IPanePrimitiveBase<PaneAttachedParameter<HorzScaleItem>>;
+```
+
+#### IPanePrimitive vs ISeriesPrimitive 对比
+
+| 特性 | ISeriesPrimitive | IPanePrimitive |
+|------|-----------------|----------------|
+| 附着方式 | `series.attachPrimitive(drawing)` | `pane.attachPrimitive(drawing)` |
+| attached 参数 | `{chart, series, requestUpdate}` | `{chart, requestUpdate}` |
+| paneViews() | ✅ 支持 | ✅ 支持 |
+| priceAxisViews() | ✅ 支持（右侧价格标签） | ❌ 不支持 |
+| timeAxisViews() | ✅ 支持（底部时间标签） | ❌ 不支持 |
+| priceAxisPaneViews() | ✅ 支持（价格轴区域绘制） | ❌ 不支持 |
+| timeAxisPaneViews() | ✅ 支持（时间轴区域绘制） | ❌ 不支持 |
+| 依赖 series | ✅ 必须附着到 series | ❌ 直接附着到 pane |
+| 坐标转换 | `series.coordinateToPrice()` | `pane.priceScale('right').coordinateToPrice()` |
+| 空 series 兼容 | ⚠️ 无数据 series 可能不触发渲染 | ✅ 不依赖 series 数据 |
+
+#### Pane Primitives 对 Drawing 的影响
+
+当前 Drawing 类（HorizontalLine、TrendLine、Box 等）继承 `PluginBase`（实现 `ISeriesPrimitive`）。如果改为 `IPanePrimitive`：
+
+1. **坐标转换**：`series.coordinateToPrice(y)` → `pane.priceScale('right').coordinateToPrice(y)` ✅ 可行
+2. **时间转换**：`chart.timeScale()` 不变 ✅
+3. **priceAxisViews() 丢失**：HorizontalLine 右侧的价格标签（显示数字）无法显示 ⚠️ 需要用 Canvas 自绘替代
+4. **autoscaleInfo() 丢失**：drawing 的价格范围不会影响自动缩放 ⚠️ 可能需要手动处理
+
+#### 两种实现路径
+
+**路径 A：宿主 series 方案（快速修复）**
+- 每个 pane 跟踪第一个创建的数据 series 作为"宿主"
+- drawing 附着到宿主 series（有数据，一定参与渲染循环）
+- 优点：改动小（主要在 Python 端），保留 priceAxisViews
+- 缺点：依赖 pane 上有数据 series，reset 后需要重新绑定
+
+**路径 B：Pane Primitives 方案（彻底重构）**
+- Drawing 基类从 `PluginBase`（ISeriesPrimitive）改为实现 `IPanePrimitive`
+- 使用 `pane.attachPrimitive` 直接附着到 pane
+- 坐标转换用 `pane.priceScale('right').coordinateToPrice()`
+- 优点：不依赖任何 series，架构更干净
+- 缺点：丢失 priceAxisViews（右侧价格标签），需要 Canvas 自绘替代；JS+Python 两端改动大
+
+#### 额外发现：chart.panes() API
+
+`chart.panes()` 返回 `IPaneApi[]`，可以通过索引获取任意 pane 的引用。这比 `chart.addSeries(..., paneIndex)` 更灵活：
+- 可以检查 pane 是否存在
+- 可以获取 pane 上所有 series
+- 可以直接在 pane 上 attach/detach primitive
+
+#### 重要发现：IPriceScaleApi 无坐标转换方法
+
+`IPriceScaleApi` 在 v5.2.0 中**没有** `coordinateToPrice`/`priceToCoordinate` 方法。
+坐标转换需要通过 `pane.getSeries()[0]` 获取 pane 上有数据的 series，再用 `ISeriesApi.coordinateToPrice()`。
+
+---
+
+## ✅ Pane Primitive 改造完成（2026-06-28）
+
+### 改造结果
+
+DrawingSeries 从 ISeriesPrimitive 完全改造为 IPanePrimitive，**所有 pane 的 drawing 都可见，ToolBox 正常工作**。
+
+### 核心架构变更
+
+```
+旧架构：
+Drawing → PluginBase(ISeriesPrimitive) → series.attachPrimitive(drawing)
+
+新架构：
+Drawing → PanePluginBase(IPanePrimitive) → pane.attachPrimitive(drawing)
+```
+
+### 修改文件清单
+
+| 文件 | 改动 |
+|------|------|
+| `src/pane-plugin-base.ts` | **新增**，实现 IPanePrimitive 接口 |
+| `src/drawing/drawing.ts` | PluginBase → PanePluginBase，_eventToPoint 用 pane.getSeries()[0].coordinateToPrice()，detach 用 pane.detachPrimitive() |
+| `src/drawing/pane-view.ts` | series.priceToCoordinate → pane.getSeries()[0].priceToCoordinate |
+| `src/drawing/two-point-drawing.ts` | 构造函数新增 pane 第一参数 |
+| `src/horizontal-line/horizontal-line.ts` | 构造函数新增 pane，mouseIsOverDrawing 用 pane.getSeries() |
+| `src/horizontal-line/pane-view.ts` | series 引用改为 pane.getSeries() |
+| `src/horizontal-line/axis-view.ts` | series 引用改为 pane.getSeries() |
+| `src/horizontal-line/ray-line.ts` | 构造函数新增 pane，mouseIsOverDrawing 用 pane.getSeries() |
+| `src/trend-line/trend-line.ts` | 构造函数新增 pane |
+| `src/box/box.ts` | 构造函数新增 pane |
+| `src/vertical-line/vertical-line.ts` | 构造函数新增 pane，updatePoints 用 chart.timeScale() |
+| `src/vertical-line/pane-view.ts` | series 引用改为 pane.getSeries() |
+| `src/drawing/drawing-tool.ts` | this._series → this._pane，attachPrimitive 用 pane |
+| `src/general/toolbox.ts` | 构造函数 series → pane，loadDrawings 传 pane |
+| `src/general/handler.ts` | createToolBox() 用 chart.panes()[0]，无参数 |
+| `lightweight_charts/drawings.py` | JS 构造函数传 pane 引用，attachPrimitive/detachPrimitive 用 pane |
+| `lightweight_charts/drawing_series.py` | 移除 _ensure_js_series 和 dummy 数据，仅作 per-pane 管理器 |
+| `lightweight_charts/toolbox.py` | createToolBox() 无参数 |
+
+### 已知代价
+
+- HorizontalLine 右侧价格标签（priceAxisViews）暂时丢失（Pane Primitive 不支持）
+- 后续可用 Canvas 自绘替代
+
+### 坐标转换方案
+
+由于 `IPriceScaleApi` 无 coordinateToPrice/priceToCoordinate，改用 `pane.getSeries()[0]` 获取 pane 上第一个有数据的 series 做坐标转换。
+
+---
+
+## 🔧 show(wait=N) 回调根因修复（2026-06-28）
+
+### 问题
+
+`show(wait=N)` 模式下 JS 回调永远到不了 Python handler。
+
+### 根因
+
+`show(wait=N)` 只做了 `wv_process.join(timeout=wait)`，**没有运行 `show_async()` 消息循环**，`emit_queue` 永远不被消费。
+
+### 修复
+
+`show(wait=N)` 改为：启动后台超时线程 + 主线程运行 `asyncio.run(show_async())`。
+
+```python
+if wait is not None:
+    import threading
+    def _auto_exit():
+        self.wv.wv_process.join(timeout=wait)
+        if self.is_alive:
+            self.is_alive = False
+            self.wv.emit_queue.put('exit')
+    threading.Thread(target=_auto_exit, daemon=True).start()
+    asyncio.run(self.show_async())
+```
+
+---
+
+## 🖱️ 跨 pane 拖拽修复（2026-06-28）
+
+### 问题
+
+鼠标在 Pane 1 时能拖动 Pane 0 的 drawing。
+
+### 根因
+
+`_handleHoverInteraction` 没有检查鼠标是否在当前 drawing 所属的 pane 上。
+
+### 修复方案演进
+
+1. **DOM 方案**（失败）：`pane.getHTMLElement().getBoundingClientRect()` 与 `chart.chartElement()` 比较 → `param.point.y` 是 pane 相对坐标，不是图表绝对坐标
+2. **paneIndex + getHeight 累加**（失败）：同上，坐标系不对
+3. **MouseEventParams.paneIndex**（成功 ✅）：`param.paneIndex === this.pane.paneIndex()` 直接比较
+
+### 关键发现
+
+`MouseEventParams` 有 `paneIndex` 属性（"The index of the Pane"），**这是判断鼠标在哪个 pane 上的正确方式**。
+
+### 实现
+
+```typescript
+protected _isMouseInMyPane(param: MouseEventParams): boolean {
+    if (param.paneIndex === undefined) return true;
+    return param.paneIndex === this.pane.paneIndex();
+}
+```
+
+拖拽中不检查边界（让拖拽自由完成），未拖拽时检查边界（防止跨 pane 交互）。
+
+---
+
+## 📏 RayLine 数据范围外拖拽修复（2026-06-28）
+
+### 问题
+
+RayLine 创建在数据范围外或拖动到数据范围外后，再也无法拖动。
+
+### 根因
+
+`_mouseIsOverDrawing` 中 `priceToCoordinate` / `timeToCoordinate` 在数据范围外返回 null，`if (!y || !x) return false` 直接拒绝。
+
+### 修复
+
+坐标转换失败时跳过该坐标的检查，而不是直接返回 false：
+
+```typescript
+const yOk = y !== null ? Math.abs(y - param.point.y) < tolerance : true;
+const xOk = x !== null ? param.point.x > x - tolerance : true;
+return yOk && xOk;
+```
+
+---
+
+## 🧰 ToolBox 生命周期与回调系统（2026-06-28）
+
+### ToolBox 生命周期
+
+```
+ToolBox.__init__  → _build()    ← 初始创建
+reset()           → _delete()   ← 开头销毁一切
+                → _build()    ← 结尾重建
+reset_sub()       → _delete()   ← 开头销毁一切
+                → _build()    ← 结尾重建
+```
+
+- `_delete()`：移除 handler + 销毁 JS toolBox + 清空 drawings/drawing_list/on_change
+- `_build()`：注册 handler + 创建 JS toolBox
+
+### 回调系统（`+=` / `-=`）
+
+```python
+chart.toolbox.on_change += my_func   # 注册
+chart.toolbox.on_change -= my_func   # 卸载
+```
+
+回调签名：`func(drawings: list[DrawingInfo])`
+
+### DrawingInfo 追踪
+
+ToolBox 内部维护 `_drawing_list: list[DrawingInfo]`，每次 JS `saveDrawings` 触发时自动同步。可通过 `chart.toolbox.drawings_list` 访问。
+
+---
+
+## 🔍 Audit 补充（2026-06-28）
+
+### Python 端新增
+
+- `chart` 字段：`interval`、`offset`、`period_locked`
+- `volume_oi` 字段：volume/oi 数据状态和数据量
+- `toolbox` 字段：`on_change` 回调数、`tracked_drawings` 数、`saved_tags`
+- `drawing_series` 字段：每个 pane 的 DrawingSeries 管理器和 drawings 数量
+
+### JS 端新增
+
+- `toolboxDrawings`：ToolBox DrawingTool 中的 drawing 数量
+- `toolboxHasOnChanged`：ToolBox onChanged 回调是否已设置
+- `paneCount`：图表 pane 数量
+- `pane.N.seriesCount`：每个 pane 上的 series 数量
+- `pane.N.height`：每个 pane 的高度
+
+---
+
+## ⚠️ __init__ 中引用未创建属性的陷阱（2026-06-28）
+
+### 问题
+
+`abstract.py` 的 `__init__` 中有 `if self.toolbox is not None: self.toolbox._build()` 在 `self.toolbox` 赋值之前，导致 `AttributeError`。
+
+### 教训
+
+**`__init__` 中的重建逻辑必须在属性赋值之后**。reset() 的 `_build()` 逻辑不应复制到 `__init__` 中——`ToolBox.__init__` 已经调用了 `_build()`。
+
+---
+
+## 🧵 show() 消息循环重构（2026-06-28）
+
+### 旧架构
+
+```
+show(wait=N) → threading.Thread(_auto_exit) + asyncio.run(show_async())
+show(block)  → asyncio.run(show_async())
+show_async() → while True: emit_queue.get() + parse_event_message + func()
+```
+
+### 新架构
+
+```
+Chart.__init__ 末端 → threading.Thread(_message_loop, daemon=True)  ← 守护线程常驻
+show(wait=N)        → wv_process.join(timeout=N) + self.exit()      ← 超简单
+show(block)         → wv_process.join() + self.exit()
+_message_loop()     → while is_alive: emit_queue.get() + parse + func()
+```
+
+### 优势
+
+- `show()` 不再依赖 `asyncio.run()`，Jupyter/嵌套调用都能用
+- 消息循环守护线程在 init 时启动，一直运行直到 `is_alive = False`
+- `show()` 只管 wait/block，逻辑极简
+- 异步回调在守护线程中用 `asyncio.run()`（独立线程无 event loop 冲突）
+
+---
+
+*最后更新：2026-06-28（show() 消息循环重构为守护线程）*

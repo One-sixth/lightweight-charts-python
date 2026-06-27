@@ -1,5 +1,7 @@
 import {
+    IPaneApi,
     MouseEventParams,
+    Time,
 } from 'lightweight-charts';
 
 import { Point } from '../drawing/data-source';
@@ -25,11 +27,12 @@ export class Box extends TwoPointDrawing {
     _type = "Box";
 
     constructor(
+        pane: IPaneApi<Time>,
         p1: Point,
         p2: Point,
         options?: Partial<BoxOptions>
     ) {
-        super(p1, p2, options);
+        super(pane, p1, p2, options);
         this._options = {
             ...defaultBoxOptions,
             ...options,

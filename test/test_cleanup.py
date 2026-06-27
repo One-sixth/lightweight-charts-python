@@ -152,7 +152,7 @@ def _test_resource_full_cleanup_impl(toolbox: bool):
         rl = chart.ray_line(bars['time'].iloc[20], 100, color='#00ff88', width=2, text='Ray')
         vs = chart.vertical_span(bars['time'].iloc[12], bars['time'].iloc[18],
                                  color='rgba(255,200,0,0.15)')
-        assert len(chart._drawings) == 6
+        assert len(chart.drawings) == 6
         print("  2d. drawables [OK]")
 
         pl = chart.create_price_line(price=102, title='PL', price_label=True)
@@ -238,7 +238,7 @@ def _test_resource_full_cleanup_impl(toolbox: bool):
         bx.delete()
         rl.delete()
         vs.delete()
-        all_clean &= log_check(len(chart._drawings) == 0, "_drawings cleared", errors, "drawings_not_empty")
+        all_clean &= log_check(len(chart.drawings) == 0, "_drawings cleared", errors, "drawings_not_empty")
         print("  4e. drawables [OK]")
 
         pl.delete()
@@ -340,7 +340,7 @@ def _test_resource_full_cleanup_impl(toolbox: bool):
             (chart.data.empty, "candle_data", "py_candle_data"),
             (len(chart._lines) == 0, "_lines", "py_lines"),
             (len(chart._price_lines) == 0, "_price_lines", "py_price_lines"),
-            (len(chart._drawings) == 0, "_drawings", "py_drawings"),
+            (len(chart.drawings) == 0, "_drawings", "py_drawings"),
             (len(chart._tables) == 0, "_tables", "py_tables"),
             (len(chart.markers) == 0, "markers", "py_markers"),
             (len(chart.win.handlers) == expected, f"handlers (expect {expected})", "py_handlers"),
@@ -405,9 +405,9 @@ def _test_multi_chart_cleanup_impl(toolbox: bool):
         line1 = chart1.create_line('ch1', color='#ff0000')
         hl1 = chart1.horizontal_line(105, color='#ff8800', width=2, text='HL')
         tbl1 = chart1.create_table(width=0.2, height=0.2, headings=('A', 'B'), widths=(0.5, 0.5))
-        print(f"      lines={len(chart1._lines)}, drawings={len(chart1._drawings)}, tables={len(chart1._tables)}")
+        print(f"      lines={len(chart1._lines)}, drawings={len(chart1.drawings)}, tables={len(chart1._tables)}")
         all_clean &= log_check(len(chart1._lines) == 1, "chart1 has 1 line", errors, "mc1_line")
-        all_clean &= log_check(len(chart1._drawings) == 1, "chart1 has 1 drawing", errors, "mc1_draw")
+        all_clean &= log_check(len(chart1.drawings) == 1, "chart1 has 1 drawing", errors, "mc1_draw")
         all_clean &= log_check(len(chart1._tables) == 1, "chart1 has 1 table", errors, "mc1_table")
 
         # --- Create resources in chart2 ---
@@ -416,9 +416,9 @@ def _test_multi_chart_cleanup_impl(toolbox: bool):
         line2a = chart2.create_line('ch2a', color='#00ff00')
         line2b = chart2.create_line('ch2b', color='#0000ff')
         vl2 = chart2.vertical_line(bars['time'].iloc[5], color='#8800ff', width=2)
-        print(f"      lines={len(chart2._lines)}, drawings={len(chart2._drawings)}, tables={len(chart2._tables)}")
+        print(f"      lines={len(chart2._lines)}, drawings={len(chart2.drawings)}, tables={len(chart2._tables)}")
         all_clean &= log_check(len(chart2._lines) == 2, "chart2 has 2 lines", errors, "mc2_lines")
-        all_clean &= log_check(len(chart2._drawings) == 1, "chart2 has 1 drawing", errors, "mc2_draw")
+        all_clean &= log_check(len(chart2.drawings) == 1, "chart2 has 1 drawing", errors, "mc2_draw")
         all_clean &= log_check(len(chart2._tables) == 0, "chart2 has 0 tables", errors, "mc2_table")
 
         # --- Clean up chart1 only ---
@@ -428,16 +428,16 @@ def _test_multi_chart_cleanup_impl(toolbox: bool):
         hl1.delete()
         tbl1.delete()
         chart1._clear_handlers()
-        print(f"      chart1: lines={len(chart1._lines)}, drawings={len(chart1._drawings)}, tables={len(chart1._tables)}")
+        print(f"      chart1: lines={len(chart1._lines)}, drawings={len(chart1.drawings)}, tables={len(chart1._tables)}")
         all_clean &= log_check(len(chart1._lines) == 0, "chart1 _lines cleared", errors, "mc1_clean_lines")
-        all_clean &= log_check(len(chart1._drawings) == 0, "chart1 _drawings cleared", errors, "mc1_clean_draw")
+        all_clean &= log_check(len(chart1.drawings) == 0, "chart1 _drawings cleared", errors, "mc1_clean_draw")
         all_clean &= log_check(len(chart1._tables) == 0, "chart1 _tables cleared", errors, "mc1_clean_table")
 
         # --- Verify chart2 unaffected ---
         print("\n[5] Verify chart2 unaffected ...")
-        print(f"      chart2: lines={len(chart2._lines)}, drawings={len(chart2._drawings)}, tables={len(chart2._tables)}")
+        print(f"      chart2: lines={len(chart2._lines)}, drawings={len(chart2.drawings)}, tables={len(chart2._tables)}")
         all_clean &= log_check(len(chart2._lines) == 2, "chart2 still has 2 lines", errors, "mc2_still_has_lines")
-        all_clean &= log_check(len(chart2._drawings) == 1, "chart2 still has 1 drawing", errors, "mc2_still_has_draw")
+        all_clean &= log_check(len(chart2.drawings) == 1, "chart2 still has 1 drawing", errors, "mc2_still_has_draw")
         all_clean &= log_check(len(chart2._tables) == 0, "chart2 still has 0 tables", errors, "mc2_still_no_table")
 
         # JS audit: chart2's handler still has series
@@ -459,14 +459,14 @@ def _test_multi_chart_cleanup_impl(toolbox: bool):
         line2b.delete()
         vl2.delete()
         chart2._clear_handlers()
-        print(f"      chart2: lines={len(chart2._lines)}, drawings={len(chart2._drawings)}, tables={len(chart2._tables)}")
+        print(f"      chart2: lines={len(chart2._lines)}, drawings={len(chart2.drawings)}, tables={len(chart2._tables)}")
         all_clean &= log_check(len(chart2._lines) == 0, "chart2 _lines cleared", errors, "mc2_clean_lines")
-        all_clean &= log_check(len(chart2._drawings) == 0, "chart2 _drawings cleared", errors, "mc2_clean_draw")
+        all_clean &= log_check(len(chart2.drawings) == 0, "chart2 _drawings cleared", errors, "mc2_clean_draw")
 
         # --- Verify chart1 still clean ---
         print("\n[7] Verify chart1 still clean ...")
         all_clean &= log_check(len(chart1._lines) == 0, "chart1 still has 0 lines", errors, "mc1_still_clean")
-        all_clean &= log_check(len(chart1._drawings) == 0, "chart1 still has 0 drawings", errors, "mc1_still_clean_draw")
+        all_clean &= log_check(len(chart1.drawings) == 0, "chart1 still has 0 drawings", errors, "mc1_still_clean_draw")
 
         print()
         print(sep)

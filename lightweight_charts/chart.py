@@ -291,7 +291,7 @@ class WebviewHandler:
             try:
                 while True:
                     q.get_nowait()
-            except Empty:
+            except (Empty, OSError):
                 pass
             q.close()
             q.join_thread()
@@ -397,6 +397,33 @@ class Chart(abstract.AbstractChart):
         if sync_id:
             self.join_sync_group(sync_id, sync_crosshairs_only)
 
+        # 启动消息处理守护线程：从 emit_queue 读取 JS 回调并分发到 handler
+        import threading
+        self._msg_thread = threading.Thread(target=self._message_loop, daemon=True)
+        self._msg_thread.start()
+
+    def _message_loop(self):
+        """守护线程：从 emit_queue 读取 JS 回调并分发到 handler。"""
+        while self.is_alive:
+            try:
+                response = self.wv.emit_queue.get(timeout=1)
+            except Empty:
+                continue
+            except OSError as e:
+                raise RuntimeError(f'_message_loop crashed. {e}')
+
+            if response == 'exit':
+                break
+            func, args = parse_event_message(self.win, response)
+            if func is not None:
+                try:
+                    if inspect.iscoroutinefunction(func):
+                        asyncio.run(func(*args))
+                    else:
+                        func(*args)
+                except Exception as e:
+                    print(f'[Chart] callback error: {e}')
+
     def show(self, block: bool = False, wait: Union[int, float, None] = None):
         """
         显示图表窗口。
@@ -423,7 +450,8 @@ class Chart(abstract.AbstractChart):
             self.wv.wv_process.join(timeout=wait)
             self.exit()
         elif block:
-            asyncio.run(self.show_async())
+            self.wv.wv_process.join()
+            self.exit()
 
     async def show_async(self):
         """异步主循环，处理 JS 回调事件直到窗口关闭。"""

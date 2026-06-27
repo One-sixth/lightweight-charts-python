@@ -33,9 +33,10 @@ export abstract class TwoPointDrawingPaneView extends DrawingPaneView {
 
     update() {
         if (!this._source.p1 || !this._source.p2) return;
-        const series = this._source.series;
-        const y1 = series.priceToCoordinate(this._source.p1.price);
-        const y2 = series.priceToCoordinate(this._source.p2.price);
+        const series = this._source.pane.getSeries();
+        const s = series && series.length > 0 ? series[0] : null;
+        const y1 = s ? s.priceToCoordinate(this._source.p1.price) : null;
+        const y2 = s ? s.priceToCoordinate(this._source.p2.price) : null;
         const x1 = this._getX(this._source.p1);
         const x2 = this._getX(this._source.p2);
         this._p1 = { x: x1, y: y1 };

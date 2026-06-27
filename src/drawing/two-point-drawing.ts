@@ -1,5 +1,6 @@
+import { IPaneApi, Time } from 'lightweight-charts';
 import { Point } from './data-source';
-import { DrawingOptions, defaultOptions } from './options';
+import { DrawingOptions } from './options';
 import { Drawing } from './drawing';
 import { TwoPointDrawingPaneView } from './pane-view';
 
@@ -10,17 +11,14 @@ export abstract class TwoPointDrawing extends Drawing {
     protected _hovered: boolean = false;
 
     constructor(
+        pane: IPaneApi<Time>,
         p1: Point,
         p2: Point,
         options?: Partial<DrawingOptions>
     ) {
-        super()
+        super(pane, options);
         this.points.push(p1);
         this.points.push(p2);
-        this._options = {
-            ...defaultOptions,
-            ...options,
-        };
     }
 
     setFirstPoint(point: Point) {

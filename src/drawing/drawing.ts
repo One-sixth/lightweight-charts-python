@@ -1,11 +1,11 @@
 import {
-    ISeriesApi,
+    IPaneApi,
     Logical,
     MouseEventParams,
-    SeriesType
+    Time,
 } from 'lightweight-charts';
 
-import { PluginBase } from '../plugin-base';
+import { PanePluginBase } from '../pane-plugin-base';
 import { DiffPoint, Point } from './data-source';
 import { DrawingOptions, defaultOptions } from './options';
 import { DrawingPaneView } from './pane-view';
@@ -20,7 +20,7 @@ export enum InteractionState {
     DRAGGINGP4,
 }
 
-export abstract class Drawing extends PluginBase {
+export abstract class Drawing extends PanePluginBase {
     _paneViews: DrawingPaneView[] = [];
     _options: DrawingOptions;
 
@@ -34,15 +34,19 @@ export abstract class Drawing extends PluginBase {
 
     protected static _mouseIsDown: boolean = false;
 
+    /** 拖拽结束后由 DrawingTool 设置的回调 */
+    public static _onDragEnd: (() => void) | null = null;
+
     public static hoveredObject: Drawing | null = null;
     public static lastHoveredObject: Drawing | null = null;
 
     protected _listeners: any[] = [];
 
     constructor(
+        pane: IPaneApi<Time>,
         options?: Partial<DrawingOptions>
     ) {
-        super()
+        super(pane);
         this._options = {
             ...defaultOptions,
             ...options,
@@ -76,11 +80,10 @@ export abstract class Drawing extends PluginBase {
     detach() {
         this._options.lineColor = 'transparent';
         this.requestUpdate();
-        this.series.detachPrimitive(this);
+        this.pane.detachPrimitive(this);
         for (const s of this._listeners) {
             document.body.removeEventListener(s.name, s.listener);
         }
-
     }
 
     get points() {
@@ -99,8 +102,39 @@ export abstract class Drawing extends PluginBase {
         this._listeners.splice(this._listeners.indexOf(toRemove), 1);
     }
 
+    /**
+     * 检查鼠标是否在当前 drawing 所属的 pane 上。
+     * 直接用 MouseEventParams.paneIndex 与 this.pane.paneIndex() 比较。
+     */
+    protected _isMouseInMyPane(param: MouseEventParams): boolean {
+        if (param.paneIndex === undefined) return true;
+        return param.paneIndex === this.pane.paneIndex();
+    }
+
     _handleHoverInteraction(param: MouseEventParams) {
         this._latestHoverPoint = param.point;
+
+        // 已在拖拽中：不检查边界，让拖拽自由完成
+        const isDragging = this._state === InteractionState.DRAGGING
+            || this._state === InteractionState.DRAGGINGP1
+            || this._state === InteractionState.DRAGGINGP2
+            || this._state === InteractionState.DRAGGINGP3
+            || this._state === InteractionState.DRAGGINGP4;
+
+        if (isDragging) {
+            this._handleDragInteraction(param);
+            return;
+        }
+
+        // 未拖拽：检查 pane 边界，鼠标在其他 pane 上时忽略
+        if (!this._isMouseInMyPane(param)) {
+            if (this._state !== InteractionState.NONE) {
+                this._moveToState(InteractionState.NONE);
+                if (Drawing.hoveredObject === this) Drawing.hoveredObject = null;
+            }
+            return;
+        }
+
         if (Drawing._mouseIsDown) {
             this._handleDragInteraction(param);
         } else {
@@ -116,14 +150,20 @@ export abstract class Drawing extends PluginBase {
         }
     }
 
-    public static _eventToPoint(param: MouseEventParams, series: ISeriesApi<SeriesType>) {
-        if (!series || !param.point || !param.logical) return null;
-        const barPrice = series.coordinateToPrice(param.point.y);
+    /**
+     * 将鼠标事件转为 Point（时间+价格）。
+     * 通过 pane.getSeries()[0] 获取 pane 上有数据的 series 做坐标转换。
+     */
+    public static _eventToPoint(param: MouseEventParams, pane: IPaneApi<Time>) {
+        if (!pane || !param.point || !param.logical) return null;
+        const series = pane.getSeries();
+        if (!series || series.length === 0) return null;
+        const barPrice = series[0].coordinateToPrice(param.point.y);
         if (barPrice == null) return null;
         return {
             time: param.time || null,
             logical: param.logical,
-            price: barPrice.valueOf(),
+            price: barPrice,
         }
     }
 
@@ -135,23 +175,40 @@ export abstract class Drawing extends PluginBase {
         return diff;
     }
 
+    /**
+     * 通过 chart.timeScale() 将 logical index 转回 time，不再依赖 series.dataByIndex。
+     */
     protected _addDiffToPoint(point: Point | null, logicalDiff: number, priceDiff: number) {
         if (!point) return;
         point.logical = point.logical + logicalDiff as Logical;
-        point.price = point.price+priceDiff;
-        point.time = this.series.dataByIndex(point.logical)?.time || null;
+        point.price = point.price + priceDiff;
+        // 用 chart.timeScale() 从 logical 恢复 time
+        const timeScale = this.chart.timeScale();
+        const coord = timeScale.logicalToCoordinate(point.logical as Logical);
+        if (coord !== null) {
+            const timeValue = timeScale.coordinateToTime(coord);
+            point.time = timeValue !== null ? (timeValue as any) : null;
+        } else {
+            point.time = null;
+        }
     }
 
     protected _handleMouseDownInteraction = () => {
-        // if (Drawing._mouseIsDown) return;
         Drawing._mouseIsDown = true;
         this._onMouseDown();
     }
 
     protected _handleMouseUpInteraction = () => {
-        // if (!Drawing._mouseIsDown) return;
+        const wasDragging = this._state === InteractionState.DRAGGING
+            || this._state === InteractionState.DRAGGINGP1
+            || this._state === InteractionState.DRAGGINGP2
+            || this._state === InteractionState.DRAGGINGP3
+            || this._state === InteractionState.DRAGGINGP4;
         Drawing._mouseIsDown = false;
         this._moveToState(InteractionState.HOVERING);
+        if (wasDragging) {
+            Drawing._onDragEnd?.();
+        }
     }
 
     private _handleDragInteraction(param: MouseEventParams): void {
@@ -162,7 +219,7 @@ export abstract class Drawing extends PluginBase {
             this._state != InteractionState.DRAGGINGP4) {
             return;
         }
-        const mousePoint = Drawing._eventToPoint(param, this.series);
+        const mousePoint = Drawing._eventToPoint(param, this.pane);
         if (!mousePoint) return;
         this._startDragPoint = this._startDragPoint || mousePoint;
 

@@ -10,9 +10,11 @@ export class HorizontalLineAxisView implements ISeriesPrimitiveAxisView {
         this._source = source;
     }
     update() {
-        if (!this._source.series || !this._source._point) return;
-        this._y = this._source.series.priceToCoordinate(this._source._point.price);
-        const priceFormat = this._source.series.options().priceFormat as PriceFormatBuiltIn;
+        const series = this._source.pane.getSeries();
+        const s = series && series.length > 0 ? series[0] : null;
+        if (!s || !this._source._point) return;
+        this._y = s.priceToCoordinate(this._source._point.price) as Coordinate;
+        const priceFormat = s.options().priceFormat as PriceFormatBuiltIn;
         const precision = priceFormat.precision;
         this._price = this._source._point.price.toFixed(precision).toString();
     }

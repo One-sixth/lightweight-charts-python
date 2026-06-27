@@ -4,6 +4,41 @@
 
 ---
 
+## [v2.8.2] - 2026-06-28
+
+### Breaking Changes
+
+- **ToolBox 回调重构**：`chart.toolbox.save_drawings_under(widget)` 机制保留，新增 `chart.toolbox.on_change += func` / `-= func` 回调注册方式。回调签名改为 `func(drawings: list[DrawingInfo])`（不再传 JSON 字符串）。
+- **Ctrl+Z 撤销移除**：ToolBox 不再监听 Ctrl+Z 撤销快捷键。
+- **ToolBox 生命周期**：`_cleanup()` 方法已移除，改用 `_delete()`（销毁）/ `_build()`（重建）模式。
+
+### Added
+
+- **Pane Primitive 架构**：Drawing 从 `ISeriesPrimitive` 改为 `IPanePrimitive`，直接附着到 pane 而非 series。
+  - 新文件 `src/pane-plugin-base.ts`：实现 `IPanePrimitive` 接口
+  - 所有 pane 的 drawing 都可见，不再依赖 series 数据状态
+  - 坐标转换通过 `pane.getSeries()[0].coordinateToPrice()` 实现
+- **ToolBox on_change 回调系统**：`_CallbackList` 支持 `+=` / `-=` 注册/卸载多个回调
+- **ToolBox DrawingInfo 追踪**：`chart.toolbox.drawings_list` 返回当前所有 drawing 的元信息（id/type/points/options）
+- **ToolBox 生命周期管理**：`_delete()` 销毁 JS toolBox + 清空所有状态，`_build()` 注册 handler + 创建 JS toolBox
+- **跨 pane 拖拽修复**：`_isMouseInMyPane()` 利用 `MouseEventParams.paneIndex` 检查鼠标所在 pane，拖拽中不检查边界
+- **RayLine 数据范围外可拖拽**：坐标转换 null 时跳过该维度检查，不再直接 return false
+- **show(wait=N) 消息循环修复**：改为后台超时线程 + 主线程运行 `show_async()`，JS 回调正常触发
+- **Audit 补充**：Python 端新增 volume_oi/toolbox/drawing_series/interval/offset/period_locked，JS 端新增 paneCount/pane.N.seriesCount/pane.N.height/toolboxDrawings/toolboxHasOnChanged
+
+### Fixed
+
+- **`__init__` AttributeError**：移除 `__init__` 中多余的 `self.toolbox._build()` 调用（在 `self.toolbox` 赋值之前引用）
+- **reset() handler 恢复**：`_save_drawings` → `_on_callback`（方法重命名后未同步）
+- **reset_sub() toolbox 重建**：销毁后自动 `_build()` 重建
+
+### Changed
+
+- **DrawingSeries 精简**：移除 `_ensure_js_series` 和 dummy 数据，仅作 per-pane drawing 管理器（~70 行）
+- **ToolBox 不再创建独立 DrawingSeries**：直接使用主 chart 的 pane（`chart.panes()[0]`）
+
+---
+
 ## [v2.8.1] - 2026-06-27
 
 ### Breaking Changes

@@ -1,6 +1,8 @@
 import {
     DeepPartial,
-    MouseEventParams
+    IPaneApi,
+    MouseEventParams,
+    Time,
 } from "lightweight-charts";
 import { Point } from "../drawing/data-source";
 import { Drawing, InteractionState } from "../drawing/drawing";
@@ -21,8 +23,8 @@ export class HorizontalLine extends Drawing {
 
     protected _startDragPoint: Point | null = null;
 
-    constructor(point: Point, options: DeepPartial<DrawingOptions>, callbackName=null) {
-        super(options)
+    constructor(pane: IPaneApi<Time>, point: Point, options: DeepPartial<DrawingOptions>, callbackName=null) {
+        super(pane, options)
         this._point = point;
         this._point.time = null;    // time is null for horizontal lines
         this._paneViews = [new HorizontalLinePaneView(this)];
@@ -79,7 +81,10 @@ export class HorizontalLine extends Drawing {
 
     _mouseIsOverDrawing(param: MouseEventParams, tolerance = 4) {
         if (!param.point) return false;
-        const y = this.series.priceToCoordinate(this._point.price);
+        const series = this.pane.getSeries();
+        const s = series && series.length > 0 ? series[0] : null;
+        if (!s) return false;
+        const y = s.priceToCoordinate(this._point.price);
         if (!y) return false;
         return (Math.abs(y-param.point.y) < tolerance);
     }

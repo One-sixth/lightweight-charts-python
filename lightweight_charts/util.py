@@ -16,12 +16,12 @@ if TYPE_CHECKING:
 class Pane:
     """所有可放置在图表上的组件的基类。自动分配唯一 ID 并持有窗口引用。"""
     def __init__(self, window, prefix=''):
-        self.win: Window = window
+        self.win: 'Window' = window
         self.run_script = window.run_script
         self.bulk_run = window.bulk_run
         if hasattr(self, 'id'):
             return
-        self.id = Window._id_gen.generate(f'{type(self).__name__}_')
+        self.id = window._id_gen.generate(f'{type(self).__name__}_')
 
 
 class IDGen:

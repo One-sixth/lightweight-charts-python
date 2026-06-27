@@ -364,39 +364,39 @@ var Lib = (function (exports, lightweightCharts) {
         return value;
     }
 
-    //* PluginBase is a useful base to build a plugin upon which
-    //* already handles creating getters for the chart and series,
-    //* and provides a requestUpdate method.
-    class PluginBase {
+    /**
+     * PanePluginBase — 实现 IPanePrimitive 接口的基类。
+     *
+     * 与 PluginBase（ISeriesPrimitive）的区别：
+     * - 附着到 pane 而非 series
+     * - 构造时传入 pane 引用（PaneAttachedParameter 不含 pane）
+     * - 没有 series 引用、没有 priceAxisViews/timeAxisViews
+     */
+    class PanePluginBase {
         _chart = undefined;
-        _series = undefined;
+        _pane;
+        _requestUpdate;
+        constructor(pane) {
+            this._pane = pane;
+        }
         requestUpdate() {
             if (this._requestUpdate)
                 this._requestUpdate();
         }
-        _requestUpdate;
-        attached({ chart, series, requestUpdate, }) {
+        attached({ chart, requestUpdate }) {
             this._chart = chart;
-            this._series = series;
-            this._series.subscribeDataChanged(this._fireDataUpdated);
             this._requestUpdate = requestUpdate;
             this.requestUpdate();
         }
         detached() {
             this._chart = undefined;
-            this._series = undefined;
             this._requestUpdate = undefined;
         }
         get chart() {
             return ensureDefined(this._chart);
         }
-        get series() {
-            return ensureDefined(this._series);
-        }
-        _fireDataUpdated(scope) {
-            if (this.dataUpdated) {
-                this.dataUpdated(scope);
-            }
+        get pane() {
+            return this._pane;
         }
     }
 
@@ -416,7 +416,7 @@ var Lib = (function (exports, lightweightCharts) {
         InteractionState[InteractionState["DRAGGINGP3"] = 5] = "DRAGGINGP3";
         InteractionState[InteractionState["DRAGGINGP4"] = 6] = "DRAGGINGP4";
     })(InteractionState || (InteractionState = {}));
-    class Drawing extends PluginBase {
+    class Drawing extends PanePluginBase {
         _paneViews = [];
         _options;
         _points = [];
@@ -424,11 +424,13 @@ var Lib = (function (exports, lightweightCharts) {
         _startDragPoint = null;
         _latestHoverPoint = null;
         static _mouseIsDown = false;
+        /** 拖拽结束后由 DrawingTool 设置的回调 */
+        static _onDragEnd = null;
         static hoveredObject = null;
         static lastHoveredObject = null;
         _listeners = [];
-        constructor(options) {
-            super();
+        constructor(pane, options) {
+            super(pane);
             this._options = {
                 ...defaultOptions,
                 ...options,
@@ -458,7 +460,7 @@ var Lib = (function (exports, lightweightCharts) {
         detach() {
             this._options.lineColor = 'transparent';
             this.requestUpdate();
-            this.series.detachPrimitive(this);
+            this.pane.detachPrimitive(this);
             for (const s of this._listeners) {
                 document.body.removeEventListener(s.name, s.listener);
             }
@@ -475,8 +477,36 @@ var Lib = (function (exports, lightweightCharts) {
             const toRemove = this._listeners.find((x) => x.name === name && x.listener === callback);
             this._listeners.splice(this._listeners.indexOf(toRemove), 1);
         }
+        /**
+         * 检查鼠标是否在当前 drawing 所属的 pane 上。
+         * 直接用 MouseEventParams.paneIndex 与 this.pane.paneIndex() 比较。
+         */
+        _isMouseInMyPane(param) {
+            if (param.paneIndex === undefined)
+                return true;
+            return param.paneIndex === this.pane.paneIndex();
+        }
         _handleHoverInteraction(param) {
             this._latestHoverPoint = param.point;
+            // 已在拖拽中：不检查边界，让拖拽自由完成
+            const isDragging = this._state === InteractionState.DRAGGING
+                || this._state === InteractionState.DRAGGINGP1
+                || this._state === InteractionState.DRAGGINGP2
+                || this._state === InteractionState.DRAGGINGP3
+                || this._state === InteractionState.DRAGGINGP4;
+            if (isDragging) {
+                this._handleDragInteraction(param);
+                return;
+            }
+            // 未拖拽：检查 pane 边界，鼠标在其他 pane 上时忽略
+            if (!this._isMouseInMyPane(param)) {
+                if (this._state !== InteractionState.NONE) {
+                    this._moveToState(InteractionState.NONE);
+                    if (Drawing.hoveredObject === this)
+                        Drawing.hoveredObject = null;
+                }
+                return;
+            }
             if (Drawing._mouseIsDown) {
                 this._handleDragInteraction(param);
             }
@@ -496,16 +526,23 @@ var Lib = (function (exports, lightweightCharts) {
                 }
             }
         }
-        static _eventToPoint(param, series) {
-            if (!series || !param.point || !param.logical)
+        /**
+         * 将鼠标事件转为 Point（时间+价格）。
+         * 通过 pane.getSeries()[0] 获取 pane 上有数据的 series 做坐标转换。
+         */
+        static _eventToPoint(param, pane) {
+            if (!pane || !param.point || !param.logical)
                 return null;
-            const barPrice = series.coordinateToPrice(param.point.y);
+            const series = pane.getSeries();
+            if (!series || series.length === 0)
+                return null;
+            const barPrice = series[0].coordinateToPrice(param.point.y);
             if (barPrice == null)
                 return null;
             return {
                 time: param.time || null,
                 logical: param.logical,
-                price: barPrice.valueOf(),
+                price: barPrice,
             };
         }
         static _getDiff(p1, p2) {
@@ -515,22 +552,40 @@ var Lib = (function (exports, lightweightCharts) {
             };
             return diff;
         }
+        /**
+         * 通过 chart.timeScale() 将 logical index 转回 time，不再依赖 series.dataByIndex。
+         */
         _addDiffToPoint(point, logicalDiff, priceDiff) {
             if (!point)
                 return;
             point.logical = point.logical + logicalDiff;
             point.price = point.price + priceDiff;
-            point.time = this.series.dataByIndex(point.logical)?.time || null;
+            // 用 chart.timeScale() 从 logical 恢复 time
+            const timeScale = this.chart.timeScale();
+            const coord = timeScale.logicalToCoordinate(point.logical);
+            if (coord !== null) {
+                const timeValue = timeScale.coordinateToTime(coord);
+                point.time = timeValue !== null ? timeValue : null;
+            }
+            else {
+                point.time = null;
+            }
         }
         _handleMouseDownInteraction = () => {
-            // if (Drawing._mouseIsDown) return;
             Drawing._mouseIsDown = true;
             this._onMouseDown();
         };
         _handleMouseUpInteraction = () => {
-            // if (!Drawing._mouseIsDown) return;
+            const wasDragging = this._state === InteractionState.DRAGGING
+                || this._state === InteractionState.DRAGGINGP1
+                || this._state === InteractionState.DRAGGINGP2
+                || this._state === InteractionState.DRAGGINGP3
+                || this._state === InteractionState.DRAGGINGP4;
             Drawing._mouseIsDown = false;
             this._moveToState(InteractionState.HOVERING);
+            if (wasDragging) {
+                Drawing._onDragEnd?.();
+            }
         };
         _handleDragInteraction(param) {
             if (this._state != InteractionState.DRAGGING &&
@@ -540,7 +595,7 @@ var Lib = (function (exports, lightweightCharts) {
                 this._state != InteractionState.DRAGGINGP4) {
                 return;
             }
-            const mousePoint = Drawing._eventToPoint(param, this.series);
+            const mousePoint = Drawing._eventToPoint(param, this.pane);
             if (!mousePoint)
                 return;
             this._startDragPoint = this._startDragPoint || mousePoint;
@@ -655,9 +710,10 @@ var Lib = (function (exports, lightweightCharts) {
         update() {
             if (!this._source.p1 || !this._source.p2)
                 return;
-            const series = this._source.series;
-            const y1 = series.priceToCoordinate(this._source.p1.price);
-            const y2 = series.priceToCoordinate(this._source.p2.price);
+            const series = this._source.pane.getSeries();
+            const s = series && series.length > 0 ? series[0] : null;
+            const y1 = s ? s.priceToCoordinate(this._source.p1.price) : null;
+            const y2 = s ? s.priceToCoordinate(this._source.p2.price) : null;
             const x1 = this._getX(this._source.p1);
             const x2 = this._getX(this._source.p2);
             this._p1 = { x: x1, y: y1 };
@@ -681,11 +737,12 @@ var Lib = (function (exports, lightweightCharts) {
         update() {
             const point = this._source._point;
             const timeScale = this._source.chart.timeScale();
-            const series = this._source.series;
+            const series = this._source.pane.getSeries();
+            const s = series && series.length > 0 ? series[0] : null;
             if (this._source._type == "RayLine") {
                 this._point.x = point.time ? timeScale.timeToCoordinate(point.time) : timeScale.logicalToCoordinate(point.logical);
             }
-            this._point.y = series.priceToCoordinate(point.price);
+            this._point.y = s ? s.priceToCoordinate(point.price) : null;
         }
         renderer() {
             return new HorizontalLinePaneRenderer(this._point, this._source._options);
@@ -700,10 +757,12 @@ var Lib = (function (exports, lightweightCharts) {
             this._source = source;
         }
         update() {
-            if (!this._source.series || !this._source._point)
+            const series = this._source.pane.getSeries();
+            const s = series && series.length > 0 ? series[0] : null;
+            if (!s || !this._source._point)
                 return;
-            this._y = this._source.series.priceToCoordinate(this._source._point.price);
-            const priceFormat = this._source.series.options().priceFormat;
+            this._y = s.priceToCoordinate(this._source._point.price);
+            const priceFormat = s.options().priceFormat;
             const precision = priceFormat.precision;
             this._price = this._source._point.price.toFixed(precision).toString();
         }
@@ -734,8 +793,8 @@ var Lib = (function (exports, lightweightCharts) {
         _callbackName;
         _priceAxisViews;
         _startDragPoint = null;
-        constructor(point, options, callbackName = null) {
-            super(options);
+        constructor(pane, point, options, callbackName = null) {
+            super(pane, options);
             this._point = point;
             this._point.time = null; // time is null for horizontal lines
             this._paneViews = [new HorizontalLinePaneView(this)];
@@ -785,7 +844,11 @@ var Lib = (function (exports, lightweightCharts) {
         _mouseIsOverDrawing(param, tolerance = 4) {
             if (!param.point)
                 return false;
-            const y = this.series.priceToCoordinate(this._point.price);
+            const series = this.pane.getSeries();
+            const s = series && series.length > 0 ? series[0] : null;
+            if (!s)
+                return false;
+            const y = s.priceToCoordinate(this._point.price);
             if (!y)
                 return false;
             return (Math.abs(y - param.point.y) < tolerance);
@@ -807,16 +870,20 @@ var Lib = (function (exports, lightweightCharts) {
 
     class DrawingTool {
         _chart;
-        _series;
+        _pane;
         _finishDrawingCallback = null;
+        /** 任意 drawing 变更后触发（创建/删除/清空/拖拽结束） */
+        onChanged = null;
         _drawings = [];
         _activeDrawing = null;
         _isDrawing = false;
         _drawingType = null;
-        constructor(chart, series, finishDrawingCallback = null) {
+        constructor(chart, pane, finishDrawingCallback = null) {
             this._chart = chart;
-            this._series = series;
+            this._pane = pane;
             this._finishDrawingCallback = finishDrawingCallback;
+            // 设置 Drawing 的 drag-end 静态回调
+            Drawing._onDragEnd = () => this.onChanged?.();
             this._chart.subscribeClick(this._clickHandler);
             this._chart.subscribeCrosshairMove(this._moveHandler);
         }
@@ -834,7 +901,7 @@ var Lib = (function (exports, lightweightCharts) {
             return this._drawings;
         }
         addNewDrawing(drawing) {
-            this._series.attachPrimitive(drawing);
+            this._pane.attachPrimitive(drawing);
             this._drawings.push(drawing);
         }
         delete(d) {
@@ -845,11 +912,13 @@ var Lib = (function (exports, lightweightCharts) {
                 return;
             this._drawings.splice(idx, 1);
             d.detach();
+            this.onChanged?.();
         }
         clearDrawings() {
             for (const d of this._drawings)
                 d.detach();
             this._drawings = [];
+            this.onChanged?.();
         }
         repositionOnTime() {
             for (const drawing of this.drawings) {
@@ -873,14 +942,14 @@ var Lib = (function (exports, lightweightCharts) {
         _onClick(param) {
             if (!this._isDrawing)
                 return;
-            const point = Drawing._eventToPoint(param, this._series);
+            const point = Drawing._eventToPoint(param, this._pane);
             if (!point)
                 return;
             if (this._activeDrawing == null) {
                 if (this._drawingType == null)
                     return;
-                this._activeDrawing = new this._drawingType(point, point);
-                this._series.attachPrimitive(this._activeDrawing);
+                this._activeDrawing = new this._drawingType(this._pane, point, point);
+                this._pane.attachPrimitive(this._activeDrawing);
                 if (this._drawingType == HorizontalLine)
                     this._onClick(param);
             }
@@ -899,11 +968,10 @@ var Lib = (function (exports, lightweightCharts) {
                 t._handleHoverInteraction(param);
             if (!this._isDrawing || !this._activeDrawing)
                 return;
-            const point = Drawing._eventToPoint(param, this._series);
+            const point = Drawing._eventToPoint(param, this._pane);
             if (!point)
                 return;
             this._activeDrawing.updatePoints(null, point);
-            // this._activeDrawing.setSecondPoint(point);
         }
     }
 
@@ -951,14 +1019,10 @@ var Lib = (function (exports, lightweightCharts) {
     class TwoPointDrawing extends Drawing {
         _paneViews = [];
         _hovered = false;
-        constructor(p1, p2, options) {
-            super();
+        constructor(pane, p1, p2, options) {
+            super(pane, options);
             this.points.push(p1);
             this.points.push(p2);
-            this._options = {
-                ...defaultOptions,
-                ...options,
-            };
         }
         setFirstPoint(point) {
             this.updatePoints(point);
@@ -973,8 +1037,8 @@ var Lib = (function (exports, lightweightCharts) {
 
     class TrendLine extends TwoPointDrawing {
         _type = "TrendLine";
-        constructor(p1, p2, options) {
-            super(p1, p2, options);
+        constructor(pane, p1, p2, options) {
+            super(pane, p1, p2, options);
             this._paneViews = [new TrendLinePaneView(this)];
         }
         _moveToState(state) {
@@ -1097,8 +1161,8 @@ var Lib = (function (exports, lightweightCharts) {
     };
     class Box extends TwoPointDrawing {
         _type = "Box";
-        constructor(p1, p2, options) {
-            super(p1, p2, options);
+        constructor(pane, p1, p2, options) {
+            super(pane, p1, p2, options);
             this._options = {
                 ...defaultBoxOptions,
                 ...options,
@@ -1498,8 +1562,8 @@ var Lib = (function (exports, lightweightCharts) {
 
     class RayLine extends HorizontalLine {
         _type = 'RayLine';
-        constructor(point, options) {
-            super({ ...point }, options);
+        constructor(pane, point, options) {
+            super(pane, { ...point }, options);
             this._point.time = point.time;
         }
         updatePoints(...points) {
@@ -1515,11 +1579,16 @@ var Lib = (function (exports, lightweightCharts) {
         _mouseIsOverDrawing(param, tolerance = 4) {
             if (!param.point)
                 return false;
-            const y = this.series.priceToCoordinate(this._point.price);
-            const x = this._point.time ? this.chart.timeScale().timeToCoordinate(this._point.time) : null;
-            if (!y || !x)
+            const series = this.pane.getSeries();
+            const s = series && series.length > 0 ? series[0] : null;
+            if (!s)
                 return false;
-            return (Math.abs(y - param.point.y) < tolerance && param.point.x > x - tolerance);
+            const y = s.priceToCoordinate(this._point.price);
+            const x = this._point.time ? this.chart.timeScale().timeToCoordinate(this._point.time) : null;
+            // 坐标转换失败时（点在数据范围外），仍用 param.point 近似检测
+            const yOk = y !== null ? Math.abs(y - param.point.y) < tolerance : true;
+            const xOk = x !== null ? param.point.x > x - tolerance : true;
+            return yOk && xOk;
         }
     }
 
@@ -1556,9 +1625,10 @@ var Lib = (function (exports, lightweightCharts) {
         update() {
             const point = this._source._point;
             const timeScale = this._source.chart.timeScale();
-            const series = this._source.series;
+            const series = this._source.pane.getSeries();
+            const s = series && series.length > 0 ? series[0] : null;
             this._point.x = point.time ? timeScale.timeToCoordinate(point.time) : timeScale.logicalToCoordinate(point.logical);
-            this._point.y = series.priceToCoordinate(point.price);
+            this._point.y = s ? s.priceToCoordinate(point.price) : null;
         }
         renderer() {
             return new VerticalLinePaneRenderer(this._point, this._source._options);
@@ -1605,8 +1675,8 @@ var Lib = (function (exports, lightweightCharts) {
         _point;
         _callbackName;
         _startDragPoint = null;
-        constructor(point, options, callbackName = null) {
-            super(options);
+        constructor(pane, point, options, callbackName = null) {
+            super(pane, options);
             this._point = point;
             this._paneViews = [new VerticalLinePaneView(this)];
             this._callbackName = callbackName;
@@ -1624,7 +1694,10 @@ var Lib = (function (exports, lightweightCharts) {
                 if (!p)
                     continue;
                 if (!p.time && p.logical) {
-                    p.time = this.series.dataByIndex(p.logical)?.time || null;
+                    // 用 chart.timeScale() 从 logical 恢复 time，不再依赖 series.dataByIndex
+                    const timeScale = this.chart.timeScale();
+                    const coord = timeScale.logicalToCoordinate(p.logical);
+                    p.time = coord !== null ? (timeScale.coordinateToTime(coord) || null) : null;
                 }
                 this._point = p;
             }
@@ -1668,7 +1741,7 @@ var Lib = (function (exports, lightweightCharts) {
             else {
                 x = timeScale.logicalToCoordinate(this._point.logical);
             }
-            if (!x)
+            if (x === null || x === undefined)
                 return false;
             return (Math.abs(x - param.point.x) < tolerance);
         }
@@ -1698,28 +1771,19 @@ var Lib = (function (exports, lightweightCharts) {
         buttons = [];
         _commandFunctions;
         _handlerID;
+        _pane;
         _drawingTool;
         _contextMenu;
-        _undoHandler;
-        constructor(handlerID, chart, series, commandFunctions) {
+        constructor(handlerID, chart, pane, commandFunctions) {
             this._handlerID = handlerID;
             this._commandFunctions = commandFunctions;
-            this._drawingTool = new DrawingTool(chart, series, () => this.removeActiveAndSave());
+            this._pane = pane;
+            this._drawingTool = new DrawingTool(chart, pane, () => this.removeActiveAndSave());
+            this._drawingTool.onChanged = () => this.saveDrawings();
             this.div = this._makeToolBox();
             this._contextMenu = new ContextMenu(this.saveDrawings, this._drawingTool);
-            this._undoHandler = (event) => {
-                if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ') {
-                    const drawingToDelete = this._drawingTool.drawings.pop();
-                    if (drawingToDelete)
-                        this._drawingTool.delete(drawingToDelete);
-                    return true;
-                }
-                return false;
-            };
-            commandFunctions.push(this._undoHandler);
         }
         toJSON() {
-            // Exclude the chart attribute from serialization
             const { ...serialized } = this;
             return serialized;
         }
@@ -1810,43 +1874,31 @@ var Lib = (function (exports, lightweightCharts) {
             drawings.forEach((d) => {
                 switch (d.type) {
                     case "Box":
-                        this._drawingTool.addNewDrawing(new Box(d.points[0], d.points[1], d.options));
+                        this._drawingTool.addNewDrawing(new Box(this._pane, d.points[0], d.points[1], d.options));
                         break;
                     case "TrendLine":
-                        this._drawingTool.addNewDrawing(new TrendLine(d.points[0], d.points[1], d.options));
+                        this._drawingTool.addNewDrawing(new TrendLine(this._pane, d.points[0], d.points[1], d.options));
                         break;
                     case "HorizontalLine":
-                        this._drawingTool.addNewDrawing(new HorizontalLine(d.points[0], d.options));
+                        this._drawingTool.addNewDrawing(new HorizontalLine(this._pane, d.points[0], d.options));
                         break;
                     case "RayLine":
-                        this._drawingTool.addNewDrawing(new RayLine(d.points[0], d.options));
+                        this._drawingTool.addNewDrawing(new RayLine(this._pane, d.points[0], d.options));
                         break;
                     case "VerticalLine":
-                        this._drawingTool.addNewDrawing(new VerticalLine(d.points[0], d.options));
+                        this._drawingTool.addNewDrawing(new VerticalLine(this._pane, d.points[0], d.options));
                         break;
                 }
             });
         }
-        /**
-         * 清理 ToolBox 的所有 JS 资源：DrawingTool 事件、ContextMenu、commandFunction、DOM。
-         * 用于 reset_sub() 时清理子图的绘图工具箱。
-         */
         _cleanup() {
-            // 取消 DrawingTool 的 chart 事件订阅
             this._drawingTool._chart.unsubscribeClick(this._drawingTool._clickHandler);
             this._drawingTool._chart.unsubscribeCrosshairMove(this._drawingTool._moveHandler);
-            // 清理 drawings
             this.clearDrawings();
-            // 清理 ContextMenu
             if (this._contextMenu) {
                 document.body.removeEventListener('contextmenu', this._contextMenu._onRightClick);
                 this._contextMenu.div.remove();
             }
-            // 清理 commandFunctions
-            const idx = this._commandFunctions.indexOf(this._undoHandler);
-            if (idx >= 0)
-                this._commandFunctions.splice(idx, 1);
-            // 移除 DOM
             this.div.remove();
         }
     }
@@ -2194,6 +2246,29 @@ var Lib = (function (exports, lightweightCharts) {
                     lines.push(`hasWatermark = true`);
                 // — extra series count —
                 lines.push(`extraSeriesCount = ${h._seriesList.length}`);
+                // — ToolBox drawing count —
+                if (h.toolBox) {
+                    try {
+                        const dt = h.toolBox._drawingTool;
+                        if (dt) {
+                            lines.push(`toolboxDrawings = ${dt.drawings.length}`);
+                            lines.push(`toolboxHasOnChanged = ${!!dt.onChanged}`);
+                        }
+                    }
+                    catch (_) { }
+                }
+                // — Pane primitives —
+                try {
+                    const panes = h.chart.panes();
+                    lines.push(`paneCount = ${panes.length}`);
+                    for (let pi = 0; pi < panes.length; pi++) {
+                        const pane = panes[pi];
+                        const series = pane.getSeries();
+                        lines.push(`pane.${pi}.seriesCount = ${series.length}`);
+                        lines.push(`pane.${pi}.height = ${pane.getHeight()}`);
+                    }
+                }
+                catch (_) { }
             };
             // — Single pass: iterate window globals, merge handler + non-handler —
             for (const key of Object.keys(window)) {
@@ -2717,9 +2792,10 @@ var Lib = (function (exports, lightweightCharts) {
             };
         }
         createToolBox() {
-            if (!this.series)
+            const panes = this.chart.panes();
+            if (!panes || panes.length === 0)
                 return;
-            this.toolBox = new ToolBox(this.id, this.chart, this.series, this.commandFunctions);
+            this.toolBox = new ToolBox(this.id, this.chart, panes[0], this.commandFunctions);
             this.div.appendChild(this.toolBox.div);
         }
         createTopBar() {

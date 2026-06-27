@@ -1,9 +1,9 @@
 import {
     IChartApi,
-    ISeriesApi,
+    IPaneApi,
     Logical,
     MouseEventParams,
-    SeriesType,
+    Time,
 } from 'lightweight-charts';
 import { Drawing } from './drawing';
 import { HorizontalLine } from '../horizontal-line/horizontal-line';
@@ -11,18 +11,24 @@ import { HorizontalLine } from '../horizontal-line/horizontal-line';
 
 export class DrawingTool {
     public _chart: IChartApi;
-    private _series: ISeriesApi<SeriesType>;
+    private _pane: IPaneApi<Time>;
     private _finishDrawingCallback: Function | null = null;
+
+    /** 任意 drawing 变更后触发（创建/删除/清空/拖拽结束） */
+    public onChanged: Function | null = null;
 
     private _drawings: Drawing[] = [];
     private _activeDrawing: Drawing | null = null;
     private _isDrawing: boolean = false;
     private _drawingType: (new (...args: any[]) => Drawing) | null = null;
 
-    constructor(chart: IChartApi, series: ISeriesApi<SeriesType>, finishDrawingCallback: Function | null = null) {
+    constructor(chart: IChartApi, pane: IPaneApi<Time>, finishDrawingCallback: Function | null = null) {
         this._chart = chart;
-        this._series = series;
+        this._pane = pane;
         this._finishDrawingCallback = finishDrawingCallback;
+
+        // 设置 Drawing 的 drag-end 静态回调
+        Drawing._onDragEnd = () => this.onChanged?.();
 
         this._chart.subscribeClick(this._clickHandler);
         this._chart.subscribeCrosshairMove(this._moveHandler);
@@ -46,7 +52,7 @@ export class DrawingTool {
     }
 
     addNewDrawing(drawing: Drawing) {
-        this._series.attachPrimitive(drawing);
+        this._pane.attachPrimitive(drawing);
         this._drawings.push(drawing);
     }
 
@@ -56,11 +62,13 @@ export class DrawingTool {
         if (idx == -1) return;
         this._drawings.splice(idx, 1)
         d.detach();
+        this.onChanged?.();
     }
 
     clearDrawings() {
         for (const d of this._drawings) d.detach();
         this._drawings = [];
+        this.onChanged?.();
     }
 
     repositionOnTime() {
@@ -88,14 +96,14 @@ export class DrawingTool {
     private _onClick(param: MouseEventParams) {
         if (!this._isDrawing) return;
 
-        const point = Drawing._eventToPoint(param, this._series);
+        const point = Drawing._eventToPoint(param, this._pane);
         if (!point) return;
 
         if (this._activeDrawing == null) {
             if (this._drawingType == null) return;
 
-            this._activeDrawing = new this._drawingType(point, point);
-            this._series.attachPrimitive(this._activeDrawing);
+            this._activeDrawing = new this._drawingType(this._pane, point, point);
+            this._pane.attachPrimitive(this._activeDrawing);
             if (this._drawingType == HorizontalLine) this._onClick(param);
         }
         else {
@@ -114,9 +122,8 @@ export class DrawingTool {
 
         if (!this._isDrawing || !this._activeDrawing) return;
 
-        const point = Drawing._eventToPoint(param, this._series);
+        const point = Drawing._eventToPoint(param, this._pane);
         if (!point) return;
         this._activeDrawing.updatePoints(null, point);
-        // this._activeDrawing.setSecondPoint(point);
     }
 }
