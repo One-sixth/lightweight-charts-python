@@ -344,14 +344,8 @@ var Lib = (function (exports, lightweightCharts) {
                 // 普通 value 类型的 series
                 if (data.value === undefined)
                     return;
-                let price;
-                if (seriesType === 'Histogram') {
-                    price = this.shorthandFormat(data.value);
-                }
-                else {
-                    const format = e.series.options().priceFormat;
-                    price = this.legendItemFormat(data.value, format.precision);
-                }
+                const format = e.series.options().priceFormat;
+                const price = this.legendItemFormat(data.value, format.precision);
                 e.div.innerHTML = `<span style="color: ${e.solid};">️■</span>    ${e.name} : ${price}`;
             });
         }

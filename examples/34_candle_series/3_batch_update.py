@@ -67,4 +67,5 @@ if __name__ == '__main__':
     )
 
     chart.fit()
-    chart.show(block=True)
+    chart.show(wait=120)
+    chart.exit()

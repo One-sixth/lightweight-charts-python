@@ -1,8 +1,8 @@
 """
-Example 24: Base Price Format (v5.2.0+)
+Example 24: Price Format via price_scale
 ============================================
-演示 'base' 价格格式，通过定义基准值和精度来避免浮点精度问题。
-这是 minMove 的替代方案。
+演示通过 price_scale(price_format=...) 设置价格格式。
+'base' 格式通过定义基准值和精度来避免浮点精度问题。
 
 使用方法: python price_format.py
 """
@@ -30,7 +30,7 @@ def generate_bars(num_bars=100, start_price=100.0, seed=42):
 
 if __name__ == '__main__':
     print("=" * 70)
-    print(" 示例 24: Base 价格格式 — set_price_format(type='base', base, precision)")
+    print(" 示例 24: Base 价格格式 — price_scale(price_format={'type':'base','base':100,'precision':2})")
     print("=" * 70)
 
     # 创建图表
@@ -44,7 +44,7 @@ if __name__ == '__main__':
     # 应用 base 价格格式：基准值=100，精度=2
     # 这意味着所有价格值将显示为 (实际值 / 基准值) 并保留 2 位小数
     # 例如，实际价格 100.00 将显示为 1.00
-    chart.set_price_format(type='base', base=100, precision=2)
+    chart.price_scale(price_format={'type': 'base', 'base': 100, 'precision': 2})
 
     chart.show(wait=120)
     chart.exit()

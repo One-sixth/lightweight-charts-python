@@ -1,7 +1,5 @@
 import pandas as pd
 import numpy as np
-import asyncio
-from threading import Thread
 from lightweight_charts import Chart
 
 
@@ -26,11 +24,6 @@ def generate_data(seed: int = 42):
     return pd.DataFrame(rows)
 
 
-def run_chart(chart):
-    """Runs a chart's async event loop in a separate thread."""
-    asyncio.run(chart.show_async())
-
-
 if __name__ == '__main__':
     df = generate_data()
 
@@ -44,13 +37,10 @@ if __name__ == '__main__':
     chart_persist.legend(visible=True, ohlc=True, persistent=True)
     chart_persist.set(df)
 
-    t1 = Thread(target=run_chart, args=(chart_default,), daemon=True)
-    t2 = Thread(target=run_chart, args=(chart_persist,), daemon=True)
-    t1.start()
-    t2.start()
+    chart_default.show()
+    chart_persist.show()
 
-    try:
-        t1.join()
-    except KeyboardInterrupt:
-        chart_default.exit()
-        chart_persist.exit()
+    chart_default.show(wait=120)
+
+    chart_default.exit()
+    chart_persist.exit()

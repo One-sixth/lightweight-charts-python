@@ -75,7 +75,8 @@ if __name__ == '__main__':
     print("Both panes show the same K-line data + SMA 20.")
     print("Move mouse over the yellow line — only the right side lifts above candles.\n")
 
+    left.show()
+    right.show(wait=120)
 
-
-    left.show(block=False)
-    right.show(block=True)
+    left.exit()
+    right.exit()

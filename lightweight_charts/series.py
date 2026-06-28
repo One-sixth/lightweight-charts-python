@@ -383,9 +383,13 @@ class SeriesCommon(Pane):
         ticks_visible: bool = False,
         tick_mark_density: float = None,
         minimum_width: int = 0,
-        perm_width: int = 0
+        perm_width: int = 0,
+        price_format: dict = None,
     ):
-        """配置价格坐标轴的外观与行为。"""
+        """配置价格坐标轴的外观与行为。
+
+        :param price_format: 价格格式配置，如 {'type': 'base', 'base': 100, 'precision': 2}
+        """
         self.run_script(f'''
             {self.id}.series.priceScale().applyOptions({{
                 autoScale: {jbool(auto_scale)},
@@ -402,6 +406,7 @@ class SeriesCommon(Pane):
                 {f'tickMarkDensity: {tick_mark_density},' if tick_mark_density is not None else ''}
                 minimumWidth: {minimum_width},
                 {f'permWidth: {perm_width},' if perm_width else ''}
+                {f'priceFormat: {js_json(price_format)},' if price_format else ''}
             }})''')
 
 
@@ -1078,9 +1083,13 @@ class CandleSeries(SeriesCommon):
         ticks_visible: bool = False,
         tick_mark_density: float = None,
         minimum_width: int = 0,
-        perm_width: int = 0
+        perm_width: int = 0,
+        price_format: dict = None,
     ):
-        """配置价格坐标轴的外观与行为。"""
+        """配置价格坐标轴的外观与行为。
+
+        :param price_format: 价格格式配置，如 {'type': 'base', 'base': 100, 'precision': 2}
+        """
         self.run_script(f'''
             {self.id}.series.priceScale().applyOptions({{
                 autoScale: {jbool(auto_scale)},
@@ -1097,6 +1106,7 @@ class CandleSeries(SeriesCommon):
                 {f'tickMarkDensity: {tick_mark_density},' if tick_mark_density is not None else ''}
                 minimumWidth: {minimum_width},
                 {f'permWidth: {perm_width},' if perm_width else ''}
+                {f'priceFormat: {js_json(price_format)},' if price_format else ''}
             }})''')
 
     def delete(self):

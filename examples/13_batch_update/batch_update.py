@@ -1,11 +1,12 @@
 """
 Example 13: Batch Update
-Demonstrates update_bars() and update_from_ticks() for batch incremental updates
+Demonstrates update_bars() and update_ticks() for batch incremental updates
 using randomly generated data.
 
 This example shows:
 1. update_bars() — batch OHLCV incremental update
-2. update_from_ticks() — batch tick incremental update
+2. update_ticks() — batch tick incremental update
+3. TopBar — displaying status updates to the user
 """
 import pandas as pd
 import numpy as np
@@ -86,7 +87,14 @@ if __name__ == '__main__':
     chart = Chart(title='Batch Update Demo', width=1000, height=600)
     chart.legend(visible=True, ohlc=True, persistent=True)
 
-    # Step 1: Generate and set initial data
+    # Create a topbar textbox for status messages
+    chart.topbar.textbox('status', '⏳ 正在初始化...', 'left')
+    status = chart.topbar['status']
+
+    chart.show()
+
+    # ── Step 1: Generate and set initial data ──
+    status.set('⏳ 正在生成初始数据...')
     print("Generating initial data...")
     initial_df = generate_initial_bars(100)
     chart.set(initial_df)
@@ -101,45 +109,80 @@ if __name__ == '__main__':
     sma_line = chart.create_line(name='SMA 20', color='rgba(255, 165, 0, 0.6)')
     sma_line.set(sma_df)
 
-    chart.show()
+    status.set('✅ 初始数据就绪，即将开始批量更新...')
+    print("✅ Initial data ready")
+    sleep(2)
 
-    # Step 2: Demonstrate update_bars() — batch OHLCV update
-    print("\n=== update_bars() Demo ===")
-    print("Adding 30 bars in batch...")
+    # ── Step 2: 4 rounds of alternating bar/tick updates ──
+    last_bar = initial_df.iloc[-1]
+    bar_colors = ['#26A69A', '#FF9800', '#E040FB', '#42A5F5']
 
-    next_bars = generate_next_bars(30, initial_df.iloc[-1])
-    chart.update_bars(next_bars)
-    print(f"✅ Updated {len(next_bars)} bars via update_bars()")
-    sleep(1)
+    for i in range(4):
+        is_bar = (i % 2 == 0)  # bar: 0,2  tick: 1,3
 
-    # Step 3: Demonstrate update_from_ticks() — batch tick update
-    print("\n=== update_from_ticks() Demo ===")
-    print("Adding 200 ticks in batch...")
+        if is_bar:
+            label = 'K 线'
+            count = 30
+            # ⏳ 预告
+            status.set(f'⏳ 即将添加 {count} 根 {label}，请稍候...')
+            print(f"\n[{i+1}/4] ⏳ Adding {count} bars in 3s...")
+            next_bars = generate_next_bars(count, last_bar)
+            sleep(3)
+            # ▶ 执行
+            status.set(f'▶ 正在添加 {count} 根 {label}...')
+            print(f"    ▶ Adding {count} bars via update_bars()...")
+            chart.update_bars(next_bars)
+            # 在数据更新后加 marker（确保时间在可见范围内）
+            chart.marker(
+                time=next_bars.iloc[0]['time'],
+                text=f'▶ Batch {i+1}: {count} bars',
+                position='below',
+                shape='arrow_up',
+                color=bar_colors[i],
+            )
+            last_bar = next_bars.iloc[-1]
+            status.set(f'✅ 已添加 {count} 根 {label}')
+            print(f"    ✅ Added {count} bars")
+        else:
+            label = '笔 Tick'
+            count = 200
+            # ⏳ 预告
+            status.set(f'⏳ 即将添加 {count} {label}，请稍候...')
+            print(f"\n[{i+1}/4] ⏳ Adding {count} ticks in 3s...")
+            ticks = generate_ticks(count, last_bar)
+            sleep(3)
+            # ▶ 执行
+            status.set(f'▶ 正在添加 {count} {label}...')
+            print(f"    ▶ Adding {count} ticks via update_ticks()...")
+            chart.update_ticks(ticks)
+            # 在数据更新后加 marker（确保时间在可见范围内）
+            chart.marker(
+                time=ticks.iloc[0]['time'],
+                text=f'▶ Batch {i+1}: {count} ticks',
+                position='below',
+                shape='arrow_up',
+                color=bar_colors[i],
+            )
+            last_bar = {'time': ticks.iloc[-1]['time'], 'close': ticks.iloc[-1]['price']}
+            status.set(f'✅ 已添加 {count} {label}')
+            print(f"    ✅ Added {count} ticks")
 
-    ticks = generate_ticks(200, next_bars.iloc[-1])
-    chart.update_from_ticks(ticks)
-    print(f"✅ Updated {len(ticks)} ticks via update_from_ticks()")
-    sleep(1)
+        # Short pause between rounds (except after the last)
+        if i < 3:
+            sleep(0.5)
 
-    # Step 4: Add a marker to verify marker alignment
+    # ── Step 3: Final marker ──
     chart.marker(
-        time=next_bars.iloc[15]['time'],
-        text='Batch Update Marker',
+        time=last_bar['time'] if isinstance(last_bar, dict) else last_bar.iloc[-1]['time'],
+        text='🏁 Batch Update Complete',
         position='above',
         shape='arrow_up',
-        color='#FFD700'
+        color='#FFD700',
     )
-    print("\n✅ Marker added at batch-updated bar")
-
-    # Step 5: Demonstrate update_bars() again to verify markers don't drift
-    print("\n=== Verifying marker stability ===")
-    print("Adding 10 more bars via update_bars()...")
-
-    next_bar_new_start = {'time': ticks.iloc[-1]['time'], 'close': ticks.iloc[-1]['price']}
-    more_bars = generate_next_bars(10, next_bar_new_start)
-    chart.update_bars(more_bars)
-    print("✅ Bars added, marker should remain stable")
-
+    status.set('🎉 批量更新演示完成！')
     print("\n✅ Batch update demo complete!")
     print("   - update_bars(): Batch OHLCV incremental update")
-    print("   - update_from_ticks(): Batch tick incremental update")
+    print("   - update_ticks(): Batch tick incremental update")
+
+    chart.show(wait=120)
+    chart.exit()

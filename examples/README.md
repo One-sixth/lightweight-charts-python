@@ -1,6 +1,6 @@
 # 示例目录说明
 
-本目录包含 lightweight-charts-python 的示例代码，编号 1-30。
+本目录包含 lightweight-charts-python 的示例代码，编号 1-38。
 
 ## 编号说明
 
@@ -29,7 +29,7 @@
 | 21 | `21_marker_auto_scale` | `marker_auto_scale()` — 标记是否参与价格轴自动缩放                           | ✅ 已实现  |
 | 22 | `22_pop` | `pop(n)` — 从末尾移除 N 根 K 线                                        | ✅ 已实现  |
 | 23 | `23_crosshair_move` | `events.crosshair_move` — 鼠标悬停实时回调 (Hit Testing)                | ✅ 已实现  |
-| 24 | `24_price_format` | `set_price_format(type='base')` — 基础价格格式，避免浮点精度问题               | ✅ 已实现  |
+| 24 | `24_price_format` | `price_scale(price_format={'type':'base', ...})` — 基础价格格式，避免浮点精度问题 | ✅ 已实现  |
 | 25 | `25_screenshot_enhanced` | `screenshot(add_top_layer=True, include_crosshair=True)` — 增强截图 | ✅ 已实现  |
 | 26 | `26_series_batch_update` | 系列批量更新：`update_bars()` 用于 Line 和 Histogram 系列 | ✅ 已实现  |
 | 27 | `27_reflex_chart` | Reflex 嵌入：实时 bar 推送 + crosshair 回调 (postMessage 桥接) | ✅ 已实现  |
@@ -39,4 +39,8 @@
 | 31 | `31_chart_sync` | 图表同步：`sync_id` 参数实现多图表时间轴和十字光标同步 | ✅ 已实现  |
 | 32 | `32_html_tab_chart` | HtmlTabChart + HTMLChart 演示：2 subcharts × 2 panes 布局、Tab 切换、绝对定位 | ✅ 已实现  |
 | 33 | `33_reset_sub` | reset_sub 子图内容重置：清空+重填+同步恢复+独立子图 | ✅ 已实现  |
+| 34 | `34_candle_series` | CandleSeries 演示：静态并排显示 + 实时更新 + 批量增量更新 | ✅ 已实现  |
+| 35 | `35_line_markers` | 折线/柱状图标记：Line 和 Histogram 系列上的 marker 用法 | ✅ 已实现  |
+| 36 | `36_histogram_colors` | Histogram 任意颜色：正负渐变着色 + Volume Delta 演示 | ✅ 已实现  |
 | 37 | `37_more_series_types` | 更多 Series 类型：AreaSeries 面积图 / OHLCBarSeries 美国线 / BaselineSeries 基准线 | ✅ 已实现  |
+| 38 | `38_drawing_multi_pane` | 多 Pane 绘图：Drawing 在多面板场景下的完整功能 + ToolBox 测试 | ✅ 已实现  |

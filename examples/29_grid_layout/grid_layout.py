@@ -63,7 +63,7 @@ def demo_single_chart():
     x, y, w, h = chart.get_position()
     print(f"  位置: x={x:.2f}, y={y:.2f}, width={w:.2f}, height={h:.2f}")
 
-    chart.show(wait=120)
+    chart.show(wait=10)
     chart.exit()
 
 
@@ -93,7 +93,7 @@ def demo_two_charts_horizontal():
     print(f"  Chart1 位置: x={x1:.2f}, y={y1:.2f}, width={w1:.2f}, height={h1:.2f}")
     print(f"  Chart2 位置: x={x2:.2f}, y={y2:.2f}, width={w2:.2f}, height={h2:.2f}")
 
-    chart1.show(wait=120)
+    chart1.show(wait=10)
     chart1.exit()
 
 
@@ -116,7 +116,7 @@ def demo_two_charts_vertical():
     chart1.set(df1)
     chart2.set(df2)
 
-    chart1.show(wait=120)
+    chart1.show(wait=10)
     chart1.exit()
 
 
@@ -149,7 +149,7 @@ def demo_four_charts():
     chart3.set(df3)
     chart4.set(df4)
 
-    chart1.show(wait=120)
+    chart1.show(wait=10)
     chart1.exit()
 
 
@@ -178,7 +178,7 @@ def demo_custom_size():
     x, y, w, h = sub.get_position()
     print(f"  子图位置: x={x:.2f}, y={y:.2f}, width={w:.2f}, height={h:.2f}")
 
-    chart.show(wait=120)
+    chart.show(wait=10)
     chart.exit()
 
 
@@ -258,7 +258,8 @@ def demo_dynamic_position():
     print("  演示完成，已恢复默认位置")
 
     # 阻塞等待窗口关闭
-    chart.show(block=True)
+    chart.show(wait=10)
+    chart.exit()
 
 
 if __name__ == '__main__':

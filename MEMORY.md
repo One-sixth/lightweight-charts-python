@@ -822,4 +822,16 @@ _message_loop()     → while is_alive: emit_queue.get() + parse + func()
 
 ---
 
-*最后更新：2026-06-28（show() 消息循环重构为守护线程）*
+## 🐛 Histogram Legend 精度遗漏（2026-06-28 修复）
+
+**Bug**：HistogramSeries 的 legend 值不受 `precision` 约束，显示 `120.1111111111111` 而非 `120.11`
+
+**根因**：`legend.ts` 中 Histogram 走了 `shorthandFormat`（设计给 Volume/OI 用，小数字直接 `toString()` 不做精度截断），而非其他 Series 用的 `legendItemFormat(data.value, format.precision)`
+
+**修复**：删掉 Histogram 的 if 分支，所有 value 类型 series 统一用 `legendItemFormat(data.value, format.precision)`
+
+**教训**：Legend 中添加新的 series 类型支持时，必须检查数值格式化路径是否使用了正确的精度控制函数。
+
+---
+
+*最后更新：2026-06-28（Histogram Legend 精度修复）*

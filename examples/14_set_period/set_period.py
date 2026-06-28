@@ -21,7 +21,7 @@ def generate_bars(num_bars: int, freq: str, start_price: float = 100.0,
     np.random.seed(seed)
     times = pd.date_range('2020-01-01', periods=num_bars, freq=freq)
     prices = start_price + np.cumsum(np.random.randn(num_bars) * 0.5)
-    
+
     data = []
     for i, t in enumerate(times):
         base = prices[i]
@@ -41,7 +41,7 @@ def generate_1min_bars(num_bars: int, start_price: float = 105.0) -> pd.DataFram
     np.random.seed(99)
     times = pd.date_range('2020-01-01 09:30', periods=num_bars, freq='1min')
     prices = start_price + np.cumsum(np.random.randn(num_bars) * 0.1)
-    
+
     data = []
     for i, t in enumerate(times):
         base = prices[i]
@@ -60,50 +60,68 @@ if __name__ == '__main__':
     chart = Chart(title='Set Period Demo', width=1000, height=600)
     chart.legend(visible=True, ohlc=True, persistent=True)
 
+    # Create topbar textbox for status messages
+    chart.topbar.textbox('status', '⏳ 正在初始化...', 'left')
+    status = chart.topbar['status']
+
+    chart.show()
+
     # ── Step 1: Normal set() with auto-detected 5min interval ──
+    status.set('⏳ Step 1: 即将设置5分钟K线（自动检测间隔）...')
     print("Step 1: Setting 5-minute bars (auto-detect interval)...")
+    sleep(2)
     df_5min = generate_bars(50, '5min')
     chart.set(df_5min)
     print(f"  → Auto-detected interval: {chart._interval}s (5min)")
-    chart.show()
-    sleep(1.5)
+    status.set('✅ Step 1: 5分钟K线已设置')
+    sleep(0.5)
 
     # ── Step 2: Lock to 1-hour interval ──
+    status.set('⏳ Step 2: 即将锁定到1小时间隔...')
     print("\nStep 2: Locking to 1-hour interval with set_period(3600)...")
+    sleep(2)
     chart.set_period(3600)
     print(f"  → Locked interval: {chart._interval}s (1 hour)")
     print(f"  → period_locked: {chart._period_locked}")
-    sleep(1)
+    status.set('✅ Step 2: 已锁定1小时间隔')
+    sleep(0.5)
 
     # ── Step 3: set() with 30min bars while locked to 1-hour ──
-    # Important: After set_period(), you must call chart.set(df) for the lock to take effect
-    #             Otherwise, markers and other elements may become misaligned
+    status.set('⏳ Step 3: 即将设置30分钟K线（锁定中）...')
     print("\nStep 3: Setting 30-minute bars while locked to 1-hour...")
+    sleep(2)
     df_30min = generate_bars(48, '30min', seed=43)
     chart.set(df_30min)
     print(f"  → Interval still locked at: {chart._interval}s")
-    print("  → All time values are aligned to 1-hour boundaries")
-    sleep(1.5)
+    status.set('✅ Step 3: 30分钟K线已设置（锁定中）')
+    sleep(0.5)
 
     # ── Step 4: set() with 1min bars while locked to 1-hour ──
+    status.set('⏳ Step 4: 即将设置1分钟K线（锁定中）...')
     print("\nStep 4: Setting 1-minute bars while locked to 1-hour...")
+    sleep(2)
     df_1min = generate_1min_bars(120)
     chart.set(df_1min)
     print(f"  → Interval still: {chart._interval}s")
-    print("  → Time values aligned to 1-hour (0, 3600, 7200...)")
-    sleep(1.5)
+    status.set('✅ Step 4: 1分钟K线已设置（锁定中）')
+    sleep(0.5)
 
     # ── Step 5: Unlock and set with 15min bars ──
+    status.set('⏳ Step 5: 即将解锁并设置15分钟K线...')
     print("\nStep 5: Unlocking (set_period(None)) and setting 15-minute bars...")
+    sleep(2)
     chart.set_period(None)
     df_15min = generate_bars(40, '15min', seed=44)
     chart.set(df_15min)
     print(f"  → Auto-detected interval: {chart._interval}s (15min)")
     print(f"  → period_locked: {chart._period_locked}")
-    sleep(1)
+    status.set('✅ Step 5: 已解锁，15分钟K线已设置')
+    sleep(0.5)
 
     # ── Step 6: Add markers to verify no drift ──
+    status.set('⏳ Step 6: 即将添加标记并验证稳定性...')
     print("\nStep 6: Adding markers and re-setting data to verify no drift...")
+    sleep(2)
     chart.marker(
         time=df_15min.iloc[10]['time'],
         text='Marker 1',
@@ -119,14 +137,18 @@ if __name__ == '__main__':
         color='#FF69B4'
     )
     print("  → Markers added")
+    status.set('⏳ Step 6: 重新设置数据验证标记...')
     sleep(1)
 
-    # Re-set the same data — markers should NOT drift
-    print("Re-setting data to verify marker stability...")
     chart.set(df_15min)
     print("  → Markers remain at correct positions ✅")
-    sleep(1)
+    status.set('✅ Step 6: 标记稳定，无偏移')
+    sleep(0.5)
 
+    status.set('🎉 Set Period 演示完成！')
     print("\n✅ Set Period demo complete!")
     print("  - set_period(seconds): Lock interval for set()")
     print("  - set_period(None): Unlock and re-enable auto-detection")
+
+    chart.show(wait=120)
+    chart.exit()

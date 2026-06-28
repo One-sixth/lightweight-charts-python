@@ -38,9 +38,9 @@ if __name__ == '__main__':
     print(" Example 20: tick_mark_density")
     print("=" * 60)
 
-    chart = Chart(title='20 - tick_mark_density', toolbox=True, maximize=True)
+    chart = Chart(title='20 - tick_mark_density', toolbox=True)
 
-    chart.show(block=False)
+    chart.show()
 
     chart.layout(background_color='#0e1117', text_color='#d1d4dc')
     chart.legend(visible=True, ohlc=True, persistent=True)

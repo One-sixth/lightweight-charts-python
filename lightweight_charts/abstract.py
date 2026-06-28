@@ -654,10 +654,6 @@ class AbstractChart(Pane):
         """配置价格坐标轴。"""
         return self.candle.price_scale(**kwargs)
 
-    def set_price_format(self, **kwargs):
-        """设置价格格式。"""
-        return self.candle.set_price_format(**kwargs)
-
     # ── 绘图方法（委托到内部 DrawingSeries）──
 
     def horizontal_line(self, price, color='rgb(122, 146, 202)', width=2,

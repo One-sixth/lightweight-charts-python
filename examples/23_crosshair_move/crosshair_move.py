@@ -50,7 +50,7 @@ if __name__ == '__main__':
     print(" Example 23: crosshair_move Event (Hit Testing)")
     print("=" * 60)
 
-    chart = Chart(title='23 - crosshair_move', toolbox=True, maximize=True)
+    chart = Chart(title='23 - crosshair_move', toolbox=True)
     chart.layout(background_color='#0e1117', text_color='#d1d4dc')
     chart.legend(visible=True, ohlc=True, persistent=True)
 

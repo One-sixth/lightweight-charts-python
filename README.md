@@ -315,7 +315,7 @@ python -m build
 | `chart.reset()` | 重置图表到初始状态 |
 | `chart.screenshot(...)` | 截图（v5.2.0+ 增强：支持 add_top_layer 和 include_crosshair） |
 | `chart.clear_handlers()` | 清空所有事件处理器 |
-| `chart.set_price_format(type, base, precision)` | 设置价格轴格式，避免浮点精度问题（v5.2.0+） |
+| `chart.price_scale(price_format=...)` | 配置价格坐标轴，支持 price_format 避免浮点精度问题 |
 
 
 ---
@@ -368,6 +368,9 @@ python -m build
 | 32 | `32_html_tab_chart` | HtmlTabChart 多策略 Tab 切换 |
 | 33 | `33_reset_sub` | reset_sub 子图内容重置 |
 | 34 | `34_candle_series` | CandleSeries 独立K线系列 |
+| 35 | `35_line_markers` | Line / Histogram 系列标记（marker） |
+| 36 | `36_histogram_colors` | Histogram 任意颜色（per-bar 着色） |
+| 37 | `37_more_series_types` | AreaSeries / OHLCBarSeries / BaselineSeries 新系列 |
 
 ---
 
@@ -820,7 +823,7 @@ from lightweight_charts import Chart
 if __name__ == '__main__':
     chart = Chart()
     chart.set(df)
-    chart.set_price_format(type='base', base=100, precision=2)  # v5.2.0+
+    chart.price_scale(price_format={'type': 'base', 'base': 100, 'precision': 2})
     chart.show(block=True)
 ```
 
@@ -1135,5 +1138,134 @@ chart.show(block=True)
 > 独立K线适用于参考K线、对比K线等场景，支持与主K线同步十字光标
 
 ![CandleSeries](images/34_candle_series.png)
+
+---
+
+### 示例 35：Line / Histogram 系列标记
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart(width=1200, height=700, title='Line Series Markers Demo')
+chart.set(candle_df)
+
+# 在 Line 上打标记
+line20 = chart.create_line('SMA20', color='#2196F3', width=2)
+line20.set(sma20)
+line20.marker(dates[25], 'below', 'circle', '#2196F3', 'SMA20 Cross')
+
+# 在 Histogram 上打标记
+hist = chart.create_histogram('Volume', color='rgba(100,100,200,0.5)', pane_index=1)
+hist.set(vol_df)
+hist.marker(dates[5], 'below', 'circle', '#9C27B0', 'Vol Spike')
+
+# 批量打标记
+line20.marker_list([
+    {'time': dates[35], 'position': 'below', 'shape': 'arrow_up', 'color': '#00BCD4', 'text': 'Batch 1'},
+    {'time': dates[45], 'position': 'above', 'shape': 'arrow_down', 'color': '#00BCD4', 'text': 'Batch 2'},
+])
+
+chart.show(block=True)
+```
+
+**支持标记的系列：**
+
+| 系列 | marker() | marker_list() |
+|------|----------|---------------|
+| CandleSeries（主 K 线） | ✅ | ✅ |
+| LineSeries（折线） | ✅ | ✅ |
+| HistogramSeries（柱状图） | ✅ | ✅ |
+
+![Line Series Markers](images/35_line_markers.png)
+
+---
+
+### 示例 36：Histogram 任意颜色（per-bar 着色）
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart(width=1200, height=700, title='Histogram Custom Colors Demo')
+chart.set(candle_df)
+
+# DataFrame 中包含 color 列，每根柱子独立着色
+delta_df = pd.DataFrame({
+    'time': dates,
+    'value': delta,          # 正值=买方强，负值=卖方强
+    'color': colors,         # 每根柱子对应一个颜色
+})
+
+hist = chart.create_histogram(
+    name='Volume Delta',
+    color='rgba(100,200,100,0.5)',
+    pane_index=1,
+)
+# 注意：chart.set() 不会转发 color 列，histogram 必须单独 set()
+hist.set(delta_df)
+
+chart.show(block=True)
+```
+
+**per-bar 着色要点：**
+
+| 要点 | 说明 |
+|------|------|
+| `color` 列 | DataFrame 中包含 `color` 列即可自动着色 |
+| `chart.set()` | 不转发 `color` 列，histogram 必须单独 `set()` |
+| 正负值 | 支持正负值双向着色（如 Volume Delta：买方→暖色，卖方→冷色） |
+
+![Histogram Colors](images/36_histogram_colors.png)
+
+---
+
+### 示例 37：新 Series 类型（Area / OHLC Bar / Baseline）
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart(width=1200, height=800, title='New Series Types Demo')
+chart.set(df)
+
+# 1. AreaSeries — 面积图（折线+渐变填充）
+area = chart.create_area_series(
+    name='SMA 20 (Area)',
+    color='#2196F3',
+    top_color='rgba(33, 150, 243, 0.35)',
+    bottom_color='rgba(33, 150, 243, 0.0)',
+)
+area.set(sma20_df)
+
+# 2. OHLCBarSeries — 美国线（OHLC 横向柱状图）
+ohlc_bar = chart.create_ohlc_bar_series(
+    name='OHLC Bar',
+    up_color='#26A69A',
+    down_color='#EF5350',
+    pane_index=1,
+)
+ohlc_bar.set(df)
+
+# 3. BaselineSeries — 基准线（以基准值为界上下分色）
+baseline = chart.create_baseline_series(
+    name='RSI Deviation',
+    baseline_value=0,
+    topLineColor='#26A69A',
+    bottomLineColor='#EF5350',
+    pane_index=2,
+)
+baseline.set(rsi_df)
+
+chart.show(block=True)
+```
+
+**新 Series 类型一览：**
+
+| 类型 | 工厂方法 | 适用场景 |
+|------|---------|---------|
+| AreaSeries | `create_area_series()` | 面积图：均线、波动率等趋势填充 |
+| OHLCBarSeries | `create_ohlc_bar_series()` | 美国线：K 线的另一种画法 |
+| BaselineSeries | `create_baseline_series()` | 基准线：RSI 偏差、盈亏等以零轴为界的指标 |
+| `legend=False` | 所有系列均支持 | 隐藏辅助系列（背景带、辅助线等）不显示在图例中 |
+
+![New Series Types](images/37_more_series_types.png)
 
 ---

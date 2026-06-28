@@ -35,7 +35,7 @@ if __name__ == '__main__':
     print(" Example 22: pop()")
     print("=" * 60)
 
-    chart = Chart(title='22 - pop()', toolbox=True, maximize=True)
+    chart = Chart(title='22 - pop()', toolbox=True)
     chart.layout(background_color='#0e1117', text_color='#d1d4dc')
     chart.legend(visible=True, ohlc=True, persistent=True)
 

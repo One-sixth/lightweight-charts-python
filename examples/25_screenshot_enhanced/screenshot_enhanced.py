@@ -58,5 +58,5 @@ if __name__ == '__main__':
         f.write(img_no_cross)
     print("不带十字光标的截图已保存为 'screenshot_enhanced_no_cross.png'")
 
-    # 保持窗口打开
-    input("按 Enter 键关闭...")
+    chart.show(wait=120)
+    chart.exit()

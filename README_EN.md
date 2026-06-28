@@ -180,7 +180,7 @@ The built wheel package will be in the dist directory.
 | `chart.reset()` | Reset chart to initial state |
 | `chart.screenshot(...)` | Screenshot (v5.2.0+ enhancement: supports add_top_layer and include_crosshair) |
 | `chart.clear_handlers()` | Clear all event handlers |
-| `chart.set_price_format(type, base, precision)` | Set price axis format to avoid floating point precision issues (v5.2.0+) |
+| `chart.price_scale(price_format=...)` | Configure price scale, supports price_format to avoid floating-point precision issues |
 
 
 ---
@@ -231,6 +231,10 @@ Learning through examples is recommended. There is extensive reference code and 
 | 31 | `31_chart_sync` | Chart synchronization (timeline + crosshair) |
 | 32 | `32_html_tab_chart` | HtmlTabChart multi-strategy Tab switching |
 | 33 | `33_reset_sub` | reset_sub subchart content reset |
+| 34 | `34_candle_series` | CandleSeries independent K-line series |
+| 35 | `35_line_markers` | Line / Histogram series markers |
+| 36 | `36_histogram_colors` | Histogram arbitrary per-bar colors |
+| 37 | `37_more_series_types` | AreaSeries / OHLCBarSeries / BaselineSeries |
 
 ---
 
@@ -683,7 +687,7 @@ from lightweight_charts import Chart
 if __name__ == '__main__':
     chart = Chart()
     chart.set(df)
-    chart.set_price_format(type='base', base=100, precision=2)  # v5.2.0+
+    chart.price_scale(price_format={'type': 'base', 'base': 100, 'precision': 2})
     chart.show(block=True)
 ```
 
@@ -955,5 +959,177 @@ chart.set(new_bars)
 > After reset, subchart can be re-populated. Crosshair and timeline sync auto-recover.
 
 ![reset_sub](images/33_reset_sub.gif)
+
+---
+
+### Example 34: CandleSeries (Independent K-line Series)
+
+```python
+import pandas as pd
+from lightweight_charts import Chart
+
+# Main K-line
+chart = Chart(width=1400, height=900)
+chart.set(df_main)
+
+# Reference K-line (independent pane)
+ref = chart.create_candle_series(
+    name='Reference',
+    pane_index=1,
+    up_color='rgba(0, 150, 255, 0.8)',
+    down_color='rgba(255, 100, 0, 0.8)',
+)
+ref.set(df_reference)       # Initial data
+ref.update(new_bar)         # Update/append
+ref.update_bars(df_more)   # Batch append
+ref.marker(...)             # Add marker
+
+chart.show(block=True)
+```
+
+**CandleSeries Features:**
+
+| Feature | Description |
+|---------|-------------|
+| `create_candle_series()` | Create independent K-line (no volume/open interest) |
+| `set(df)` | Set initial OHLC data |
+| `update(series)` | Update latest bar or append new bar |
+| `update_bars(df)` | Batch update multiple bars |
+| `marker(...)` | Add markers on independent K-line |
+| `delete()` | Delete series and clean up JS object |
+| `pane_index` | Control which pane to render in |
+
+> Independent K-lines are useful for reference/comparison K-lines, supporting crosshair sync with the main K-line.
+
+![CandleSeries](images/34_candle_series.png)
+
+---
+
+### Example 35: Line / Histogram Series Markers
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart(width=1200, height=700, title='Line Series Markers Demo')
+chart.set(candle_df)
+
+# Markers on Line series
+line20 = chart.create_line('SMA20', color='#2196F3', width=2)
+line20.set(sma20)
+line20.marker(dates[25], 'below', 'circle', '#2196F3', 'SMA20 Cross')
+
+# Markers on Histogram series
+hist = chart.create_histogram('Volume', color='rgba(100,100,200,0.5)', pane_index=1)
+hist.set(vol_df)
+hist.marker(dates[5], 'below', 'circle', '#9C27B0', 'Vol Spike')
+
+# Batch markers on Line
+line20.marker_list([
+    {'time': dates[35], 'position': 'below', 'shape': 'arrow_up', 'color': '#00BCD4', 'text': 'Batch 1'},
+    {'time': dates[45], 'position': 'above', 'shape': 'arrow_down', 'color': '#00BCD4', 'text': 'Batch 2'},
+])
+
+chart.show(block=True)
+```
+
+**Supported Series for Markers:**
+
+| Series | marker() | marker_list() |
+|--------|----------|---------------|
+| CandleSeries (main K-line) | ✅ | ✅ |
+| LineSeries (line) | ✅ | ✅ |
+| HistogramSeries (histogram) | ✅ | ✅ |
+
+![Line Series Markers](images/35_line_markers.png)
+
+---
+
+### Example 36: Histogram Arbitrary Colors (per-bar coloring)
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart(width=1200, height=700, title='Histogram Custom Colors Demo')
+chart.set(candle_df)
+
+# DataFrame with color column — each bar gets its own color
+delta_df = pd.DataFrame({
+    'time': dates,
+    'value': delta,          # positive = buyer dominant, negative = seller dominant
+    'color': colors,         # one color per bar
+})
+
+hist = chart.create_histogram(
+    name='Volume Delta',
+    color='rgba(100,200,100,0.5)',
+    pane_index=1,
+)
+# Note: chart.set() does NOT forward the color column — histogram must be set separately
+hist.set(delta_df)
+
+chart.show(block=True)
+```
+
+**Per-bar Coloring Key Points:**
+
+| Point | Description |
+|-------|-------------|
+| `color` column | Include a `color` column in DataFrame for automatic per-bar coloring |
+| `chart.set()` | Does NOT forward `color` column — histogram must call `set()` separately |
+| Positive/Negative values | Supports bidirectional coloring (e.g., Volume Delta: buyer→warm, seller→cool) |
+
+![Histogram Colors](images/36_histogram_colors.png)
+
+---
+
+### Example 37: New Series Types (Area / OHLC Bar / Baseline)
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart(width=1200, height=800, title='New Series Types Demo')
+chart.set(df)
+
+# 1. AreaSeries — line + gradient fill
+area = chart.create_area_series(
+    name='SMA 20 (Area)',
+    color='#2196F3',
+    top_color='rgba(33, 150, 243, 0.35)',
+    bottom_color='rgba(33, 150, 243, 0.0)',
+)
+area.set(sma20_df)
+
+# 2. OHLCBarSeries — OHLC horizontal bars
+ohlc_bar = chart.create_ohlc_bar_series(
+    name='OHLC Bar',
+    up_color='#26A69A',
+    down_color='#EF5350',
+    pane_index=1,
+)
+ohlc_bar.set(df)
+
+# 3. BaselineSeries — baseline with two-tone coloring
+baseline = chart.create_baseline_series(
+    name='RSI Deviation',
+    baseline_value=0,
+    topLineColor='#26A69A',
+    bottomLineColor='#EF5350',
+    pane_index=2,
+)
+baseline.set(rsi_df)
+
+chart.show(block=True)
+```
+
+**New Series Types:**
+
+| Type | Factory Method | Use Case |
+|------|---------------|----------|
+| AreaSeries | `create_area_series()` | Area chart: trend fill for MA, volatility, etc. |
+| OHLCBarSeries | `create_ohlc_bar_series()` | OHLC bars: alternative K-line visualization |
+| BaselineSeries | `create_baseline_series()` | Baseline: RSI deviation, P&L, zero-axis centered indicators |
+| `legend=False` | All series support it | Hide auxiliary series (background bands, helper lines) from legend |
+
+![New Series Types](images/37_more_series_types.png)
 
 ---

@@ -921,7 +921,7 @@ img = chart.screenshot(include_crosshair=True)   # 包含十字光标
 img = chart.screenshot(add_top_layer=True, include_crosshair=True)  # 两者都包含
 
 # 价格格式 — 避免浮点精度问题（v5.2.0+）
-chart.set_price_format(type='base', base=100, precision=2)
+chart.price_scale(price_format={'type': 'base', 'base': 100, 'precision': 2})
 # 以 base 为基准值，所有价格显示为 (实际值 / base)，保留 precision 位小数
 # 例如: 实际价格 100.00 → 显示 1.00
 
@@ -1279,7 +1279,7 @@ get_last_trade(ticker)
 | 21 | `21_marker_auto_scale` | `marker_auto_scale()` — 标记是否参与价格轴自动缩放 | `marker_auto_scale.py` |
 | 22 | `22_pop` | `pop(n)` — 从末尾移除 N 根 K 线 | `pop.py` |
 | 23 | `23_crosshair_move` | `events.crosshair_move` — 鼠标悬停实时回调 (Hit Testing) | `crosshair_move.py` |
-| 24 | `24_price_format` | `set_price_format(type='base')` — 基础价格格式，避免浮点精度问题 (v5.2.0+) | `price_format.py` |
+| 24 | `24_price_format` | `price_scale(price_format={'type':'base', ...})` — 基础价格格式，避免浮点精度问题 | `price_format.py` |
 | 25 | `25_screenshot_enhanced` | `screenshot(add_top_layer=True, include_crosshair=True)` — 增强截图 (v5.2.0+) | `screenshot_enhanced.py` |
 | 26 | `26_series_batch_update` | 系列批量更新：`update_bars()` 用于 Line 和 Histogram 系列 | `series_batch_update.py` |
 | 27 | `27_reflex_chart` | Reflex 嵌入：K线 + SMA 指标在 Reflex 应用中渲染 | `rx_chart.py` |

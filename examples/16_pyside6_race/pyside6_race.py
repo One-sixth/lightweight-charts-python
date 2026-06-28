@@ -1,10 +1,10 @@
 """
 Example 16: PySide6 Speed Race
 Benchmarks different data update strategies using PySide6 + QtChart:
-  1. update() — one bar at a time (serial JS calls)
+  1. update_bar() — one bar at a time (serial JS calls)
   2. update_bars() — batch OHLCV (single JS call)
-  3. update_from_tick() — one tick at a time (serial JS calls)
-  4. update_from_ticks() — batch ticks (single JS call)
+  3. update_tick() — one tick at a time (serial JS calls)
+  4. update_ticks() — batch ticks (single JS call)
   5. set() — full data replacement
 
 Uses randomly generated data and measures elapsed time for each method.
@@ -92,7 +92,7 @@ class SpeedRaceWindow(QMainWindow):
         btn_layout = QVBoxLayout(btn_group)
 
         btn_row1 = QHBoxLayout()
-        self.btn_update = QPushButton('🏃 update() × N')
+        self.btn_update = QPushButton('🏃 update_bar() × N')
         self.btn_update.clicked.connect(self.run_update_race)
         self.btn_batch = QPushButton('🚀 update_bars()')
         self.btn_batch.clicked.connect(self.run_batch_race)
@@ -100,9 +100,9 @@ class SpeedRaceWindow(QMainWindow):
         btn_row1.addWidget(self.btn_batch)
 
         btn_row2 = QHBoxLayout()
-        self.btn_tick = QPushButton('⚡ update_from_tick() × N')
+        self.btn_tick = QPushButton('⚡ update_tick() × N')
         self.btn_tick.clicked.connect(self.run_single_tick_race)
-        self.btn_ticks = QPushButton('⚡ update_from_ticks()')
+        self.btn_ticks = QPushButton('⚡ update_ticks()')
         self.btn_ticks.clicked.connect(self.run_tick_race)
         btn_row2.addWidget(self.btn_tick)
         btn_row2.addWidget(self.btn_ticks)
@@ -151,21 +151,21 @@ class SpeedRaceWindow(QMainWindow):
         self.log.append("🔄 Chart reset.\n")
 
     def run_update_race(self):
-        """Test: N individual update() calls."""
+        """Test: N individual update_bar() calls."""
         n = self.spin_bars.value()
         new_bars = generate_bars(n, seed=np.random.randint(0, 10000))
         last_time = pd.to_datetime(self.base_data.iloc[-1]['time'], unit='s')
         new_times = pd.date_range(last_time, periods=n + 1, freq='1min')[1:]
         new_bars['time'] = new_times
 
-        self.log_msg(f"🏃 Running update() × {n}...")
+        self.log_msg(f"🏃 Running update_bar() × {n}...")
         start = time.perf_counter()
 
         for _, row in new_bars.iterrows():
-            self.chart.update(row)
+            self.chart.update_bar(row)
 
         elapsed = time.perf_counter() - start
-        self.log_msg(f"   ✅ update() × {n}: {elapsed:.4f}s ({elapsed/n*1000:.3f}ms/bar)\n")
+        self.log_msg(f"   ✅ update_bar() × {n}: {elapsed:.4f}s ({elapsed/n*1000:.3f}ms/bar)\n")
 
         # Keep data consistent
         self.base_data = pd.concat([self.base_data, new_bars], ignore_index=True)
@@ -189,38 +189,38 @@ class SpeedRaceWindow(QMainWindow):
         self.base_data = pd.concat([self.base_data, new_bars], ignore_index=True)
 
     def run_single_tick_race(self):
-        """Test: N individual update_from_tick() calls."""
+        """Test: N individual update_tick() calls."""
         n = self.spin_ticks.value()
         last_time = pd.to_datetime(self.base_data.iloc[-1]['time'], unit='s')
         last_close = self.base_data.iloc[-1]['close']
         ticks = generate_ticks(n, last_time, last_close)
 
-        self.log_msg(f"⚡ Running update_from_tick() × {n}...")
+        self.log_msg(f"⚡ Running update_tick() × {n}...")
         start = time.perf_counter()
 
         for _, row in ticks.iterrows():
-            self.chart.update_from_tick(row)
+            self.chart.update_tick(row)
 
         elapsed = time.perf_counter() - start
-        self.log_msg(f"   ✅ update_from_tick() × {n}: {elapsed:.4f}s ({elapsed/n*1000:.3f}ms/tick)\n")
+        self.log_msg(f"   ✅ update_tick() × {n}: {elapsed:.4f}s ({elapsed/n*1000:.3f}ms/tick)\n")
         # Track progression by appending last candle, so repeated runs don't fail
         last_candle = self.chart.candle_data.iloc[-1:].copy()
         self.base_data = pd.concat([self.base_data, last_candle], ignore_index=True)
 
     def run_tick_race(self):
-        """Test: single update_from_ticks() call."""
+        """Test: single update_ticks() call."""
         n = self.spin_ticks.value()
         last_time = pd.to_datetime(self.base_data.iloc[-1]['time'], unit='s')
         last_close = self.base_data.iloc[-1]['close']
         ticks = generate_ticks(n, last_time, last_close)
 
-        self.log_msg(f"⚡ Running update_from_ticks({n})...")
+        self.log_msg(f"⚡ Running update_ticks({n})...")
         start = time.perf_counter()
 
-        self.chart.update_from_ticks(ticks)
+        self.chart.update_ticks(ticks)
 
         elapsed = time.perf_counter() - start
-        self.log_msg(f"   ✅ update_from_ticks({n}): {elapsed:.4f}s ({elapsed/n*1000:.3f}ms/tick)\n")
+        self.log_msg(f"   ✅ update_ticks({n}): {elapsed:.4f}s ({elapsed/n*1000:.3f}ms/tick)\n")
         # Track progression by appending last candle, so repeated runs don't fail
         last_candle = self.chart.candle_data.iloc[-1:].copy()
         self.base_data = pd.concat([self.base_data, last_candle], ignore_index=True)
