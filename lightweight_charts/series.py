@@ -59,8 +59,8 @@ class SeriesCommon(Pane):
             if (_legendItem) {{
                 {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter(l => l != _legendItem);
                 try {{ {self._chart.id}.legend.div.removeChild(_legendItem.row) }} catch(e) {{}}
-            }}
-            delete {self.id}
+            }};
+            delete {self.id};
         ''')
 
     def clear_data(self):
@@ -474,11 +474,9 @@ class LineSeries(SeriesCommon):
                 {pane_index},
                 false,
                 {jbool(legend)}
-            );null''')
-
-    def delete(self):
-        """删除此折线系列。"""
-        super().delete()
+            );
+            0;
+        ''')
 
 
 class HistogramSeries(SeriesCommon):
@@ -498,33 +496,26 @@ class HistogramSeries(SeriesCommon):
         super().__init__(chart, name, pane_index, _option_columns=['color'], legend=legend)
         self.color = color
         self.run_script(f'''
-        {self.id} = {chart.id}.createHistogramSeries(
-            "{name}",
-            {{
-                color: '{color}',
-                lastValueVisible: {jbool(price_label)},
-                priceLineVisible: {jbool(price_line)},
-                priceScaleId: {'undefined'},
-                priceFormat: {{type: "volume"}},
-            }},
-            {pane_index},
-            false,
-            {jbool(legend)}
-        )
-        {self.id}.series.priceScale().applyOptions({{
-            scaleMargins: {{top:{scale_margin_top}, bottom: {scale_margin_bottom}}}
-        }});0''')
-
-    def delete(self):
-        """删除此柱状图系列。"""
-        super().delete()
+            {self.id} = {chart.id}.createHistogramSeries(
+                "{name}",
+                {{
+                    color: '{color}',
+                    lastValueVisible: {jbool(price_label)},
+                    priceLineVisible: {jbool(price_line)},
+                    priceScaleId: {'undefined'},
+                    priceFormat: {{type: "volume"}},
+                }},
+                {pane_index},
+                false,
+                {jbool(legend)}
+            );
+            0;
+        ''')
+        self.price_scale(scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom)
 
     def scale(self, scale_margin_top: float = 0.0, scale_margin_bottom: float = 0.0):
         """调整柱状图的 Y 轴边距。"""
-        self.run_script(f'''
-        {self.id}.series.priceScale().applyOptions({{
-            scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}}
-        }})''')
+        self.price_scale(scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom)
 
 
 class VolumeSeries(SeriesCommon):
@@ -599,10 +590,10 @@ class VolumeSeries(SeriesCommon):
                 {self.pane_index},
                 {jbool(self._dont_add_list)},
                 {jbool(self._legend)}
-            )
-            {self.id}.series.priceScale().applyOptions({{
-                scaleMargins: {{top: {self.scale_margin_top}, bottom: {self.scale_margin_bottom}}}
-            }});0''')
+            );
+            0;
+        ''')
+        self.price_scale(scale_margin_top=self.scale_margin_top, scale_margin_bottom=self.scale_margin_bottom)
 
     def _prepare_vol_df(self, df, _df_cleaned=False):
         """清洗并准备成交量 DataFrame。
@@ -742,14 +733,7 @@ class VolumeSeries(SeriesCommon):
             bottom = scale_margin_bottom if scale_margin_bottom is not None else 0.0
             self.scale_margin_top = top
             self.scale_margin_bottom = bottom
-            self.run_script(f'''
-                {self.id}.series.priceScale().applyOptions({{
-                    scaleMargins: {{top: {top}, bottom: {bottom}}}
-                }})''')
-
-    def delete(self):
-        """删除成交量系列。不影响绑定的 CandleSeries。"""
-        super().delete()
+            self.price_scale(scale_margin_top=top, scale_margin_bottom=bottom)
 
 
 class OpenInterestSeries(SeriesCommon):
@@ -825,13 +809,14 @@ class OpenInterestSeries(SeriesCommon):
                 {self.pane_index},
                 {jbool(self._dont_add_list)},
                 {jbool(self._legend)}
-            )
-            {self.id}.series.priceScale().applyOptions({{
-                scaleMargins: {{top: {self.scale_margin_top}, bottom: {self.scale_margin_bottom}}},
-                autoScale: true,
-            }});
-            0
+            );
+            0;
         ''')
+        self.price_scale(
+            scale_margin_top=self.scale_margin_top,
+            scale_margin_bottom=self.scale_margin_bottom,
+            auto_scale=True,
+        )
 
     def config(self, color: str = None, line_width: int = None,
                scale_margin_top: float = None, scale_margin_bottom: float = None):
@@ -849,12 +834,8 @@ class OpenInterestSeries(SeriesCommon):
             bottom = scale_margin_bottom if scale_margin_bottom is not None else 0.0
             self.scale_margin_top = top
             self.scale_margin_bottom = bottom
-            self.run_script(f'''
-                {self.id}.series.priceScale().applyOptions({{
-                    scaleMargins: {{top: {top}, bottom: {bottom}}},
-                    autoScale: true,
-                }})
-            ''')
+            self.price_scale(scale_margin_top=top, scale_margin_bottom=bottom, auto_scale=True)
+
 
 class CandleSeries(SeriesCommon):
     """独立K线系列，可在任意 pane 上绘制 OHLC 数据，无 volume/open interest。
@@ -1089,10 +1070,6 @@ class CandleSeries(SeriesCommon):
 
         self.update_bars(bars)
 
-    def delete(self):
-        """删除此 K 线系列。"""
-        super().delete()
-
 
 class AreaSeries(SeriesCommon):
     """面积图系列，折线下方填充渐变色。
@@ -1155,12 +1132,8 @@ class AreaSeries(SeriesCommon):
                 false,
                 {jbool(legend)}
             );
-            0
+            0;
         ''')
-
-    def delete(self):
-        """删除此面积图系列。"""
-        super().delete()
 
 
 class OHLCBarSeries(CandleSeries):
@@ -1267,10 +1240,6 @@ class OHLCBarSeries(CandleSeries):
         if opts:
             self._apply_options(opts)
 
-    def delete(self):
-        """删除此美国线系列。"""
-        super().delete()
-
 
 class BaselineSeries(SeriesCommon):
     """基准线系列，以某个基准值为界，上方/下方分别着色。
@@ -1343,8 +1312,3 @@ class BaselineSeries(SeriesCommon):
                 false,
                 {jbool(legend)}
             );null''')
-
-    def delete(self):
-        """删除此基准线系列。"""
-        super().delete()
-
