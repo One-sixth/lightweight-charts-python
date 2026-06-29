@@ -362,24 +362,27 @@ class SeriesCommon(Pane):
 
     def price_scale(
         self,
-        auto_scale: bool = True,
-        mode: PRICE_SCALE_MODE = 'normal',
-        invert_scale: bool = False,
-        align_labels: bool = True,
-        scale_margin_top: float = 0.2,
-        scale_margin_bottom: float = 0.2,
-        border_visible: bool = False,
+        auto_scale: Optional[bool] = None,
+        mode: Optional[PRICE_SCALE_MODE] = None,
+        invert_scale: Optional[bool] = None,
+        align_labels: Optional[bool] = None,
+        scale_margin_top: Optional[float] = None,
+        scale_margin_bottom: Optional[float] = None,
+        border_visible: Optional[bool] = None,
         border_color: Optional[str] = None,
         text_color: Optional[str] = None,
-        entire_text_only: bool = False,
-        visible: bool = True,
-        ticks_visible: bool = False,
-        tick_mark_density: float = None,
-        minimum_width: int = 0,
-        ensure_edge_tick_marks_visible: bool = None,
-        price_format: dict = None,
+        entire_text_only: Optional[bool] = None,
+        visible: Optional[bool] = None,
+        ticks_visible: Optional[bool] = None,
+        tick_mark_density: Optional[float] = None,
+        minimum_width: Optional[int] = None,
+        ensure_edge_tick_marks_visible: Optional[bool] = None,
+        price_format: Optional[dict] = None,
     ):
         """配置价格坐标轴的外观与行为。
+
+        所有参数均为可选，不传则由 JS 端使用官方默认值。
+        scale_margin_top / scale_margin_bottom 互锁：必须同时指定或同时省略。
 
         :param auto_scale: 自动缩放以适应可见数据范围
         :param mode: 价格轴模式 — 'normal' | 'logarithmic' | 'percentage' | 'indexedTo100'
@@ -398,30 +401,46 @@ class SeriesCommon(Pane):
         :param ensure_edge_tick_marks_visible: 始终在价格轴顶部和底部绘制刻度线
         :param price_format: 价格格式，如 {'type': 'base', 'base': 100, 'precision': 2}
         """
-        options = {
-            'autoScale': auto_scale,
-            'mode': as_enum(mode, PRICE_SCALE_MODE),
-            'invertScale': invert_scale,
-            'alignLabels': align_labels,
-            'scaleMargins': {'top': scale_margin_top, 'bottom': scale_margin_bottom},
-            'borderVisible': border_visible,
-            'entireTextOnly': entire_text_only,
-            'visible': visible,
-            'ticksVisible': ticks_visible,
-            'minimumWidth': minimum_width,
-        }
+        if (scale_margin_top is None) != (scale_margin_bottom is None):
+            raise ValueError(
+                'scale_margin_top 和 scale_margin_bottom 必须同时指定，'
+                f'当前只传了 {"scale_margin_top" if scale_margin_top is not None else "scale_margin_bottom"}。'
+            )
+
+        options = {}
+        if auto_scale is not None:
+            options['autoScale'] = auto_scale
+        if mode is not None:
+            options['mode'] = as_enum(mode, PRICE_SCALE_MODE)
+        if invert_scale is not None:
+            options['invertScale'] = invert_scale
+        if align_labels is not None:
+            options['alignLabels'] = align_labels
+        if scale_margin_top is not None:
+            options['scaleMargins'] = {'top': scale_margin_top, 'bottom': scale_margin_bottom}
+        if border_visible is not None:
+            options['borderVisible'] = border_visible
         if border_color is not None:
             options['borderColor'] = border_color
         if text_color is not None:
             options['textColor'] = text_color
+        if entire_text_only is not None:
+            options['entireTextOnly'] = entire_text_only
+        if visible is not None:
+            options['visible'] = visible
+        if ticks_visible is not None:
+            options['ticksVisible'] = ticks_visible
         if tick_mark_density is not None:
             options['tickMarkDensity'] = tick_mark_density
+        if minimum_width is not None:
+            options['minimumWidth'] = minimum_width
         if ensure_edge_tick_marks_visible is not None:
             options['ensureEdgeTickMarksVisible'] = ensure_edge_tick_marks_visible
         if price_format is not None:
             options['priceFormat'] = price_format
 
-        self.run_script(f'{self.id}.series.priceScale().applyOptions({js_json(options)})')
+        if options:
+            self.run_script(f'{self.id}.series.priceScale().applyOptions({js_json(options)})')
 
 
 class LineSeries(SeriesCommon):

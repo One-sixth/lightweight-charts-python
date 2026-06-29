@@ -16,6 +16,7 @@
 ### Changed
 
 - **`SeriesCommon.price_scale()` 重写**：f-string 拼接改为 dict 构建 + `js_json()` 序列化，可读性和可维护性大幅提升。同时修复了 `borderColor`/`textColor` 引号拼接 bug（旧代码未对值加引号）。
+- **`SeriesCommon.price_scale()` 参数默认值改为 `None`**：所有参数不再硬编码默认值，不传则由 JS 端使用官方默认值。`scale_margin_top` / `scale_margin_bottom` 互相依存：只传一个时，另一个使用 JS 端默认值（top=0.2, bottom=0.1）。
 - **`CandleSeries.price_scale()` 删除**：与 `SeriesCommon.price_scale()` 完全相同，改为直接继承，减少 ~60 行重复代码。
 - **`price_scale()` 新增参数 `ensure_edge_tick_marks_visible`**：始终在价格轴顶部和底部绘制刻度线。
 
@@ -32,6 +33,8 @@
 | `series.update(s)` | `series.update_bar(s)` |
 | `chart.update(s)` | `chart.update_bar(s)` |
 | `chart.price_scale(perm_width=N)` | 已删除，无替代 |
+
+> **注意**：`price_scale()` 参数默认值从硬编码值改为 `None`。如果你依赖旧默认值（如 `border_visible=False`、`scale_margin_top=0.2`），需要显式传入。
 
 ---
 
