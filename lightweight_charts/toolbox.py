@@ -74,15 +74,19 @@ class ToolBox:
         self.run_script(f'{self.id}.createToolBox()')
 
     def _delete(self):
-        """（销毁）移除 handler + 清空所有 Python 状态 + 销毁 JS toolBox。"""
-        # 先移除 handler（防止 JS cleanup 触发回调时 handler 已不在）
-        self._chart.win.handlers.pop(f'save_drawings{self.id}', None)
-        # 销毁 JS toolBox
+        """（销毁）移除 handler + 清空所有 Python 状态 + 销毁 JS toolBox。
+
+        顺序关键：必须先清理 JS（此时 handler 仍在），再移除 Python handler。
+        否则 JS 清理过程中触发的回调（如 onChanged → saveDrawings）会找不到 handler。
+        """
+        # 1. 先清理 JS（handler 仍在，回调能正常处理）
         self.run_script(f'''
             if ({self.id}.toolBox) {{
                 {self.id}.toolBox._cleanup();
             }}
         ''')
+        # 2. JS 清理完毕后再移除 Python handler
+        self._chart.win.handlers.pop(f'save_drawings{self.id}', None)
         # 清空 Python 状态
         self.drawings.clear()
         self._drawing_list.clear()

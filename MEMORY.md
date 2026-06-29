@@ -834,4 +834,70 @@ _message_loop()     → while is_alive: emit_queue.get() + parse + func()
 
 ---
 
-*最后更新：2026-06-28（Histogram Legend 精度修复）*
+## 🧹 v2.8.3 SeriesCommon 代码清理（2026-06-30）
+
+### price_scale 重写
+- **改前**：16 个参数的 f-string 拼接 JS，可读性极差
+- **改后**：dict 构建 + `js_json()` 序列化，所有参数默认 `None`（不传则用 JS 官方默认值）
+- **删死参数**：`perm_width` — 官方 API 无此字段
+- **新增参数**：`ensure_edge_tick_marks_visible`
+- **互锁参数**：`scale_margin_top` / `scale_margin_bottom` 必须同时指定或同时省略，否则 ValueError
+- **CandleSeries.price_scale() 删除**：与 SeriesCommon 完全相同，改为继承
+
+### 废弃别名清理
+- **移除** `Line` / `Histogram` 别名 → 用 `LineSeries` / `HistogramSeries`
+- **移除** `update_from_tick` / `update_from_ticks` / `update` 别名 → 用 `update_tick` / `update_ticks` / `update_bar`
+- **涉及文件**：series.py、abstract.py、__init__.py
+
+### _apply_options 通用方法
+- **新增** `SeriesCommon._apply_options(options)` — 统一 `{self.id}.series.applyOptions()` 入口
+- 5 处调用收敛到 1 个方法
+
+### 删除冗余子类 delete() override
+- 7 个子类（LineSeries/HistogramSeries/VolumeSeries/OpenInterestSeries/CandleSeries/AreaSeries/OHLCBarSeries/BaselineSeries）的 `delete()` 全是 `super().delete()` 纯透传
+- 全部删除，直接继承 SeriesCommon.delete()，减少 32 行
+
+---
+
+## 🔧 Toolbox _delete() 顺序陷阱（2026-06-30 修复）
+
+### 问题
+`toolbox._delete()` 先移除 Python handler，再调 JS `_cleanup()`。JS 清理过程中触发 `onChanged → saveDrawings → callbackFunction`，消息发到 Python 时 handler 已不存在 → `[Warning] Event handler not found`。
+
+### 修复
+**反转顺序**：先 JS 清理（handler 仍在，回调能正常处理），再移除 Python handler。
+
+```python
+# 改前（错误顺序）
+self._chart.win.handlers.pop(...)   # 1. handler 没了
+self.run_script(f'..._cleanup()')   # 2. JS 触发回调 → 找不到 handler
+
+# 改后（正确顺序）
+self.run_script(f'..._cleanup()')   # 1. JS 清理，handler 仍在
+self._chart.win.handlers.pop(...)   # 2. 安全移除
+```
+
+### 关键发现：_clear_handlers() vs _remove_my_handlers()
+- **`_clear_handlers()`**：清掉 Window 上**所有图表**的全部 handler，只应由 `reset()` 调用
+- **`_remove_my_handlers()`**：用 salt 匹配只移除当前图表的 handler，不影响其他图表
+- **教训**：多图表共享 Window 时，绝不能用 `_clear_handlers()`，否则会误杀其他图表的 handler
+
+---
+
+## 📝 series.py price_scale 参数设计模式
+
+### "None = 不覆盖 JS 默认值" 模式
+所有参数默认 `None`，不传则 JS 端使用官方默认值。避免 Python 端硬编码与官方不一致的默认值。
+
+### 互锁参数校验
+```python
+if (scale_margin_top is None) != (scale_margin_bottom is None):
+    raise ValueError('scale_margin_top 和 scale_margin_bottom 必须同时指定')
+```
+
+### _apply_price_scale_options 已废弃
+曾经创建了 `_apply_price_scale_options` helper，后发现可以直接调用 `self.price_scale()` 复用，不需要额外抽象。
+
+---
+
+*最后更新：2026-06-30（v2.8.3 SeriesCommon 清理 + Toolbox 顺序修复）*

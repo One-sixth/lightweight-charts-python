@@ -1009,7 +1009,7 @@ class CandleSeries(SeriesCommon):
             ohlc = ohlc[mask]
             n_drop = len(mask) - mask.sum()
             if n_drop > 0:
-                print(f'Warning! Drop {n_drop} lines because earlier than _last_bar.')
+                print(f'Warning! Drop {n_drop} bars because earlier than _last_bar.')
             if ohlc.empty:
                 return
 
