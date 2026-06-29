@@ -1,4 +1,4 @@
-from .abstract import AbstractChart, Window, CandleSeries, VolumeSeries, OpenInterestSeries, LineSeries, HistogramSeries, AreaSeries, OHLCBarSeries, BaselineSeries, Line, Histogram
+from .abstract import AbstractChart, Window, CandleSeries, VolumeSeries, OpenInterestSeries, LineSeries, HistogramSeries, AreaSeries, OHLCBarSeries, BaselineSeries
 from .drawing_series import DrawingSeries
 from .chart import Chart, CrossProcessChart
 from .widgets import JupyterChart

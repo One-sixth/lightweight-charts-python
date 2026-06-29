@@ -10,7 +10,7 @@ import numpy as np
 from .table import Table
 from .toolbox import ToolBox
 from .drawings import Box, HorizontalLine, RayLine, TrendLine, VerticalLine, VerticalSpan, PriceLine
-from .series import SeriesCommon, LineSeries, HistogramSeries, VolumeSeries, OpenInterestSeries, CandleSeries, AreaSeries, OHLCBarSeries, BaselineSeries, Line, Histogram
+from .series import SeriesCommon, LineSeries, HistogramSeries, VolumeSeries, OpenInterestSeries, CandleSeries, AreaSeries, OHLCBarSeries, BaselineSeries
 from .topbar import TopBar
 from .util import (
     BulkRunScript, Pane, Events, IDGen, as_enum, jbool, js_json, TIME, NUM, FLOAT,

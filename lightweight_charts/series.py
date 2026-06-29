@@ -383,31 +383,52 @@ class SeriesCommon(Pane):
         ticks_visible: bool = False,
         tick_mark_density: float = None,
         minimum_width: int = 0,
-        perm_width: int = 0,
+        ensure_edge_tick_marks_visible: bool = None,
         price_format: dict = None,
     ):
         """配置价格坐标轴的外观与行为。
 
-        :param price_format: 价格格式配置，如 {'type': 'base', 'base': 100, 'precision': 2}
+        :param auto_scale: 自动缩放以适应可见数据范围
+        :param mode: 价格轴模式 — 'normal' | 'logarithmic' | 'percentage' | 'indexedTo100'
+        :param invert_scale: 反转价格轴
+        :param align_labels: 对齐标签防止重叠
+        :param scale_margin_top: 顶部留白比例 (0~1)
+        :param scale_margin_bottom: 底部留白比例 (0~1)
+        :param border_visible: 是否在价格轴和图表区域之间绘制边框
+        :param border_color: 边框颜色，如 '#2B2B43'
+        :param text_color: 标签文字颜色，不设置则跟随全局 LayoutOptions.textColor
+        :param entire_text_only: 仅在完整文字可见时显示角标
+        :param visible: 是否显示此价格轴（叠加轴始终可见）
+        :param ticks_visible: 是否在标签旁绘制小水平刻度线
+        :param tick_mark_density: 标签密度，值越大间距越大、标签越少（默认 2.5）
+        :param minimum_width: 价格轴最小宽度（像素）
+        :param ensure_edge_tick_marks_visible: 始终在价格轴顶部和底部绘制刻度线
+        :param price_format: 价格格式，如 {'type': 'base', 'base': 100, 'precision': 2}
         """
-        self.run_script(f'''
-            {self.id}.series.priceScale().applyOptions({{
-                autoScale: {jbool(auto_scale)},
-                mode: {as_enum(mode, PRICE_SCALE_MODE)},
-                invertScale: {jbool(invert_scale)},
-                alignLabels: {jbool(align_labels)},
-                scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}},
-                borderVisible: {jbool(border_visible)},
-                {f'borderColor: "{border_color}",' if border_color else ''}
-                {f'textColor: "{text_color}",' if text_color else ''}
-                entireTextOnly: {jbool(entire_text_only)},
-                visible: {jbool(visible)},
-                ticksVisible: {jbool(ticks_visible)},
-                {f'tickMarkDensity: {tick_mark_density},' if tick_mark_density is not None else ''}
-                minimumWidth: {minimum_width},
-                {f'permWidth: {perm_width},' if perm_width else ''}
-                {f'priceFormat: {js_json(price_format)},' if price_format else ''}
-            }})''')
+        options = {
+            'autoScale': auto_scale,
+            'mode': as_enum(mode, PRICE_SCALE_MODE),
+            'invertScale': invert_scale,
+            'alignLabels': align_labels,
+            'scaleMargins': {'top': scale_margin_top, 'bottom': scale_margin_bottom},
+            'borderVisible': border_visible,
+            'entireTextOnly': entire_text_only,
+            'visible': visible,
+            'ticksVisible': ticks_visible,
+            'minimumWidth': minimum_width,
+        }
+        if border_color is not None:
+            options['borderColor'] = border_color
+        if text_color is not None:
+            options['textColor'] = text_color
+        if tick_mark_density is not None:
+            options['tickMarkDensity'] = tick_mark_density
+        if ensure_edge_tick_marks_visible is not None:
+            options['ensureEdgeTickMarksVisible'] = ensure_edge_tick_marks_visible
+        if price_format is not None:
+            options['priceFormat'] = price_format
+
+        self.run_script(f'{self.id}.series.priceScale().applyOptions({js_json(options)})')
 
 
 class LineSeries(SeriesCommon):
@@ -1067,48 +1088,6 @@ class CandleSeries(SeriesCommon):
     update_from_tick = update_tick
     update_from_ticks = update_ticks
 
-    def price_scale(
-        self,
-        auto_scale: bool = True,
-        mode: PRICE_SCALE_MODE = 'normal',
-        invert_scale: bool = False,
-        align_labels: bool = True,
-        scale_margin_top: float = 0.2,
-        scale_margin_bottom: float = 0.2,
-        border_visible: bool = False,
-        border_color: Optional[str] = None,
-        text_color: Optional[str] = None,
-        entire_text_only: bool = False,
-        visible: bool = True,
-        ticks_visible: bool = False,
-        tick_mark_density: float = None,
-        minimum_width: int = 0,
-        perm_width: int = 0,
-        price_format: dict = None,
-    ):
-        """配置价格坐标轴的外观与行为。
-
-        :param price_format: 价格格式配置，如 {'type': 'base', 'base': 100, 'precision': 2}
-        """
-        self.run_script(f'''
-            {self.id}.series.priceScale().applyOptions({{
-                autoScale: {jbool(auto_scale)},
-                mode: {as_enum(mode, PRICE_SCALE_MODE)},
-                invertScale: {jbool(invert_scale)},
-                alignLabels: {jbool(align_labels)},
-                scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}},
-                borderVisible: {jbool(border_visible)},
-                {f'borderColor: "{border_color}",' if border_color else ''}
-                {f'textColor: "{text_color}",' if text_color else ''}
-                entireTextOnly: {jbool(entire_text_only)},
-                visible: {jbool(visible)},
-                ticksVisible: {jbool(ticks_visible)},
-                {f'tickMarkDensity: {tick_mark_density},' if tick_mark_density is not None else ''}
-                minimumWidth: {minimum_width},
-                {f'permWidth: {perm_width},' if perm_width else ''}
-                {f'priceFormat: {js_json(price_format)},' if price_format else ''}
-            }})''')
-
     def delete(self):
         """删除此 K 线系列。"""
         super().delete()
@@ -1174,7 +1153,9 @@ class AreaSeries(SeriesCommon):
                 {pane_index},
                 false,
                 {jbool(legend)}
-            );null''')
+            );
+            0
+        ''')
 
     def delete(self):
         """删除此面积图系列。"""
@@ -1366,11 +1347,3 @@ class BaselineSeries(SeriesCommon):
         """删除此基准线系列。"""
         super().delete()
 
-
-# ── 已废弃的旧名称，保留兼容 ──
-
-Line = LineSeries
-""".. deprecated:: 使用 LineSeries 代替。"""
-
-Histogram = HistogramSeries
-""".. deprecated:: 使用 HistogramSeries 代替。"""
