@@ -135,8 +135,6 @@ class SeriesCommon(Pane):
         """更新最新一根 bar 或追加新 bar。"""
         self.update_bars(series.to_frame().T)
 
-    update = update_bar
-
     def _clean_update_bars(self, df: pd.DataFrame, _df_cleaned=False):
         '''
         通用函数，清理批量更新数据，确保时间是单调递增的，且在 _last_bar 后面。
@@ -233,16 +231,6 @@ class SeriesCommon(Pane):
         })
 
         self.update_bars(bars)
-
-    # ── 已废弃的旧名称，保留转发兼容 ──
-
-    def update_from_tick(self, series: pd.Series):
-        """.. deprecated:: 使用 update_tick() 代替。"""
-        return self.update_tick(series)
-
-    def update_from_ticks(self, df: pd.DataFrame, _df_cleaned=False):
-        """.. deprecated:: 使用 update_ticks() 代替。"""
-        return self.update_ticks(df, _df_cleaned)
 
     def _update_markers(self):
         auto_scale = jbool(self._chart._marker_auto_scale)
@@ -349,11 +337,8 @@ class SeriesCommon(Pane):
         :param precision: The number of decimal places.
         """
         min_move = 1 / (10**precision)
-        self.run_script(f'''
-        {self.id}.precision = {precision}
-        {self.id}.series.applyOptions({{
-            priceFormat: {{precision: {precision}, minMove: {min_move}}}
-        }})''')
+        self.run_script(f'{self.id}.precision = {precision}')
+        self._apply_options({'priceFormat': {'precision': precision, 'minMove': min_move}})
         self.num_decimals = precision
 
     def hide_data(self):
@@ -364,8 +349,16 @@ class SeriesCommon(Pane):
         """显示当前系列的数据。"""
         self._toggle_data(True)
 
-    def _toggle_data(self, arg):
-        self.run_script(f'{self.id}.series.applyOptions({{visible: {jbool(arg)}}})')
+    def _toggle_data(self, visible: bool):
+        self._apply_options({'visible': visible})
+
+    def _apply_options(self, options: dict):
+        """向 JS 端的 series.applyOptions() 发送选项字典。
+
+        :param options: 选项字典，键名使用 JS 驼峰格式（如 lineWidth, upColor）。
+                        None 值会被 js_json 自动过滤。
+        """
+        self.run_script(f'{self.id}.series.applyOptions({js_json(options)})')
 
     def price_scale(
         self,
@@ -627,8 +620,6 @@ class VolumeSeries(SeriesCommon):
         """更新最新一根 bar 的成交量或追加新 bar。"""
         self.update_bars(series.to_frame().T)
 
-    update = update_bar
-
     def update_bars(self, df: pd.DataFrame, _df_cleaned=False, _cumulative_volume=False):
         """批量更新成交量。
 
@@ -713,10 +704,6 @@ class VolumeSeries(SeriesCommon):
             bars['close'] = group_df['close'].last().values
 
         self.update_bars(bars, _df_cleaned=True, _cumulative_volume=True)
-
-    def update_from_ticks(self, df, _df_cleaned=False):
-        """.. deprecated:: 使用 update_ticks() 代替。"""
-        return self.update_ticks(df, _df_cleaned)
 
     def config(self, scale_margin_top: float = None, scale_margin_bottom: float = None,
                up_color: str = None, down_color: str = None):
@@ -837,7 +824,7 @@ class OpenInterestSeries(SeriesCommon):
         if line_width is not None:
             opts['lineWidth'] = line_width
         if opts:
-            self.run_script(f'{self.id}.series.applyOptions({js_json(opts)})')
+            self._apply_options(opts)
         if scale_margin_top is not None or scale_margin_bottom is not None:
             top = scale_margin_top if scale_margin_top is not None else 0.8
             bottom = scale_margin_bottom if scale_margin_bottom is not None else 0.0
@@ -954,7 +941,7 @@ class CandleSeries(SeriesCommon):
         self.border_down_color = border_down_color if border_down_color else down_color
         self.wick_up_color = wick_up_color if wick_up_color else up_color
         self.wick_down_color = wick_down_color if wick_down_color else down_color
-        self.run_script(f"{self.id}.series.applyOptions({js_json(locals())})")
+        self._apply_options({k: v for k, v in locals().items() if k != 'self'})
 
     def clear_data(self):
         """清空所有 K 线数据和标记。"""
@@ -994,8 +981,6 @@ class CandleSeries(SeriesCommon):
     def update_bar(self, series: pd.Series):
         """更新最新一根 bar 或追加新 bar。"""
         self.update_bars(series.to_frame().T)
-
-    update = update_bar
 
     def update_bars(self, df: pd.DataFrame, _df_cleaned=False):
         """
@@ -1046,7 +1031,7 @@ class CandleSeries(SeriesCommon):
     def update_tick(self, series: pd.Series):
         """
         使用单个 tick 更新图表。
-        :param series: labels: date/time, price, [volume, open_interest]
+        :param series: labels: date/time, price
         """
         self.update_ticks(series.to_frame().T)
 
@@ -1084,9 +1069,6 @@ class CandleSeries(SeriesCommon):
             bars.iloc[0, 3] = min(self._last_bar['low'], bars.iloc[0, 3])
 
         self.update_bars(bars)
-
-    update_from_tick = update_tick
-    update_from_ticks = update_ticks
 
     def delete(self):
         """删除此 K 线系列。"""
@@ -1264,7 +1246,7 @@ class OHLCBarSeries(CandleSeries):
             self.thin_bars = thin_bars
             opts['thinBars'] = thin_bars
         if opts:
-            self.run_script(f"{self.id}.series.applyOptions({js_json(opts)})")
+            self._apply_options(opts)
 
     def delete(self):
         """删除此美国线系列。"""

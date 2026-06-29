@@ -521,8 +521,6 @@ class AbstractChart(Pane):
         """更新最新一根 bar 或追加新 bar。"""
         self.update_bars(series.to_frame().T)
 
-    update = update_bar
-
     def update_bars(self, df):
         """批量更新多根 K 线（OHLC + volume + OI）。
 
@@ -596,14 +594,6 @@ class AbstractChart(Pane):
                 df[['time', 'open_interest']].rename(columns={'open_interest': 'value'}),
                 _df_cleaned=True
             )
-
-    def update_from_tick(self, series, **kwargs):
-        """.. deprecated:: 使用 update_tick() 代替。"""
-        return self.update_tick(series)
-
-    def update_from_ticks(self, df, **kwargs):
-        """.. deprecated:: 使用 update_ticks() 代替。"""
-        return self.update_ticks(df)
 
     def clear_data(self):
         """清空所有 K 线数据（K线 + 成交量 + 持仓量）。"""

@@ -4,6 +4,37 @@
 
 ---
 
+## [v2.8.3] - 2026-06-30
+
+### Breaking Changes
+
+- **`Line` / `Histogram` 别名已移除**：使用 `LineSeries` / `HistogramSeries` 代替。
+- **`update_from_tick()` / `update_from_ticks()` 已移除**：使用 `update_tick()` / `update_ticks()` 代替。
+- **`update = update_bar` 别名已移除**：使用 `update_bar()` 或 `update_bars()` 代替。
+- **`price_scale()` 参数 `perm_width` 已移除**：官方 API 中不存在此字段。
+
+### Changed
+
+- **`SeriesCommon.price_scale()` 重写**：f-string 拼接改为 dict 构建 + `js_json()` 序列化，可读性和可维护性大幅提升。同时修复了 `borderColor`/`textColor` 引号拼接 bug（旧代码未对值加引号）。
+- **`CandleSeries.price_scale()` 删除**：与 `SeriesCommon.price_scale()` 完全相同，改为直接继承，减少 ~60 行重复代码。
+- **`price_scale()` 新增参数 `ensure_edge_tick_marks_visible`**：始终在价格轴顶部和底部绘制刻度线。
+
+### Migration Guide
+
+| 旧 API | 新 API |
+|--------|--------|
+| `Line(...)` | `LineSeries(...)` |
+| `Histogram(...)` | `HistogramSeries(...)` |
+| `series.update_from_tick(s)` | `series.update_tick(s)` |
+| `series.update_from_ticks(df)` | `series.update_ticks(df)` |
+| `chart.update_from_tick(s)` | `chart.update_tick(s)` |
+| `chart.update_from_ticks(df)` | `chart.update_ticks(df)` |
+| `series.update(s)` | `series.update_bar(s)` |
+| `chart.update(s)` | `chart.update_bar(s)` |
+| `chart.price_scale(perm_width=N)` | 已删除，无替代 |
+
+---
+
 ## [v2.8.2] - 2026-06-28
 
 ### Breaking Changes
@@ -106,8 +137,8 @@
 
 ### Breaking Changes
 
-- **函数重命名**：`update_from_tick()` → `update_tick()`，`update_from_ticks()` → `update_ticks()`（旧名保留为废弃转发）
-- **类重命名**：`Line` → `LineSeries`，`Histogram` → `HistogramSeries`（旧名保留为别名）
+- **函数重命名**：`update_from_tick()` → `update_tick()`，`update_from_ticks()` → `update_ticks()`（旧名已在 v2.8.3 移除）
+- **类重命名**：`Line` → `LineSeries`，`Histogram` → `HistogramSeries`（旧名已在 v2.8.3 移除）
 - **normal_df 精简**：不再自动将列名转为小写，不再自动将 `date` 列重命名为 `time`
 - **AbstractChart 不联动 _lines**：`set()`/`update_bars()`/`update_ticks()` 不再自动转发数据给 Line/Histogram
 - **统一输入列**：所有系列的 `set()`/`update_bars()`/`update_ticks()` 统一接受 `time` + `value` 列
