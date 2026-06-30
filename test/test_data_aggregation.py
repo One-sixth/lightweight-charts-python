@@ -29,8 +29,8 @@ import pandas as pd
 import numpy as np
 from lightweight_charts import Chart
 from lightweight_charts.util import (
-    merge_value_by_time, normal_df, time_to_bar_time,
-    get_df_interval_offset,
+    merge_value_by_time, merge_volume_by_time, normal_df, time_to_bar_time,
+    get_df_interval_offset, filter_old_bars,
 )
 
 
@@ -1437,6 +1437,192 @@ def test_edge_cases():
 
 
 # ═══════════════════════════════════════════════════════
+#  测试: filter_old_bars 纯函数
+# ═══════════════════════════════════════════════════════
+
+def test_filter_old_bars():
+    sep = "=" * 60
+    print(sep)
+    print("  test_filter_old_bars")
+    print(sep)
+
+    errors = []
+    all_clean = True
+
+    df = pd.DataFrame({
+        'time': [100, 200, 300, 400, 500],
+        'value': [10, 20, 30, 40, 50],
+    })
+
+    # ── [1] last_bar_time=None → 不过滤 ──
+    print("\n[1] last_bar_time=None → no filter ...")
+    result = filter_old_bars(df, last_bar_time=None)
+    all_clean &= log_check(len(result) == 5, f"rows={len(result)}==5", errors, "none")
+
+    # ── [2] last_bar_time=300 → 保留 >=300 ──
+    print("\n[2] last_bar_time=300 → keep >=300 ...")
+    result = filter_old_bars(df, last_bar_time=300)
+    all_clean &= log_check(len(result) == 3, f"rows={len(result)}==3", errors, "filter_count")
+    all_clean &= log_check(result.iloc[0]['time'] == 300, f"first={result.iloc[0]['time']}==300", errors, "filter_first")
+
+    # ── [3] last_bar_time=0 → 全部保留 ──
+    print("\n[3] last_bar_time=0 → keep all ...")
+    result = filter_old_bars(df, last_bar_time=0)
+    all_clean &= log_check(len(result) == 5, f"rows={len(result)}==5", errors, "zero")
+
+    # ── [4] last_bar_time=999 → 全部丢弃 ──
+    print("\n[4] last_bar_time=999 → drop all ...")
+    result = filter_old_bars(df, last_bar_time=999)
+    all_clean &= log_check(len(result) == 0, f"rows={len(result)}==0", errors, "drop_all")
+
+    # ── [5] 单调递增检查 ──
+    print("\n[5] Non-monotonic → ValueError ...")
+    df_bad = pd.DataFrame({'time': [300, 100, 200], 'value': [1, 2, 3]})
+    try:
+        filter_old_bars(df_bad)
+        all_clean &= log_check(False, "should raise ValueError", errors, "mono")
+    except ValueError:
+        all_clean &= log_check(True, "raised ValueError", errors, "mono")
+
+    # ── [6] 空 DataFrame ──
+    print("\n[6] Empty DataFrame → no error ...")
+    result = filter_old_bars(pd.DataFrame(), last_bar_time=100)
+    all_clean &= log_check(len(result) == 0, f"rows={len(result)}==0", errors, "empty")
+
+    # ── [7] last_bar_time 正好等于某行时间 → 该行保留 ──
+    print("\n[7] Exact match → keep ...")
+    result = filter_old_bars(df, last_bar_time=200)
+    all_clean &= log_check(len(result) == 4, f"rows={len(result)}==4", errors, "exact_match")
+    all_clean &= log_check(result.iloc[0]['time'] == 200, f"first={result.iloc[0]['time']}==200", errors, "exact_first")
+
+    print()
+    print(f"  RESULT: {'PASS' if all_clean else 'FAIL ({0} errors)'.format(len(errors))}")
+    return all_clean
+
+
+# ═══════════════════════════════════════════════════════
+#  测试: merge_volume_by_time 纯函数
+# ═══════════════════════════════════════════════════════
+
+def test_merge_volume_by_time():
+    from lightweight_charts.util import merge_volume_by_time
+
+    sep = "=" * 60
+    print(sep)
+    print("  test_merge_volume_by_time")
+    print(sep)
+
+    errors = []
+    all_clean = True
+
+    # ── [1] Bar 模式：基本合并 ──
+    print("\n[1] Bar mode: basic merge ...")
+    df_bar = pd.DataFrame({
+        'time':  [1, 1, 2, 2, 2],
+        'value': [100, 200, 50, 30, 70],
+        'open':  [10.0, 10.5, 11.0, 11.2, 11.1],
+        'close': [10.5, 10.8, 11.2, 11.3, 11.4],
+    })
+    result = merge_volume_by_time(df_bar, is_tick=False)
+    all_clean &= log_check(list(result.columns) == ['time', 'value', 'open', 'close'],
+                            f"columns={list(result.columns)}", errors, "bar_cols")
+    all_clean &= log_check(len(result) == 2, f"rows={len(result)}==2", errors, "bar_rows")
+
+    row1 = result[result['time'] == 1].iloc[0]
+    all_clean &= log_check(row1['value'] == 300, f"t1 value=100+200={row1['value']}", errors, "bar_t1_vol")
+    all_clean &= log_check(row1['open'] == 10.0, f"t1 open=first=10.0, got={row1['open']}", errors, "bar_t1_open")
+    all_clean &= log_check(row1['close'] == 10.8, f"t1 close=last=10.8, got={row1['close']}", errors, "bar_t1_close")
+
+    row2 = result[result['time'] == 2].iloc[0]
+    all_clean &= log_check(row2['value'] == 150, f"t2 value=50+30+70={row2['value']}", errors, "bar_t2_vol")
+    all_clean &= log_check(row2['open'] == 11.0, f"t2 open=first=11.0, got={row2['open']}", errors, "bar_t2_open")
+    all_clean &= log_check(row2['close'] == 11.4, f"t2 close=last=11.4, got={row2['close']}", errors, "bar_t2_close")
+
+    # ── [2] Bar 模式：单行（无合并） ──
+    print("\n[2] Bar mode: single row ...")
+    df_single = pd.DataFrame({
+        'time': [1], 'value': [500], 'open': [20.0], 'close': [21.0],
+    })
+    result = merge_volume_by_time(df_single, is_tick=False)
+    all_clean &= log_check(len(result) == 1, f"rows={len(result)}==1", errors, "bar_single_rows")
+    all_clean &= log_check(result.iloc[0]['value'] == 500, f"value=500", errors, "bar_single_vol")
+
+    # ── [3] Tick 模式：基本合并 ──
+    print("\n[3] Tick mode: basic merge ...")
+    df_tick = pd.DataFrame({
+        'time':  [1, 1, 1, 2, 2],
+        'value': [100, 200, 150, 80, 120],
+        'price': [10.0, 10.5, 10.2, 11.0, 11.3],
+    })
+    result = merge_volume_by_time(df_tick, is_tick=True)
+    all_clean &= log_check(list(result.columns) == ['time', 'value', 'open', 'close'],
+                            f"columns={list(result.columns)}", errors, "tick_cols")
+    all_clean &= log_check(len(result) == 2, f"rows={len(result)}==2", errors, "tick_rows")
+
+    row1 = result[result['time'] == 1].iloc[0]
+    all_clean &= log_check(row1['value'] == 450, f"t1 value=100+200+150={row1['value']}", errors, "tick_t1_vol")
+    all_clean &= log_check(row1['open'] == 10.0, f"t1 open=first(price)=10.0, got={row1['open']}", errors, "tick_t1_open")
+    all_clean &= log_check(row1['close'] == 10.2, f"t1 close=last(price)=10.2, got={row1['close']}", errors, "tick_t1_close")
+
+    row2 = result[result['time'] == 2].iloc[0]
+    all_clean &= log_check(row2['value'] == 200, f"t2 value=80+120={row2['value']}", errors, "tick_t2_vol")
+    all_clean &= log_check(row2['open'] == 11.0, f"t2 open=first(price)=11.0, got={row2['open']}", errors, "tick_t2_open")
+    all_clean &= log_check(row2['close'] == 11.3, f"t2 close=last(price)=11.3, got={row2['close']}", errors, "tick_t2_close")
+
+    # ── [4] Tick 模式：单条 tick（open == close） ──
+    print("\n[4] Tick mode: single tick per time ...")
+    df_single_tick = pd.DataFrame({
+        'time': [1, 2, 3],
+        'value': [50, 60, 70],
+        'price': [10.0, 11.0, 12.0],
+    })
+    result = merge_volume_by_time(df_single_tick, is_tick=True)
+    all_clean &= log_check(len(result) == 3, f"rows={len(result)}==3", errors, "tick_single_rows")
+    for i, (_, row) in enumerate(result.iterrows()):
+        all_clean &= log_check(row['open'] == row['close'],
+                                f"t{i+1} open==close=={row['open']}", errors, f"tick_single_{i}")
+
+    # ── [5] Bar 模式：缺列报错 ──
+    print("\n[5] Bar mode: missing columns → ValueError ...")
+    try:
+        merge_volume_by_time(pd.DataFrame({'time': [1], 'value': [100]}), is_tick=False)
+        all_clean &= log_check(False, "should raise ValueError", errors, "bar_missing")
+    except ValueError as e:
+        all_clean &= log_check(True, f"raised ValueError: {e}", errors, "bar_missing")
+
+    # ── [6] Tick 模式：缺列报错 ──
+    print("\n[6] Tick mode: missing columns → ValueError ...")
+    try:
+        merge_volume_by_time(pd.DataFrame({'time': [1], 'value': [100]}), is_tick=True)
+        all_clean &= log_check(False, "should raise ValueError", errors, "tick_missing")
+    except ValueError as e:
+        all_clean &= log_check(True, f"raised ValueError: {e}", errors, "tick_missing")
+
+    # ── [7] 数据完整性：无 NaN ──
+    print("\n[7] No NaN in output ...")
+    df_vol = pd.DataFrame({
+        'time': [1, 1, 2, 2, 2],
+        'value': [10, 20, 30, 40, 50],
+        'open': [1.0, 2.0, 3.0, 4.0, 5.0],
+        'close': [1.5, 2.5, 3.5, 4.5, 5.5],
+    })
+    result = merge_volume_by_time(df_vol)
+    all_clean &= log_check(not result.isnull().any().any(), "no NaN in bar result", errors, "bar_nan")
+
+    df_tick_nan = pd.DataFrame({
+        'time': [1, 1, 2],
+        'value': [10, 20, 30],
+        'price': [1.0, 2.0, 3.0],
+    })
+    result = merge_volume_by_time(df_tick_nan, is_tick=True)
+    all_clean &= log_check(not result.isnull().any().any(), "no NaN in tick result", errors, "tick_nan")
+
+    print()
+    print(f"  RESULT: {'PASS' if all_clean else 'FAIL ({0} errors)'.format(len(errors))}")
+    return all_clean
+
+
+# ═══════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════
 
@@ -1457,6 +1643,8 @@ if __name__ == '__main__':
     results.append(('chaos_multi_level_fusion', test_chaos_multi_level_fusion()))
     results.append(('chaos_last_bar_inheritance', test_chaos_last_bar_inheritance()))
     results.append(('edge_cases', test_edge_cases()))
+    results.append(('filter_old_bars', test_filter_old_bars()))
+    results.append(('merge_volume_by_time', test_merge_volume_by_time()))
 
     print()
     print("=" * 60)

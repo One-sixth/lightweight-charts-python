@@ -1,13 +1,14 @@
 import json
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
+import numpy as np
 import pandas as pd
 
 from .util import (
     Pane, as_enum, jbool, js_json, TIME, NUM, FLOAT,
     LINE_STYLE, MARKER_POSITION, MARKER_SHAPE,
     PRICE_SCALE_MODE, marker_position, marker_shape, js_data,
-    normal_df, merge_value_by_time, get_df_interval_offset, time_to_bar_time
+    normal_df, merge_value_by_time, get_df_interval_offset, time_to_bar_time, merge_volume_by_time, filter_old_bars
 )
 
 
@@ -18,6 +19,10 @@ if TYPE_CHECKING:
 
 class SeriesCommon(Pane):
     """图表的系列数据基类，管理数据更新、标记、绘图和价格线。"""
+
+    tick_required_cols = ['time', 'value']
+    bar_required_cols = ['time', 'value']
+
     def __init__(self, chart: 'AbstractChart', name: str = '', pane_index: int = 0, _fixed_id: str = None, _option_columns: list[str] = None, legend: bool = True):
         """
         :param chart: 所属的 AbstractChart 实例
@@ -70,14 +75,9 @@ class SeriesCommon(Pane):
         self._last_bar = None
         self.run_script(f'{self.id}.series.setData([])')
 
-    def _get_df_interval_offset(self, df: pd.DataFrame) -> (int, int):
-        """获取数据DF内时间点的通常间隔（秒），返回，时间间隔（秒）和偏移时间（秒）"""
-        return get_df_interval_offset(df)
-
     def _time_to_bar_time(self, data: int | float | pd.Series | pd.DataFrame) -> int | float | pd.Series | pd.DataFrame:
         """将时间戳转换为bar时间戳（委托到所属图表的时间级别）。"""
         return self._chart._time_to_bar_time(data)
-
 
     def _single_datetime_format(self, arg) -> int:
         """格式化单个时间值（委托到所属图表的时间级别）。"""
@@ -537,6 +537,8 @@ class VolumeSeries(SeriesCommon):
         vol.set(vol_df)
         vol.delete()
     """
+    tick_required_cols = ['time', 'value', 'price']
+    bar_required_cols = ['time', 'value', 'open', 'close']
 
     def __init__(self, chart: 'AbstractChart', pane_index: int = None,
                  up_color: str = 'rgba(83,141,131,0.8)',
@@ -595,35 +597,13 @@ class VolumeSeries(SeriesCommon):
         ''')
         self.price_scale(scale_margin_top=self.scale_margin_top, scale_margin_bottom=self.scale_margin_bottom)
 
-    def _prepare_vol_df(self, df, _df_cleaned=False):
-        """清洗并准备成交量 DataFrame。
-
-        :return: 准备好的 vol_df（time, value, open, close, color），或 None（无 value 列时）。
-        :raises ValueError: 缺少 open 或 close 列时抛出异常。
-        """
-        df = self._clean_df(df, _df_cleaned)
-        if 'value' not in df.columns:
-            return None
-        for col in ('open', 'close'):
-            if col not in df.columns:
-                raise ValueError(f"VolumeSeries 需要 '{col}' 列用于涨跌着色。")
-        vol_df = df[['time', 'value', 'open', 'close']].copy()
-        # 根据 OHLC 着色
-        vol_df['color'] = self.down_color
-        vol_df.loc[df['close'] > df['open'], 'color'] = self.up_color
-        return vol_df
-
     def set(self, df: pd.DataFrame, _df_cleaned=False):
-        """设置成交量数据。自动根据 OHLC 着色。
+        """设置成交量数据。自动根据 open/close 涨跌着色。
 
-        :param df: DataFrame，需要包含 time 和 value 列。如果包含 open/close 列则自动着色，否则使用默认色。
+        :param df: DataFrame，需要包含 time, value, open, close 列。open/close 用于涨跌着色和持久化。
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
-        self.run_script(f'{self.id}.series.setData([])')
-        self.data = pd.DataFrame()
-        self._last_bar = None
-        if df is None or df.empty:
-            return
+        self.clear_data()
         self.update_bars(df, _df_cleaned)
 
     def update_bar(self, series: pd.Series):
@@ -633,87 +613,78 @@ class VolumeSeries(SeriesCommon):
     def update_bars(self, df: pd.DataFrame, _df_cleaned=False, _cumulative_volume=False):
         """批量更新成交量。
 
-        :param df: DataFrame，需要包含 time 和 value 列
-        :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
+        :param df: DataFrame，需要包含 time, value, open, close 列。
+        :param _df_cleaned: True 表示数据已由 AbstractChart 或 update_ticks 清洗过，跳过重复清洗。
         :param _cumulative_volume: 内部参数，True 时将新 volume 累加到已有 bar（由 update_ticks 传入）。
         """
         if df is None or df.empty:
             return
+        if not _df_cleaned:
+            df = normal_df(df, self.bar_required_cols)
+            df = merge_volume_by_time(df, is_tick=False)
 
-        vol_df = self._prepare_vol_df(df, _df_cleaned)
-        if vol_df is None or vol_df.empty:
-            return
+        vol_df = df
+
+        assert list(vol_df.columns) == list(self.bar_required_cols), \
+            f'发现数据列名不符合要求: {list(vol_df.columns)} != {list(self.bar_required_cols)}'
 
         # 过滤旧数据
         if self._last_bar is not None:
-            mask = vol_df['time'] >= self._last_bar['time']
-            vol_df = vol_df[mask]
-            if vol_df.empty:
-                return
+            vol_df = filter_old_bars(vol_df, self._last_bar['time'])
+
+        if vol_df.empty:
+            return
 
         if self.data is None or self.data.empty:
-            # 首批数据 → setData 批量写入
+            # 首批数据 → setData 批量写入（JS 只需要 time, value, color）
             self.data = vol_df.copy()
-            self.run_script(f'{self.id}.series.setData({js_data(vol_df)})')
+            js_df = vol_df[['time', 'value']]
+            js_df['color'] = np.where(vol_df['close'] > vol_df['open'], self.up_color, self.down_color)
+            self.run_script(f'{self.id}.series.setData({js_data(js_df)})')
 
         else:
+            # 确保数据列名一致，并且顺序正确
+            assert list(self.data.columns) == list(self.bar_required_cols), \
+                f'{list(self.data.columns)} != {list(self.bar_required_cols)}'
+            col_time_idx = 0
+            col_value_idx = 1
+            col_open_idx = 2
+
             # 后续数据 → per-row update
             df_len = len(vol_df)
-            if self.data['time'].iloc[-1] == vol_df['time'].iloc[0]:
+            if self.data.iat[-1, col_time_idx] == vol_df.iat[0, col_time_idx]:
                 if _cumulative_volume:
                     # 累加 volume
-                    value_col_idx = int(vol_df.columns.get_loc("value"))
-                    new_vol = self.data['value'].iloc[-1] + vol_df.iat[0, value_col_idx]
-                    vol_df.iat[0, value_col_idx] = new_vol
-                    # 保留已有 open，更新 close
-                    if 'open' in vol_df.columns and 'open' in self.data.columns:
-                        vol_df.iat[0, int(vol_df.columns.get_loc("open"))] = self.data['open'].iloc[-1]
-                    if 'close' in vol_df.columns and 'close' in self.data.columns:
-                        pass  # close 保持新 batch 的值（最新价）
-                    # 重算颜色
-                    if 'color' in vol_df.columns:
-                        o = vol_df.iat[0, int(vol_df.columns.get_loc("open"))]
-                        c = vol_df.iat[0, int(vol_df.columns.get_loc("close"))]
-                        vol_df.iat[0, int(vol_df.columns.get_loc("color"))] = self.up_color if c > o else self.down_color
-                    # -------------------------------------------------------
+                    vol_df.iat[0, col_value_idx] = self.data.iat[-1, col_value_idx] + vol_df.iat[0, col_value_idx]
+                    # 保留已有 open
+                    vol_df.iat[0, col_open_idx] = self.data.iat[-1, col_open_idx]
+                # 拼接到data上
                 self.data = pd.concat([self.data.iloc[:-1], vol_df], ignore_index=True)
             else:
                 self.data = pd.concat([self.data, vol_df], ignore_index=True)
+
             vol_df = self.data.iloc[-df_len:]
-            js_commands = [f'{self.id}.series.update({js_data(row)})' for _, row in vol_df.iterrows()]
+            # 现场计算 color，JS 只需要 time, value, color
+            js_df = vol_df[['time', 'value']]
+            js_df['color'] = np.where(vol_df['close'] > vol_df['open'], self.up_color, self.down_color)
+            js_commands = [f'{self.id}.series.update({js_data(row)})' for _, row in js_df.iterrows()]
             self.run_script('; '.join(js_commands))
 
-        self._last_bar = vol_df.iloc[-1]
+        self._last_bar = self.data.iloc[-1]
 
     def update_ticks(self, df, _df_cleaned=False):
         """tick 数据聚合为 bar 后更新成交量。
 
-        同一时间窗口内的 tick volume 始终求和（每笔 tick 都是增量）。
-        如果输入包含 open/close 列则用于涨跌着色，否则使用默认色。
+        输入为原始 tick：time, value(volume), price。
+        同一时间窗口内的 tick volume 求和，open/close 从 price 生成。
         聚合后委托 update_bars 统一处理过滤/更新/维护。
         """
         if df is None or df.empty:
             return
-
-        if self._last_bar is None:
-            raise AssertionError('update_ticks() must be called after set()')
-
-        df = self._clean_df(df, _df_cleaned)
-
-        if 'value' not in df.columns:
-            return
-
-        group_df = df.groupby('time')
-        vol_series = group_df['value'].sum()
-
-        bars = pd.DataFrame({'time': vol_series.index, 'value': vol_series.values})
-
-        # 如果有 open/close 列，保留供着色用
-        if 'open' in df.columns and 'close' in df.columns:
-            bars['open'] = group_df['open'].first().values
-            bars['close'] = group_df['close'].last().values
-
-        self.update_bars(bars, _df_cleaned=True, _cumulative_volume=True)
+        if not _df_cleaned:
+            df = normal_df(df, self.tick_required_cols)
+        df = merge_volume_by_time(df, is_tick=True)
+        self.update_bars(df, _df_cleaned=True, _cumulative_volume=True)
 
     def config(self, scale_margin_top: float = None, scale_margin_bottom: float = None,
                up_color: str = None, down_color: str = None):
@@ -853,6 +824,8 @@ class CandleSeries(SeriesCommon):
         ref.update(new_bar)        # 更新最新 bar 或追加新 bar
         ref.update_bars(df_more)  # 批量追加
     """
+    tick_required_cols = ['time', 'value']
+    bar_required_cols = ['time', 'open', 'high', 'low', 'close']
 
     def __init__(self, chart, name: str = '', pane_index: int = 0,
                  up_color: str = 'rgba(39, 157, 130, 100)',
@@ -1311,4 +1284,6 @@ class BaselineSeries(SeriesCommon):
                 {pane_index},
                 false,
                 {jbool(legend)}
-            );null''')
+            );
+            0;
+        ''')

@@ -12,13 +12,18 @@
 - **`update_from_tick()` / `update_from_ticks()` 已移除**：使用 `update_tick()` / `update_ticks()` 代替。
 - **`update = update_bar` 别名已移除**：使用 `update_bar()` 或 `update_bars()` 代替。
 - **`price_scale()` 参数 `perm_width` 已移除**：官方 API 中不存在此字段。
+- **ToolBox 方法移除**：`save_drawings_under()`、`load_drawings()`、`import_drawings()`、`export_drawings()` 已移除。使用 `on_change` 回调自行实现持久化。
 
 ### Changed
 
 - **`SeriesCommon.price_scale()` 重写**：f-string 拼接改为 dict 构建 + `js_json()` 序列化，可读性和可维护性大幅提升。同时修复了 `borderColor`/`textColor` 引号拼接 bug（旧代码未对值加引号）。
-- **`SeriesCommon.price_scale()` 参数默认值改为 `None`**：所有参数不再硬编码默认值，不传则由 JS 端使用官方默认值。`scale_margin_top` / `scale_margin_bottom` 互相依存：只传一个时，另一个使用 JS 端默认值（top=0.2, bottom=0.1）。
+- **`SeriesCommon.price_scale()` 参数默认值改为 `None`**：所有参数不再硬编码默认值，不传则由 JS 端使用官方默认值。`scale_margin_top` / `scale_margin_bottom` 互锁：必须同时指定或同时省略。
 - **`CandleSeries.price_scale()` 删除**：与 `SeriesCommon.price_scale()` 完全相同，改为直接继承，减少 ~60 行重复代码。
 - **`price_scale()` 新增参数 `ensure_edge_tick_marks_visible`**：始终在价格轴顶部和底部绘制刻度线。
+- **ToolBox `_delete()` 顺序修复**：先 JS 清理再移除 Python handler，避免 JS 清理过程中触发的回调找不到 handler。
+- **子类冗余 `delete()` 清理**：7 个子类的 `delete()` 纯透传 override 全部删除，直接继承 SeriesCommon。
+- **`_apply_options()` 通用方法**：SeriesCommon 新增 `_apply_options(options)` 统一 `series.applyOptions()` 入口。
+- **测试修复**：`_clear_handlers()` → `_remove_my_handlers()`，避免多图表场景误杀其他图表的 handler。
 
 ### Migration Guide
 
@@ -33,6 +38,10 @@
 | `series.update(s)` | `series.update_bar(s)` |
 | `chart.update(s)` | `chart.update_bar(s)` |
 | `chart.price_scale(perm_width=N)` | 已删除，无替代 |
+| `chart.toolbox.save_drawings_under(w)` | 用 `on_change` 回调自行实现 |
+| `chart.toolbox.load_drawings(tag)` | 用 `on_change` 回调自行实现 |
+| `chart.toolbox.import_drawings(path)` | 用 `on_change` 回调自行实现 |
+| `chart.toolbox.export_drawings(path)` | 用 `on_change` 回调自行实现 |
 
 > **注意**：`price_scale()` 参数默认值从硬编码值改为 `None`。如果你依赖旧默认值（如 `border_visible=False`、`scale_margin_top=0.2`），需要显式传入。
 
@@ -42,7 +51,7 @@
 
 ### Breaking Changes
 
-- **ToolBox 回调重构**：`chart.toolbox.save_drawings_under(widget)` 机制保留，新增 `chart.toolbox.on_change += func` / `-= func` 回调注册方式。回调签名改为 `func(drawings: list[DrawingInfo])`（不再传 JSON 字符串）。
+- **ToolBox 回调重构**：新增 `chart.toolbox.on_change += func` / `-= func` 回调注册方式。回调签名为 `func(drawings: list[DrawingInfo])`。旧的 `save_drawings_under` 持久化机制已在 v2.8.3 移除。
 - **Ctrl+Z 撤销移除**：ToolBox 不再监听 Ctrl+Z 撤销快捷键。
 - **ToolBox 生命周期**：`_cleanup()` 方法已移除，改用 `_delete()`（销毁）/ `_build()`（重建）模式。
 

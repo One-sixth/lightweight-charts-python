@@ -4,7 +4,7 @@ import inspect
 import warnings
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from typing import Literal, Union, Tuple, TYPE_CHECKING
+from typing import Literal, Union, Tuple, TYPE_CHECKING, Optional
 import pandas as pd
 import numpy as np
 
@@ -469,7 +469,7 @@ def get_df_interval_offset(df: pd.DataFrame) -> (int, int):
     return interval, offset
 
 
-def normal_df(df: pd.DataFrame) -> pd.DataFrame:
+def normal_df(df: pd.DataFrame, required_cols: Optional[list[str]] = None) -> pd.DataFrame:
     """标准化输入 DataFrame。
 
     - 无 time 列时用 index
@@ -479,6 +479,7 @@ def normal_df(df: pd.DataFrame) -> pd.DataFrame:
     输入 DataFrame 的列名必须已经是正确的小写形式（如 time, open, high, low, close, value）。
 
     :param df: 输入 DataFrame
+    :param required_cols: 必需列名列表，并且按照顺序排列，None 则不检查
     :return: 标准化后的 DataFrame（副本）
     """
 
@@ -492,6 +493,12 @@ def normal_df(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df['time'] = pd.to_datetime(df['time'], unit='s').dt.tz_localize(None)
         df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
+
+    if required_cols is not None:
+        missing = set(required_cols) - set(df.columns)
+        if missing:
+            raise ValueError(f"缺少必需列: {missing}")
+        df = df[list(required_cols)]
 
     return df
 
@@ -511,6 +518,103 @@ def time_to_bar_time(data, offset: int, interval: int):
         return (data - offset) // interval * interval + offset
 
 
+def filter_old_bars(df: pd.DataFrame, last_bar_time=None) -> pd.DataFrame:
+    """丢弃 time < last_bar_time 的数据，并检查单调递增。
+
+    :param df: 包含 time 列的 DataFrame
+    :param last_bar_time: 上一根 bar 的时间戳（int/float），None 则跳过过滤
+    :return: 过滤后的 DataFrame
+    """
+    if df.empty:
+        return df
+
+    if len(df) > 1 and not df['time'].is_monotonic_increasing:
+        raise ValueError("Time column must be monotonic increasing.")
+
+    if last_bar_time is not None:
+        mask = df['time'] >= last_bar_time
+        n_drop = len(mask) - mask.sum()
+        if n_drop > 0:
+            print(f'Warning! Drop {n_drop} lines because earlier than _last_bar.')
+        df = df[mask]
+
+    return df
+
+
+def merge_volume_by_time(df: pd.DataFrame, is_tick: bool = False) -> pd.DataFrame:
+    """按 time 合并 volume 数据。
+
+    :param df: 输入 DataFrame
+    :param is_tick: False = bar 模式（输入 time/value/open/close）
+                    True  = tick 模式（输入 time/value/price）
+    :return: time, value, open, close
+    """
+    if is_tick:
+        # 特别注意，tick 模式下，value 取的是每个时间的总和
+        required = {'time', 'value', 'price'}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"tick 模式缺少必需列: {missing}")
+
+        grouped = df.groupby('time')
+        new_df = pd.DataFrame({'time': list(grouped.groups)})
+        new_df['value'] = grouped['value'].sum().array
+        new_df['open'] = grouped['price'].first().array
+        new_df['close'] = grouped['price'].last().array
+        return new_df
+
+    else:
+        # 特别注意，bar模式的 value 取的是每个时间的最后一个值
+        required = {'time', 'value', 'open', 'close'}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"bar 模式缺少必需列: {missing}")
+
+        grouped = df.groupby('time')
+        new_df = pd.DataFrame({'time': list(grouped.groups)})
+        new_df['value'] = grouped['value'].last().array
+        new_df['open'] = grouped['open'].first().array
+        new_df['close'] = grouped['close'].last().array
+        return new_df
+
+
+def merge_candle_by_time(df: pd.DataFrame, is_tick: bool = False) -> pd.DataFrame:
+    """按 time 合并 candle (OHLC) 数据。
+
+    :param df: 输入 DataFrame
+    :param is_tick: False = bar 模式（输入 time/open/high/low/close）
+                    True  = tick 模式（输入 time/price，聚合为 OHLC）
+    :return: time, open, high, low, close
+    """
+    if is_tick:
+        required = {'time', 'price'}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"tick 模式缺少必需列: {missing}")
+
+        grouped = df.groupby('time')
+        new_df = pd.DataFrame({'time': list(grouped.groups)})
+        new_df['open'] = grouped['price'].first().array
+        new_df['high'] = grouped['price'].max().array
+        new_df['low'] = grouped['price'].min().array
+        new_df['close'] = grouped['price'].last().array
+        return new_df
+
+    else:
+        required = {'time', 'open', 'high', 'low', 'close'}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"bar 模式缺少必需列: {missing}")
+
+        grouped = df.groupby('time')
+        new_df = pd.DataFrame({'time': list(grouped.groups)})
+        new_df['open'] = grouped['open'].first().array
+        new_df['high'] = grouped['high'].max().array
+        new_df['low'] = grouped['low'].min().array
+        new_df['close'] = grouped['close'].last().array
+        return new_df
+
+
 def merge_value_by_time(df: pd.DataFrame) -> pd.DataFrame:
     """合并同样时间戳的 bar。
 
@@ -525,8 +629,10 @@ def merge_value_by_time(df: pd.DataFrame) -> pd.DataFrame:
 
     if 'open' in df.columns:
         new_df['open'] = group_df['open'].first().array
-        new_df['high'] = group_df['high'].max().array
-        new_df['low'] = group_df['low'].min().array
+        if 'high' in df.columns:
+            new_df['high'] = group_df['high'].max().array
+        if 'low' in df.columns:
+            new_df['low'] = group_df['low'].min().array
         new_df['close'] = group_df['close'].last().array
 
     if 'volume' in df.columns:
@@ -535,6 +641,7 @@ def merge_value_by_time(df: pd.DataFrame) -> pd.DataFrame:
     if 'open_interest' in df.columns:
         new_df['open_interest'] = group_df['open_interest'].last().array
 
+    # 除了目标的对象，其他都是取last
     for col in set(df.columns).difference({'time', 'open', 'high', 'low', 'close', 'volume', 'open_interest'}):
         new_df[col] = group_df[col].last().array
 

@@ -558,33 +558,22 @@ class AbstractChart(Pane):
         if df.empty:
             return
 
+        if self._interval is None:
+            raise ValueError("set_period() 未设置时间间隔，无法更新 tick 数据")
+
+        # 简单处理，只做 normal_df + time_to_bar_time（不做 merge_value_by_time）
         df = normal_df(df)
         df = self._time_to_bar_time(df)
 
         # ── candle：price → value ──
         if 'price' in df.columns:
             candle_df = df[['time', 'price']].rename(columns={'price': 'value'})
-        else:
-            candle_df = df[['time']]
-        self.candle.update_ticks(candle_df, _df_cleaned=True)
+            self.candle.update_ticks(candle_df, _df_cleaned=True)
 
-        # ── volume：volume → value，附带 open/close 供着色 ──
+        # ── volume：price + volume → value ──
         if 'volume' in df.columns:
-            vol_cols = ['time', 'volume']
-            # 从 price 计算 open/close 供 VolumeSeries 着色
-            if 'price' in df.columns:
-                group = df.groupby('time')
-                open_close = pd.DataFrame({
-                    'time': list(group.groups),
-                    'open': group['price'].first().values,
-                    'close': group['price'].last().values,
-                })
-                vol_merged = df[['time', 'volume']].merge(open_close, on='time', how='left')
-                vol_cols = ['time', 'volume', 'open', 'close']
-            else:
-                vol_merged = df
             self.volume.update_ticks(
-                vol_merged[vol_cols].rename(columns={'volume': 'value'}),
+                df[["time", "volume", "price"]].rename(columns={"volume": "value"}),
                 _df_cleaned=True
             )
 
@@ -1066,7 +1055,6 @@ class AbstractChart(Pane):
                 'has_toolbox': True,
                 'on_change_callbacks': len(self.toolbox.on_change),
                 'tracked_drawings': len(self.toolbox.drawings_list),
-                'saved_tags': list(self.toolbox.drawings.keys()),
             }
 
         # --- drawing_series（per-pane 管理器）---

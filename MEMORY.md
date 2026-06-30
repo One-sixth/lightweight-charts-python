@@ -900,4 +900,74 @@ if (scale_margin_top is None) != (scale_margin_bottom is None):
 
 ---
 
-*最后更新：2026-06-30（v2.8.3 SeriesCommon 清理 + Toolbox 顺序修复）*
+---
+
+## 📊 VolumeSeries 数据管线重构（2026-06-30）
+
+### 新增纯函数工具（util.py）
+
+| 函数 | 职责 | 参数 |
+|------|------|------|
+| `merge_volume_by_time(df, is_tick)` | volume 专用合并 | bar 模式：value→last, open→first, close→last；tick 模式：value→sum, open/close→from price |
+| `filter_old_bars(df, last_bar_time)` | 单调检查 + 丢弃旧数据 | 纯函数，无状态 |
+
+### merge_volume_by_time 设计
+
+- **bar 模式** (`is_tick=False`)：输入 time/value/open/close，value 取 last（去重，非 sum）
+- **tick 模式** (`is_tick=True`)：输入 time/value/price，value 取 sum，open/close 从 price 生成
+- 两种模式输出统一：time/value/open/close
+- 所有输入列必须存在，缺失抛 ValueError
+
+### normal_df 增强
+
+新增 `required_cols` 参数：选列 + 校验一步到位。注意传入 tuple 时需 `list()` 转换，否则 pandas 会解释为多级列索引。
+
+### VolumeSeries.update_bars 流程
+
+```
+输入 df (time/value/open/close)
+  │
+  ├─ _df_cleaned=False → normal_df + merge_volume_by_time(bar模式)
+  └─ _df_cleaned=True  → 跳过
+  │
+  └─ filter_old_bars → 丢弃 time < _last_bar.time 的行
+  │
+  ├─ 首批数据 → setData 批量写入
+  └─ 后续数据 →
+      ├─ 新数据第一行时间 == self.data 最后一行时间 →
+      │   ├─ _cumulative_volume=True → volume 累加（旧值+新值），open 保留旧值
+      │   └─ _cumulative_volume=False → 直接覆盖
+      │   └─ 替换最后一行
+      └─ 时间不同 → 追加到末尾
+```
+
+### VolumeSeries.update_ticks 流程
+
+```
+输入 tick (time/value/price)
+  │
+  ├─ normal_df(tick_required_cols)
+  └─ merge_volume_by_time(is_tick=True) → 聚合同时间戳 tick
+  │
+  └─ update_bars(_cumulative_volume=True)
+      └─ tick 落在最后一条 bar → volume 累加
+      └─ tick 落在新时间 → 追加
+      └─ tick 落在非最后 bar → filter_old_bars 丢弃
+```
+
+### 关键设计决策
+
+- `filter_old_bars` 始终执行（即使 `_cumulative_volume=True`）
+- `_cumulative_volume` **只在最后一条 bar 时间匹配时生效**
+- bar 模式 value 用 `last` 而非 `sum`（去重，非累加）
+- `_prepare_vol_df` 已删除，职责由 `normal_df(required_cols)` + `merge_volume_by_time` 替代
+
+###踩坑记录
+
+- **pandas tuple 选列**：`df[('a','b')]` 被解释为多级列索引，需 `df[list(cols)]`
+- **assert Index == list**：返回 boolean array 无法评估，需 `assert list(idx) == list(lst)`
+- **tick 路径不需要 time_to_bar_time**：tick 数据已对齐，只有 bar 路径需要
+
+---
+
+*最后更新：2026-06-30（VolumeSeries 数据管线重构）*

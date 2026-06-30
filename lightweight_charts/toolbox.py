@@ -56,8 +56,6 @@ class ToolBox:
     def __init__(self, chart):
         self.run_script = chart.run_script
         self.id = chart.id
-        self._save_under = None
-        self.drawings: dict = {}            # tag → JSON（save_under 持久化）
         self._chart = chart
 
         # 回调系统：支持 += / -= 注册/卸载
@@ -88,7 +86,6 @@ class ToolBox:
         # 2. JS 清理完毕后再移除 Python handler
         self._chart.win.handlers.pop(f'save_drawings{self.id}', None)
         # 清空 Python 状态
-        self.drawings.clear()
         self._drawing_list.clear()
         self.on_change.clear()
 
@@ -114,41 +111,8 @@ class ToolBox:
                 options=d.get('options', {}),
             ))
 
-        # 更新 save_under 存储
-        if self._save_under:
-            self.drawings[self._save_under.value] = items
-
         # 触发回调
         self.on_change.emit(self._drawing_list)
-
-    def save_drawings_under(self, widget: 'Widget'):
-        """
-        Drawings made on charts will be saved under the widget given. eg `chart.toolbox.save_drawings_under(chart.topbar['symbol'])`.
-        """
-        self._save_under = widget
-
-    def load_drawings(self, tag: str):
-        """
-        Loads and displays the drawings on the chart stored under the tag given.
-        """
-        if not self.drawings.get(tag):
-            return
-        self.run_script(f'if ({self.id}.toolBox) {self.id}.toolBox.loadDrawings({json.dumps(self.drawings[tag])})')
-
-    def import_drawings(self, file_path):
-        """
-        Imports a list of drawings stored at the given file path.
-        """
-        with open(file_path, 'r') as f:
-            json_data = json.load(f)
-            self.drawings = json_data
-
-    def export_drawings(self, file_path):
-        """
-        Exports the current list of drawings to the given file path.
-        """
-        with open(file_path, 'w+') as f:
-            json.dump(self.drawings, f, indent=4)
 
     def clear_drawings(self):
         """清空所有绘图。"""
