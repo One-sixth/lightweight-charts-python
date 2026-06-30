@@ -290,10 +290,16 @@ class WebviewHandler:
             try:
                 while True:
                     q.get_nowait()
-            except (Empty, OSError):
+            except (Empty, OSError, ValueError):
+                # Empty: 队列空了
+                # OSError: 进程已终止
+                # ValueError: Queue 已关闭（被提前 exit() 调用关闭）
                 pass
-            q.close()
-            q.join_thread()
+            try:
+                q.close()
+                q.join_thread()
+            except ValueError:
+                pass
 
     def _raise_exit_if_destroyed(self):
         # 仅在出错时调用

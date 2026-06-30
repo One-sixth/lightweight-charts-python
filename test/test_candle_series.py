@@ -172,24 +172,24 @@ def test_update_operations():
         ref = chart.create_candle_series(name='ref', pane_index=1)
         ref.set(make_ohlcv(20, 200, 123))
 
-        # update() - single bar
-        print("\n[1] update() single bar ...")
+        # update_bar() - single bar
+        print("\n[1] update_bar() single bar ...")
         initial_count = len(ref.data)
         new_bar = pd.Series({
             'time': pd.Timestamp('2024-01-21'),
             'open': 205.0, 'high': 210.0, 'low': 203.0, 'close': 208.0,
         })
-        ref.update(new_bar)
+        ref.update_bar(new_bar)
         all_clean &= log_check(len(ref.data) == initial_count + 1,
                                f"candle_data rows={len(ref.data)} (was {initial_count})",
                                errors, "update_count")
         all_clean &= log_check(ref._last_bar is not None, "_last_bar updated", errors, "update_last_bar")
         print("      [OK]")
 
-        # update() - update existing bar
-        print("\n[2] update() existing bar ...")
+        # update_bar() - update existing bar
+        print("\n[2] update_bar() existing bar ...")
         count_before = len(ref.data)
-        ref.update(new_bar)  # same time → should update, not add
+        ref.update_bar(new_bar)  # same time → should update, not add
         all_clean &= log_check(len(ref.data) == count_before,
                                f"no new row (still {len(ref.data)})", errors, "update_existing")
         print("      [OK]")
@@ -369,11 +369,11 @@ def test_multi_pane():
 
         # Update on both
         print("\n[4] Update on both ...")
-        ref1.update(pd.Series({
+        ref1.update_bar(pd.Series({
             'time': pd.Timestamp('2024-01-31'), 'open': 210, 'high': 215,
             'low': 208, 'close': 213,
         }))
-        ref2.update(pd.Series({
+        ref2.update_bar(pd.Series({
             'time': pd.Timestamp('2024-01-31'), 'open': 310, 'high': 315,
             'low': 308, 'close': 313,
         }))

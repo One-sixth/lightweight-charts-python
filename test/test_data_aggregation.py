@@ -224,14 +224,6 @@ def compute_expected(expected, new_bars, chart, is_ticks=False, cumulative_volum
     ohlc_cols = ['time', 'open', 'high', 'low', 'close']
     df = df[[c for c in ohlc_cols if c in df.columns]]
 
-    # 3. last-bar 继承（update_from_ticks 中，首条聚合 bar 继承上一根的 open/high/low）
-    if expected is not None and not expected.empty and is_ticks and prev_last_bar is not None:
-        last_time = prev_last_bar['time']
-        if len(df) > 0 and df.iloc[0]['time'] == last_time:
-            df.iloc[0, df.columns.get_loc('open')] = prev_last_bar['open']
-            df.iloc[0, df.columns.get_loc('high')] = max(prev_last_bar['high'], df.iloc[0]['high'])
-            df.iloc[0, df.columns.get_loc('low')] = min(prev_last_bar['low'], df.iloc[0]['low'])
-
     # 4. filter 旧数据
     if expected is not None and not expected.empty:
         last_time = expected.iloc[-1]['time']
@@ -1241,7 +1233,7 @@ def test_chaos_multi_level_fusion():
 
 
 def test_chaos_last_bar_inheritance():
-    """混沌测试：last-bar 继承 — 连续 ticks 落在同一 bar 窗口内，验证 open 不变、high 递增、low 递减。"""
+    """混沌测试：连续 ticks 落在同一 bar 窗口内，验证 replace-or-append 行为（open 取新 tick 的 first 值）。"""
     sep = "=" * 60
     print(sep)
     print("  test_chaos_last_bar_inheritance")
@@ -1259,7 +1251,7 @@ def test_chaos_last_bar_inheritance():
     expected = chart.candle.data[['time', 'open', 'high', 'low', 'close']].copy()
 
     # 连续 5 批 ticks，全部落在同一 5min 窗口内
-    # 这样每批都会触发 last-bar 继承
+    # 每批都会 replace-or-append 到同一时间窗口的 bar
     for batch in range(5):
         # ticks 落在 t0+300 到 t0+300+299 的 5min 窗口内
         ticks = make_random_ticks(
@@ -1529,12 +1521,12 @@ def test_merge_volume_by_time():
     all_clean &= log_check(len(result) == 2, f"rows={len(result)}==2", errors, "bar_rows")
 
     row1 = result[result['time'] == 1].iloc[0]
-    all_clean &= log_check(row1['value'] == 300, f"t1 value=100+200={row1['value']}", errors, "bar_t1_vol")
+    all_clean &= log_check(row1['value'] == 200, f"t1 value=last={row1['value']}", errors, "bar_t1_vol")
     all_clean &= log_check(row1['open'] == 10.0, f"t1 open=first=10.0, got={row1['open']}", errors, "bar_t1_open")
     all_clean &= log_check(row1['close'] == 10.8, f"t1 close=last=10.8, got={row1['close']}", errors, "bar_t1_close")
 
     row2 = result[result['time'] == 2].iloc[0]
-    all_clean &= log_check(row2['value'] == 150, f"t2 value=50+30+70={row2['value']}", errors, "bar_t2_vol")
+    all_clean &= log_check(row2['value'] == 70, f"t2 value=last={row2['value']}", errors, "bar_t2_vol")
     all_clean &= log_check(row2['open'] == 11.0, f"t2 open=first=11.0, got={row2['open']}", errors, "bar_t2_open")
     all_clean &= log_check(row2['close'] == 11.4, f"t2 close=last=11.4, got={row2['close']}", errors, "bar_t2_close")
 
