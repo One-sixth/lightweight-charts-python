@@ -52,7 +52,7 @@ class ChartState(rx.State):
 
     def tick(self):
         bar = _next_bar()
-        chart.update(bar)
+        chart.update_bar(bar)
         self.bar_count += 1
         result = chart.flush()
         return result

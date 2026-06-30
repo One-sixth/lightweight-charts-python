@@ -920,29 +920,36 @@ class CandleSeries(SeriesCommon):
             df = normal_df(df, self.bar_required_cols)
             df = merge_candle_by_time(df, is_tick=False)
 
-        # 选列：AbstractChart 可能传入带 volume 等额外列的 df
-        ohlc = df[list(self.bar_required_cols)]
+        # 选列
+        df = df[list(self.bar_required_cols)]
 
         # 过滤旧数据
         if self._last_bar is not None:
-            ohlc = filter_old_bars(ohlc, self._last_bar['time'])
+            df = filter_old_bars(df, self._last_bar['time'])
 
-        if ohlc.empty:
+        if df.empty:
             return
 
-        js_commands = []
-        for _, row in ohlc.iterrows():
-            js_commands.append(f'{self.id}.series.update({js_data(row)});')
+        col_open_idx = 1
+        col_high_idx = 2
+        col_low_idx = 3
 
         if self.data.empty:
-            self.data = ohlc
-        elif self.data.iloc[-1]['time'] == ohlc.iloc[0]['time']:
-            self.data = pd.concat([self.data.iloc[:-1], ohlc], ignore_index=True)
+            self.data = df
+        elif self.data.iloc[-1]['time'] == df.iloc[0]['time']:
+            df.iat[0, col_open_idx] = self.data.iat[-1, col_open_idx]
+            df.iat[0, col_high_idx] = max(self.data.iat[-1, col_high_idx], df.iat[0, col_high_idx])
+            df.iat[0, col_low_idx] = min(self.data.iat[-1, col_low_idx], df.iat[0, col_low_idx])
+            self.data = pd.concat([self.data.iloc[:-1], df], ignore_index=True)
         else:
-            self.data = pd.concat([self.data, ohlc], ignore_index=True)
+            self.data = pd.concat([self.data, df], ignore_index=True)
 
-        self._last_bar = ohlc.iloc[-1]
-        self.run_script(' '.join(js_commands))
+        js_commands = []
+        for _, row in df.iterrows():
+            js_commands.append(f'{self.id}.series.update({js_data(row)});')
+
+        self.run_script('\n'.join(js_commands))
+        self._last_bar = self.data.iloc[-1]
 
     def update_tick(self, series: pd.Series):
         """

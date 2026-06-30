@@ -17,7 +17,7 @@ if __name__ == '__main__':
     last_close = df1.iloc[-1]['close']
 
     for i, series in df2.iterrows():
-        chart.update(series)
+        chart.update_bar(series)
 
         if series['close'] > 20 and last_close < 20:
             chart.add_marker(text='The price crossed $20!')

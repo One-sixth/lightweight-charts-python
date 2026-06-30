@@ -1,13 +1,13 @@
 """
 Example 26: Series Batch Update
-Demonstrates update_bars() and update_from_ticks() for Line and Histogram series,
+Demonstrates update_bars() and update_ticks() for Line and Histogram series,
 with TopBar status and marker annotations.
 
 This example shows:
 1. How to append multiple data points to a Line series in one go
 2. How to append multiple data points to a Histogram series in one go
-3. Alternating between update_bars() and update_from_ticks() across batches
-4. Performance comparison: N individual update() calls vs 1 update_bars() call
+3. Alternating between update_bars() and update_ticks() across batches
+4. Performance comparison: N individual update_bar() calls vs 1 update_bars() call
 """
 import pandas as pd
 import numpy as np
@@ -109,7 +109,7 @@ if __name__ == '__main__':
     print("✅ Initial data loaded: 160 bars + SMA 20 + EMA 10 + RSI 14")
     sleep(2)
 
-    # ── 4 rounds of alternating update_bars / update_from_ticks ──
+    # ── 4 rounds of alternating update_bars / update_ticks ──
     # Each round adds 10 bars worth of data (25 rows for indicators)
     batch_size = 10
     sma20_remaining = sma20_all.iloc[len(sma20_init):].copy()
@@ -119,7 +119,7 @@ if __name__ == '__main__':
     batch_colors = ['#26A69A', '#FF9800', '#E040FB', '#42A5F5']
 
     for i in range(4):
-        is_bars = (i % 2 == 0)  # round 0,2 = update_bars; round 1,3 = update_from_ticks
+        is_bars = (i % 2 == 0)  # round 0,2 = update_bars; round 1,3 = update_ticks
         method = 'update_bars' if is_bars else 'update_ticks'
         label = 'K线 + 指标' if is_bars else 'Tick + 指标'
 

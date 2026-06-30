@@ -4,6 +4,34 @@
 
 ---
 
+## [v2.8.4] - 2026-07-01
+
+### Added
+
+- **ToolBox 跨 Pane 绘图**：ToolBox UI 固定在 Pane 0，但鼠标点击哪个 pane 就在哪个 pane 上创建 drawing。利用 `MouseEventParams.paneIndex` 自动识别点击目标 pane。
+- **`DrawingInfo` 增强**：新增 `pane_index`、`start_time`、`start_price`、`end_time`、`end_price` 字段，回调信息更完整。
+
+### Fixed
+
+- **`CandleSeries` 缺失 `group` 参数**：`create_candle_series(group=...)` 传 group 但 `CandleSeries.__init__` 不接受，导致 `TypeError`。已补上并透传给 `SeriesCommon.__init__`。
+
+### Changed
+
+- **`test/run_tests.py`**：补上遗漏的 `test_volume_series.py`（8/8 test suites）。
+
+### Modified Files
+
+| 文件 | 改动 |
+|------|------|
+| `src/drawing/drawing-tool.ts` | 新增 `_resolvePane(param)`；`_onClick` 解析目标 pane |
+| `src/general/toolbox.ts` | `saveDrawings` 附加 `paneIndex` |
+| `lightweight_charts/toolbox.py` | `DrawingInfo` 增加 pane_index + time/price 字段 |
+| `lightweight_charts/series.py` | `CandleSeries.__init__` 补 `group` 参数 |
+| `test/run_tests.py` | 加入 `test_volume_series.py` |
+| `examples/40_toolbox_multi_pane/` | 3 pane ToolBox 示例 |
+
+---
+
 ## [v2.8.3] - 2026-06-30
 
 ### Breaking Changes

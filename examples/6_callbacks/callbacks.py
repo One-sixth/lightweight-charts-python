@@ -21,7 +21,7 @@ def on_timeframe_selection(chart):  # Called when the user changes the timeframe
     new_data = get_bar_data(chart.topbar['symbol'].value, chart.topbar['timeframe'].value)
     if new_data.empty:
         return
-    chart.set(new_data, True)
+    chart.set(new_data)
 
 
 def on_horizontal_line_move(chart, line):

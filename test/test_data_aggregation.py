@@ -231,15 +231,22 @@ def compute_expected(expected, new_bars, chart, is_ticks=False, cumulative_volum
         if df.empty:
             return expected
 
-    # 5. replace-or-append（精确复刻 update_bars 的逻辑）
-    #    关键：仅在第一个新 bar 的时间 == 最后一根旧 bar 的时间时做替换
+    # 5. replace-or-append（精确复刻 CandleSeries.update_bars 的逻辑）
+    #    关键：仅在第一个新 bar 的时间 == 最后一根旧 bar 的时间时做 OHLC 合并
     #    其他情况下，新 bar 简单追加，不会和旧 bar 合并
     if expected is None or expected.empty:
         return df.reset_index(drop=True)
     result = expected.copy()
     if len(df) > 0 and df.iloc[0]['time'] == result.iloc[-1]['time']:
-        # 边界替换：替换最后一根旧 bar，追加剩余新 bar
-        result = pd.concat([result.iloc[:-1], df], ignore_index=True)
+        # OHLC 合并：保留旧 open，high=max，low=min，close 取新
+        new_row = df.iloc[0].copy()
+        new_row['open'] = result.iloc[-1]['open']
+        new_row['high'] = max(result.iloc[-1]['high'], new_row['high'])
+        new_row['low'] = min(result.iloc[-1]['low'], new_row['low'])
+        # close 取该时间窗口最后一条（可能有多条同时间 bar）
+        if len(df) > 1:
+            new_row['close'] = df.iloc[-1]['close']
+        result = pd.concat([result.iloc[:-1], new_row.to_frame().T, df.iloc[1:]], ignore_index=True)
     else:
         # 简单追加
         result = pd.concat([result, df], ignore_index=True)
@@ -416,20 +423,22 @@ def test_update_bars():
     all_clean &= log_check(np.allclose(vol_last3, batch['volume'].iloc[-3:].values), f"batch volume last3 match", errors, "batch_vol")
     all_clean &= log_check(np.allclose(oi_last3, batch['open_interest'].iloc[-3:].values), f"batch OI last3 match", errors, "batch_oi")
 
-    # 批量部分重叠（首条与已有最后一条相同时间 → 更新已有，不新增行）
+    # 批量部分重叠（首条与已有最后一条相同时间 → OHLC 合并，不新增行）
     print("\n[2] update_bars() batch with overlap ...")
     overlap = batch.iloc[:3].copy()
     overlap['time'] = chart.data.iloc[-1]['time']  # 全部 3 条都是同一时间
+    last_before = chart.data.iloc[-1].copy()  # 快照：合并前的最后一根
     chart.update_bars(overlap)
-    # 全部 3 条时间 == _last_bar 时间 → 都是更新已有 bar，不新增行
+    # 首条同时间 bar 与已有最后一根做 OHLC 合并：open=旧保留, high=max, low=min, close=最后一条
+    # merge_value_by_time 先将 3 条同时间 bar 聚合为 1 条，再做边界替换
     expected = initial_rows + 10
     all_clean &= log_check(len(chart.data) == expected, f"rows={len(chart.data)} == {expected} (overlap updates, no new rows)", errors, "overlap_rows")
-    # 值校验：3 条同时间 bar 经 merge_value_by_time 合并
-    # OHLC: open=第一条, high=max, low=min, close=最后一条
     last_chart = chart.data.iloc[-1]
     all_clean &= log_check(
-        last_chart['open'] == overlap.iloc[0]['open'] and last_chart['high'] == overlap['high'].max()
-        and last_chart['low'] == overlap['low'].min() and last_chart['close'] == overlap.iloc[-1]['close'],
+        last_chart['open'] == last_before['open']  # 旧 open 保留
+        and last_chart['high'] == max(last_before['high'], overlap['high'].max())
+        and last_chart['low'] == min(last_before['low'], overlap['low'].min())
+        and last_chart['close'] == overlap.iloc[-1]['close'],
         f"overlap bar OHLC merged correctly", errors, "overlap_ohlc"
     )
     # volume: sum

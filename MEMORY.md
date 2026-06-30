@@ -1099,3 +1099,50 @@ makeSeriesRow(name, series, paneIndex, group=null):
 ### 教训
 - `takeScreenshot()` 只截 canvas，不含 legend DOM 覆盖层
 - legend 是 DOM 元素（绝对定位在 handler.div 上），需要桌面截图才能看到
+
+---
+
+## 🖱️ ToolBox 跨 Pane 绘图（2026-07-01）
+
+### 需求
+ToolBox UI 固定在 Pane 0，但绘图可落在任意 pane 上。用户点击哪个 pane，drawing 就创建在那个 pane 上。
+
+### 实现方案：MouseEventParams.paneIndex
+
+利用 lightweight-charts 的 `MouseEventParams.paneIndex`（点击事件自带），在 `DrawingTool._onClick` 中解析目标 pane。
+
+### 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `src/drawing/drawing-tool.ts` | 新增 `_resolvePane(param)` 方法，从 `param.paneIndex` 解析目标 pane；`_onClick` 在创建 drawing 前更新 `this._pane` 到目标 pane |
+| `src/general/toolbox.ts` | `saveDrawings` 序列化附加 `paneIndex: d.pane.paneIndex()` |
+| `lightweight_charts/toolbox.py` | `DrawingInfo` 新增 `pane_index`/`start_time`/`start_price`/`end_time`/`end_price` 字段；`_on_callback` 解析 `paneIndex` |
+| `lightweight_charts/series.py` | `CandleSeries.__init__` 补上缺失的 `group` 参数（顺带修复已有 bug） |
+| `test/run_tests.py` | 补上漏掉的 `test_volume_series.py` |
+| `examples/40_toolbox_multi_pane/` | 3 pane 示例（K线 + Histogram + RSI），ToolBox 跨 pane 绘图 |
+
+### DrawingInfo 完整字段
+
+```python
+DrawingInfo:
+    id           # 唯一标识
+    type         # 绘图类型（HorizontalLine, TrendLine, Box, ...）
+    pane_index   # 所在 pane 索引
+    start_time   # 起点时间（秒级时间戳，可能为 None）
+    start_price  # 起点价格（可能为 None）
+    end_time     # 终点时间（可能为 None）
+    end_price    # 终点价格（可能为 None）
+    points       # 原始点列表（dict，含 time/logical/price）
+    options      # 绘图选项（颜色、线宽等）
+```
+
+### 关键设计
+- **UI 路径**：`DrawingTool._onClick` 读取 `param.paneIndex` → `chart.panes()[paneIndex]` → 在该 pane 上创建 drawing
+- **编程路径**：DrawingSeries 工厂方法不变（仍用 `pane_index` 参数）
+- **序列化**：JS `saveDrawings` 每个 drawing 附加 `paneIndex` → Python `_on_callback` 解析
+
+### Bug 修复：CandleSeries 缺失 group 参数
+- **根因**：`create_candle_series(group=...)` 传 `group` 给 `CandleSeries.__init__`，但 `__init__` 不接受此参数
+- **修复**：`CandleSeries.__init__` 加上 `group: str = None`，透传给 `SeriesCommon.__init__`
+- **教训**：新增参数时，调用链上每个环节都要检查

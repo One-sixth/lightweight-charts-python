@@ -17,5 +17,5 @@ if __name__ == '__main__':
     chart.show()
 
     for i, tick in df2.iterrows():
-        chart.update_from_tick(tick)
+        chart.update_tick(tick)
         sleep(0.03)

@@ -108,7 +108,7 @@ class MainWindow(QMainWindow):
         new_df = generate_bars(1, seed=np.random.randint(0, 10000))
         last_time = pd.to_datetime(self.initial_df.iloc[-1]['time'])
         new_df['time'] = [last_time + pd.Timedelta(minutes=1)]
-        self.chart.update(new_df.iloc[0])
+        self.chart.update_bar(new_df.iloc[0])
         self.initial_df = pd.concat([self.initial_df, new_df], ignore_index=True)
         self.bar_count += 1
 

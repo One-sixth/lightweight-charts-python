@@ -512,10 +512,14 @@ def time_to_bar_time(data, offset: int, interval: int):
     :return: 对齐后的时间值
     """
     if isinstance(data, pd.DataFrame):
-        data["time"] = (data["time"].array - offset) // interval * interval + offset
+        data["time"] = np.int64((data["time"].array - offset) // interval * interval + offset)
         return data
     else:
-        return (data - offset) // interval * interval + offset
+        r = (data - offset) // interval * interval + offset
+        if isinstance(data, pd.Series):
+            return r.astype(np.int64)
+        else:
+            return int(r)
 
 
 def filter_old_bars(df: pd.DataFrame, last_bar_time=None) -> pd.DataFrame:

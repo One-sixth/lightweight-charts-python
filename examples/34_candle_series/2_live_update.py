@@ -47,8 +47,8 @@ if __name__ == '__main__':
             'close': close_ref,
         })
 
-        chart.update(new_main)
-        ref.update(new_ref)
+        chart.update_bar(new_main)
+        ref.update_bar(new_ref)
         sleep(0.05)
 
     chart.fit()
