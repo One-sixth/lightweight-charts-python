@@ -289,6 +289,9 @@ export class Legend {
 
         const solid = this._extractColor(series);
 
+        // 设置初始内容：彩色方块 + 系列名（crosshair 移动时 legendHandler 会更新为完整值）
+        div.innerHTML = `<span style="color: ${solid};">️■</span>    ${name}`;
+
         const element: LineElement = {
             name: name,
             paneIndex: paneIndex,

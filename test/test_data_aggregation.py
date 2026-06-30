@@ -234,18 +234,16 @@ def compute_expected(expected, new_bars, chart, is_ticks=False, cumulative_volum
     # 5. replace-or-append（精确复刻 CandleSeries.update_bars 的逻辑）
     #    关键：仅在第一个新 bar 的时间 == 最后一根旧 bar 的时间时做 OHLC 合并
     #    其他情况下，新 bar 简单追加，不会和旧 bar 合并
+    #    ⚠️ OHLC 合并只作用于 df.iloc[0]（第一个新 bar），剩余 bar 直接追加
     if expected is None or expected.empty:
         return df.reset_index(drop=True)
     result = expected.copy()
     if len(df) > 0 and df.iloc[0]['time'] == result.iloc[-1]['time']:
-        # OHLC 合并：保留旧 open，high=max，low=min，close 取新
+        # OHLC 合并：保留旧 open，用第一个新 bar 的 high/low/close + 旧 high/low 取极值
         new_row = df.iloc[0].copy()
         new_row['open'] = result.iloc[-1]['open']
         new_row['high'] = max(result.iloc[-1]['high'], new_row['high'])
         new_row['low'] = min(result.iloc[-1]['low'], new_row['low'])
-        # close 取该时间窗口最后一条（可能有多条同时间 bar）
-        if len(df) > 1:
-            new_row['close'] = df.iloc[-1]['close']
         result = pd.concat([result.iloc[:-1], new_row.to_frame().T, df.iloc[1:]], ignore_index=True)
     else:
         # 简单追加
