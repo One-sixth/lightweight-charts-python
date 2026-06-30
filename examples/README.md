@@ -1,6 +1,6 @@
 # 示例目录说明
 
-本目录包含 lightweight-charts-python 的示例代码，编号 1-38。
+本目录包含 lightweight-charts-python 的示例代码，编号 1-39。
 
 ## 编号说明
 
@@ -44,3 +44,6 @@
 | 36 | `36_histogram_colors` | Histogram 任意颜色：正负渐变着色 + Volume Delta 演示 | ✅ 已实现  |
 | 37 | `37_more_series_types` | 更多 Series 类型：AreaSeries 面积图 / OHLCBarSeries 美国线 / BaselineSeries 基准线 | ✅ 已实现  |
 | 38 | `38_drawing_multi_pane` | 多 Pane 绘图：Drawing 在多面板场景下的完整功能 + ToolBox 测试 | ✅ 已实现  |
+| 39 | `39_legend_group` | Legend 分组：`group` 参数实现同组 indicator 并行显示 + ♦ 组开关一键控制 | ✅ 已实现  |
+
+![39_legend_group](images/39_legend_group.png)

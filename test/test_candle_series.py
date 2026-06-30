@@ -8,10 +8,9 @@ Usage:
     python test/test_candle_series.py
 """
 
-import sys, os, json, tomllib
+import sys, os, tomllib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import time
 import pandas as pd
 import numpy as np
 from lightweight_charts import Chart, CandleSeries

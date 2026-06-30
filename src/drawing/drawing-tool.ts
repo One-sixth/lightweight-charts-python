@@ -93,8 +93,26 @@ export class DrawingTool {
         }
     }
 
+    /**
+     * 根据 MouseEventParams.paneIndex 解析目标 pane。
+     * 若 param 无 paneIndex 信息，回退到 this._pane。
+     */
+    private _resolvePane(param: MouseEventParams): IPaneApi<Time> {
+        if (param.paneIndex !== undefined) {
+            const panes = this._chart.panes();
+            if (param.paneIndex >= 0 && param.paneIndex < panes.length) {
+                return panes[param.paneIndex];
+            }
+        }
+        return this._pane;
+    }
+
     private _onClick(param: MouseEventParams) {
         if (!this._isDrawing) return;
+
+        // 根据点击位置确定目标 pane
+        const targetPane = this._resolvePane(param);
+        this._pane = targetPane;
 
         const point = Drawing._eventToPoint(param, this._pane);
         if (!point) return;

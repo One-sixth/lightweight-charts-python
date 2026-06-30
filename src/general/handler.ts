@@ -654,15 +654,16 @@ export class Handler {
      *   设为 true 时，series 不进入 _seriesList（audit 的 extraSeriesCount 不计入）。
      * @param legend - 是否在图例中显示此系列。默认 true。
      *   设为 false 时，不创建 legend 图例行。
+     * @param group - 图例分组名。同组的 series 在 legend 中显示在同一行，前面有 ♦ 组开关。
      */
-    createLineSeries(name: string, options: DeepPartial<LineStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
+    createLineSeries(name: string, options: DeepPartial<LineStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true, group: string | null = null)
     {
         const line = this.chart.addSeries(LineSeries, {...options}, paneIndex);
         if (!dontAddList) {
             this._seriesList.push(line);
         }
         if (legend) {
-            this.legend.makeSeriesRow(name, line, paneIndex);
+            this.legend.makeSeriesRow(name, line, paneIndex, group);
         }
 
         return {
@@ -679,8 +680,9 @@ export class Handler {
      * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
      * @param dontAddList - 是否跳过 _seriesList 注册。默认 false。
      * @param legend - 是否在图例中显示此系列。默认 true。
+     * @param group - 图例分组名。同组的 series 在 legend 中显示在同一行，前面有 ♦ 组开关。
      */
-    createHistogramSeries(name: string, options: DeepPartial<HistogramStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
+    createHistogramSeries(name: string, options: DeepPartial<HistogramStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true, group: string | null = null)
     {
         const line = this.chart.addSeries(
             HistogramSeries,
@@ -691,7 +693,7 @@ export class Handler {
             this._seriesList.push(line);
         }
         if (legend) {
-            this.legend.makeSeriesRow(name, line, paneIndex);
+            this.legend.makeSeriesRow(name, line, paneIndex, group);
         }
         return {
             name: name,
@@ -715,7 +717,7 @@ export class Handler {
      *   不应被视为"额外系列"，也不应在 legend 中显示独立条目。
      *   K 线数据通过 legendHandler 在 OHLC 文本中显示。
      */
-    createCandleSeries(name: string, options: DeepPartial<SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
+    createCandleSeries(name: string, options: DeepPartial<SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true, group: string | null = null)
     {
         const candle = this.chart.addSeries(
             CandlestickSeries,
@@ -726,7 +728,7 @@ export class Handler {
             this._seriesList.push(candle);
         }
         if (legend) {
-            this.legend.makeSeriesRow(name, candle, paneIndex);
+            this.legend.makeSeriesRow(name, candle, paneIndex, group);
         }
         return {
             name: name,
@@ -742,15 +744,16 @@ export class Handler {
      * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
      * @param dontAddList - 是否跳过 _seriesList 注册
      * @param legend - 是否在图例中显示此系列
+     * @param group - 图例分组名
      */
-    createAreaSeries(name: string, options: DeepPartial<AreaStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
+    createAreaSeries(name: string, options: DeepPartial<AreaStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true, group: string | null = null)
     {
         const line = this.chart.addSeries(AreaSeries, {...options}, paneIndex);
         if (!dontAddList) {
             this._seriesList.push(line);
         }
         if (legend) {
-            this.legend.makeSeriesRow(name, line, paneIndex);
+            this.legend.makeSeriesRow(name, line, paneIndex, group);
         }
         return {
             name: name,
@@ -766,15 +769,16 @@ export class Handler {
      * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
      * @param dontAddList - 是否跳过 _seriesList 注册
      * @param legend - 是否在图例中显示此系列
+     * @param group - 图例分组名
      */
-    createOHLCBarSeries(name: string, options: DeepPartial<BarStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
+    createOHLCBarSeries(name: string, options: DeepPartial<BarStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true, group: string | null = null)
     {
         const line = this.chart.addSeries(BarSeries, {...options}, paneIndex);
         if (!dontAddList) {
             this._seriesList.push(line);
         }
         if (legend) {
-            this.legend.makeSeriesRow(name, line, paneIndex);
+            this.legend.makeSeriesRow(name, line, paneIndex, group);
         }
         return {
             name: name,
@@ -790,15 +794,16 @@ export class Handler {
      * @param paneIndex - 面板索引，0 = 与主 K 线同面板，>0 = 独立面板
      * @param dontAddList - 是否跳过 _seriesList 注册
      * @param legend - 是否在图例中显示此系列
+     * @param group - 图例分组名
      */
-    createBaselineSeries(name: string, options: DeepPartial<BaselineStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true)
+    createBaselineSeries(name: string, options: DeepPartial<BaselineStyleOptions & SeriesOptionsCommon>, paneIndex: number = 0, dontAddList: boolean = false, legend: boolean = true, group: string | null = null)
     {
         const line = this.chart.addSeries(BaselineSeries, {...options}, paneIndex);
         if (!dontAddList) {
             this._seriesList.push(line);
         }
         if (legend) {
-            this.legend.makeSeriesRow(name, line, paneIndex);
+            this.legend.makeSeriesRow(name, line, paneIndex, group);
         }
         return {
             name: name,

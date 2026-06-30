@@ -273,3 +273,19 @@ body {
 	cursor: pointer;
 	background-color: rgba(50, 50, 50, 0.5);
 }
+.legend-group-row {
+	display: flex;
+	align-items: center;
+	padding: 1px 0;
+	border-radius: 4px;
+}
+.legend-group-toggle {
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	border-radius: 4px;
+	padding: 0 4px;
+}
+.legend-group-toggle:hover {
+	background-color: rgba(50, 50, 50, 0.5);
+}

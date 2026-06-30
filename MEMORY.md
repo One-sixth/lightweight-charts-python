@@ -1039,4 +1039,63 @@ if (scale_margin_top is None) != (scale_margin_bottom is None):
 
 ---
 
-*最后更新：2026-06-30（marker 方法重命名）*
+*最后更新：2026-07-01（Legend 分组功能）*
+
+---
+
+## 🏷️ Legend 分组功能（2026-07-01）
+
+### 需求
+同组的 series 在 legend 中显示在同一行，行前有 ♦ 组开关可一键控制组内所有指标显示/隐藏。组内顺序用创建顺序，显示组名。
+
+### Python API
+```python
+# group 参数贯穿所有 create_* 方法
+sma20 = chart.create_line('SMA 20', color='yellow', group='MA')
+ema50 = chart.create_line('EMA 50', color='cyan', group='MA')
+rsi   = chart.create_line('RSI', color='purple')  # 无组，独立行
+```
+
+### Legend 渲染结构
+```
+OHLC + Volume + %                        ← candle legend
+♦ MA    ■ SMA 20 : 190  👁    ■ EMA 50 : 181  👁    ← 组行（group='MA'）
+♦ MOM   ■ ROC 10 : 1.8  👁    ■ MOM 10 : 3.2  👁    ← 组行（group='MOM'）
+■ BB Mid 20 : 186  👁                                    ← 独立行（无 group）
+■ ATR 14 : 10  👁                                        ← 独立行（无 group）
+♦ OSC   ■ RSI 14 : 44  👁    ■ %K 14 : 48  👁          ← 组行（pane 1）
+■ Williams %R : -51  👁                                  ← 独立行（pane 1）
+■ CCI 20 : -7  👁                                        ← 独立行（pane 1）
+```
+
+### 交互行为
+- **♦ 组开关 click**：一键切换组内所有 series 的 `visible`，同步更新组名图标（♦→♢）和所有个人眼睛图标
+- **个人眼睛 click**：切换单个 series 可见性，同步更新组开关状态（全关则组开关关）
+- **跨 pane 分组**：允许同名 group 跨 pane，组开关控制所有同名 series
+
+### 核心架构
+```
+LineElement { group: string | null, individualOn: boolean, row: HTMLDivElement | null }
+GroupElement { row, groupToggle, groupNameSpan, elements[], on, individualOnList[] }
+
+makeSeriesRow(name, series, paneIndex, group=null):
+  ├─ group == null → 独立行（原行为）
+  └─ group != null → _groups[group] 存在则追加，不存在则 _renderGroupRow 创建组行
+```
+
+### 删除时的组内清理（JS 端）
+删除组内 series 时：从 `_groups[group].elements` 移除 → 从组行移除 DOM → 组空则删组行 + 清理 `_groups[groupName]`
+
+### 修改文件
+| 文件 | 改动 |
+|------|------|
+| `src/general/legend.ts` | LineElement +group/individualOn、GroupElement 接口、_groups 字典、makeSeriesRow 分组渲染、_renderGroupRow、_updateToggleIcon、_rerenderContainer、delete 组内清理 |
+| `src/general/handler.ts` | 6 个 create*Series 加 group 参数 |
+| `src/general/styles.css` | `.legend-group-row` / `.legend-group-toggle` 样式 |
+| `lightweight_charts/series.py` | SeriesCommon.__init__ +group、所有子类透传、delete() JS 组内清理 |
+| `lightweight_charts/abstract.py` | 7 个 create_* 加 group 参数 + 透传 |
+| `examples/39_legend_group/` | 分组功能完整演示 |
+
+### 教训
+- `takeScreenshot()` 只截 canvas，不含 legend DOM 覆盖层
+- legend 是 DOM 元素（绝对定位在 handler.div 上），需要桌面截图才能看到

@@ -39,17 +39,42 @@ class _CallbackList:
 
 
 class DrawingInfo:
-    """单个 drawing 的元信息。"""
-    __slots__ = ('id', 'type', 'points', 'options')
+    """单个 drawing 的元信息。
 
-    def __init__(self, id: str, type: str, points: list, options: dict):
+    Attributes:
+        id: 唯一标识
+        type: 绘图类型（HorizontalLine, TrendLine, Box, ...）
+        pane_index: 所在 pane 索引
+        start_time: 起点时间（秒级时间戳，可能为 None）
+        start_price: 起点价格（可能为 None）
+        end_time: 终点时间（秒级时间戳，可能为 None）
+        end_price: 终点价格（可能为 None）
+        points: 原始点列表（dict 列表，包含 time/logical/price）
+        options: 绘图选项（颜色、线宽等）
+    """
+    __slots__ = ('id', 'type', 'pane_index',
+                 'start_time', 'start_price', 'end_time', 'end_price',
+                 'points', 'options')
+
+    def __init__(self, id: str, type: str, pane_index: int,
+                 points: list, options: dict):
         self.id = id
         self.type = type
+        self.pane_index = pane_index
         self.points = points
         self.options = options
 
+        # 从 points 中提取便捷字段
+        p0 = points[0] if len(points) > 0 else {}
+        p1 = points[1] if len(points) > 1 else {}
+        self.start_time = p0.get('time')
+        self.start_price = p0.get('price')
+        self.end_time = p1.get('time')
+        self.end_price = p1.get('price')
+
     def __repr__(self):
-        return f'<DrawingInfo type={self.type} id={self.id}>'
+        return (f'<DrawingInfo type={self.type} pane={self.pane_index} '
+                f'id={self.id}>')
 
 
 class ToolBox:
@@ -107,6 +132,7 @@ class ToolBox:
             self._drawing_list.append(DrawingInfo(
                 id=f'{d.get("type", "Drawing")}_{i}',
                 type=d.get('type', 'Unknown'),
+                pane_index=d.get('paneIndex', 0),
                 points=d.get('points', []),
                 options=d.get('options', {}),
             ))

@@ -546,7 +546,8 @@ line = chart.create_line(
     name='SMA 50', color='rgba(..., 0.6)',
     style='solid', width=2,
     price_line=True, price_label=True,
-    price_scale_id=None, pane_index=0
+    price_scale_id=None, pane_index=0,
+    legend=True, group=None          # ← legend 分组
 )
 line.set(df)           # df 列: time + value
 line.update(series)    # 逐点实时更新
@@ -559,7 +560,8 @@ hist = chart.create_histogram(
     name='volume', color='...',
     price_line=True, price_label=True,
     scale_margin_top=0.0, scale_margin_bottom=0.0,
-    pane_index=0
+    pane_index=0,
+    legend=True, group=None          # ← legend 分组
 )
 hist.set(df)           # df 列: time + value + [color]
 hist.update(series)
@@ -851,6 +853,54 @@ baseline.set(pd.DataFrame({'time': df['time'], 'value': rsi_dev}).dropna())
 | `pane_index` | `int` | `0` | 面板索引 |
 
 **数据格式**：与 LineSeries 完全一致 — `time` + `value` 列。value > base_value 显示上方颜色，value < base_value 显示下方颜色。
+
+### 3.7.5 Legend 图例与分组
+
+```python
+# 开启 legend
+chart.legend(
+    visible=True,         # 是否显示
+    ohlc=True,            # 显示 OHLC + Volume
+    percent=False,        # 显示涨跌幅百分比
+    lines=True,           # 显示指标线信息
+    color='rgb(191,195,203)',
+    font_size=11,
+    font_family='Monaco',
+    text='',              # 自定义文本
+    color_based_on_candle=False,
+    persistent=False,     # 鼠标离开后保持 OHLC
+    shorthand=True,       # Volume/OI 缩写 (24.5K)
+)
+
+# ── Legend 分组（v2.9.0+）──
+# group 参数：同组的 series 在 legend 中显示在同一行
+sma20 = chart.create_line('SMA 20', color='yellow', group='MA')
+ema50 = chart.create_line('EMA 50', color='cyan', group='MA')
+roc   = chart.create_line('ROC', color='red', group='MOM')
+mom   = chart.create_line('MOM', color='green', group='MOM')
+rsi   = chart.create_line('RSI', color='purple', pane_index=1)  # 无组，独立行
+```
+
+**Legend 渲染效果：**
+```
+O 192.95 | H 194.30 | L 180.55 | C 182.55 | V 75.9M | -5.39 %
+♦ MA    ■ SMA 20 : 186  👁    ■ EMA 50 : 211  👁
+♦ MOM   ■ ROC : 1.8  👁       ■ MOM : 3.2  👁
+■ RSI : 44  👁
+```
+
+**分组交互：**
+- ♦ **组开关 click**：一键切换组内所有 series 可见性（♦→♢ 表示隐藏）
+- **个人眼睛 click**：切换单个 series，同步更新组开关状态
+- 支持跨 pane 同名分组
+
+**group 参数（所有 create_* 方法通用）：**
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `group` | `str\|None` | `None` | 图例分组名。None = 独立行，同名 = 同组 |
+
+> **示例 39** (`examples/39_legend_group/`) 演示完整的分组 + 独立行共存场景。
 
 ### 3.8 样式配置
 

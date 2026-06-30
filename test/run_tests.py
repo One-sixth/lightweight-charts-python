@@ -19,6 +19,7 @@ if __name__ == '__main__':
         'test_features.py',
         'test_util.py',
         'test_candle_series.py',
+        'test_volume_series.py',
         'test_data_aggregation.py',
         'test_position.py',
         'test_reset_sub.py',

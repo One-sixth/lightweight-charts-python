@@ -1106,7 +1106,7 @@ class AbstractChart(Pane):
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
             style: LINE_STYLE = 'solid', width: int = 2,
             price_line: bool = True, price_label: bool = True, price_scale_id: Optional[str] = None,
-            pane_index: int = 0, legend: bool = True
+            pane_index: int = 0, legend: bool = True, group: str = None
     ) -> LineSeries:
         """
         创建并返回一个折线图对象。
@@ -1120,9 +1120,10 @@ class AbstractChart(Pane):
         :param price_scale_id: 价格刻度ID
         :param pane_index: 面板索引
         :param legend: 是否在图例中显示此系列
+        :param group: 图例分组名。同组的 series 在 legend 中显示在同一行，前面有 ♦ 组开关。
         :return: LineSeries 实例
         """
-        line = LineSeries(self, name, color, style, width, price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend)
+        line = LineSeries(self, name, color, style, width, price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend, group=group)
         self._lines.append(line)
         return line
 
@@ -1130,7 +1131,7 @@ class AbstractChart(Pane):
             self, name: str = '', color: str = 'rgba(214, 237, 255, 0.6)',
             price_line: bool = True, price_label: bool = True,
             scale_margin_top: float = 0.0, scale_margin_bottom: float = 0.0,
-            pane_index: int = 0, legend: bool = True,
+            pane_index: int = 0, legend: bool = True, group: str = None,
     ) -> HistogramSeries:
         """
         创建并返回一个柱状图（直方图）对象，通常用于显示成交量。
@@ -1143,9 +1144,10 @@ class AbstractChart(Pane):
         :param scale_margin_bottom: 底部刻度边距（0-1）
         :param pane_index: 面板索引
         :param legend: 是否在图例中显示此系列
+        :param group: 图例分组名。同组的 series 在 legend 中显示在同一行，前面有 ♦ 组开关。
         :return: HistogramSeries 实例
         """
-        hist = HistogramSeries(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index, legend=legend)
+        hist = HistogramSeries(self, name, color, price_line, price_label, scale_margin_top, scale_margin_bottom, pane_index, legend=legend, group=group)
         self._lines.append(hist)
         return hist
 
@@ -1161,7 +1163,7 @@ class AbstractChart(Pane):
             border_visible: bool = True, wick_visible: bool = True,
             price_line: bool = False, price_label: bool = True,
             price_scale_id: Optional[str] = None,
-            crosshair_marker: bool = True, legend: bool = True
+            crosshair_marker: bool = True, legend: bool = True, group: str = None
     ) -> CandleSeries:
         """
         创建并返回一个独立 K 线系列对象（无 volume/open interest）。
@@ -1176,6 +1178,7 @@ class AbstractChart(Pane):
         :param price_label: 是否显示价格标签
         :param price_scale_id: 价格刻度ID，用于共享刻度
         :param crosshair_marker: 十字光标是否显示标记
+        :param group: 图例分组名。同组的 series 在 legend 中显示在同一行，前面有 ♦ 组开关。
         :return: CandleSeries 实例
         """
         candle = CandleSeries(
@@ -1184,7 +1187,7 @@ class AbstractChart(Pane):
             border_visible=border_visible, wick_visible=wick_visible,
             price_line=price_line, price_label=price_label,
             price_scale_id=price_scale_id, crosshair_marker=crosshair_marker,
-            legend=legend,
+            legend=legend, group=group,
         )
         self._lines.append(candle)
         return candle
@@ -1198,7 +1201,7 @@ class AbstractChart(Pane):
             invert_filled_area: bool = False,
             price_line: bool = True, price_label: bool = True,
             price_scale_id: Optional[str] = None,
-            pane_index: int = 0, legend: bool = True
+            pane_index: int = 0, legend: bool = True, group: str = None
     ) -> AreaSeries:
         """
         创建并返回一个面积图对象（折线+渐变填充）。
@@ -1219,7 +1222,7 @@ class AbstractChart(Pane):
         """
         area = AreaSeries(self, name, color, style, width,
                           top_color, bottom_color, relative_gradient, invert_filled_area,
-                          price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend)
+                          price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend, group=group)
         self._lines.append(area)
         return area
 
@@ -1229,7 +1232,7 @@ class AbstractChart(Pane):
             open_visible: bool = True, thin_bars: bool = True,
             price_line: bool = False, price_label: bool = True,
             price_scale_id: Optional[str] = None,
-            pane_index: int = 0, legend: bool = True
+            pane_index: int = 0, legend: bool = True, group: str = None
     ) -> OHLCBarSeries:
         """
         创建并返回一个美国线（OHLC 横向柱状图）对象。
@@ -1248,7 +1251,7 @@ class AbstractChart(Pane):
         :return: OHLCBarSeries 实例
         """
         bar = OHLCBarSeries(self, name, up_color, down_color, open_visible, thin_bars,
-                            price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend)
+                            price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend, group=group)
         self._lines.append(bar)
         return bar
 
@@ -1265,7 +1268,7 @@ class AbstractChart(Pane):
             relative_gradient: bool = False,
             price_line: bool = True, price_label: bool = True,
             price_scale_id: Optional[str] = None,
-            pane_index: int = 0, legend: bool = True
+            pane_index: int = 0, legend: bool = True, group: str = None
     ) -> BaselineSeries:
         """
         创建并返回一个基准线对象，以某个基准值为界上下分色。
@@ -1285,13 +1288,14 @@ class AbstractChart(Pane):
         :param price_label: 是否显示价格标签
         :param price_scale_id: 价格刻度ID
         :param pane_index: 面板索引
+        :param group: 图例分组名。同组的 series 在 legend 中显示在同一行，前面有 ♦ 组开关。
         :return: BaselineSeries 实例
         """
         baseline = BaselineSeries(self, name, base_value,
                                   top_fill_color1, top_fill_color2, top_line_color,
                                   bottom_fill_color1, bottom_fill_color2, bottom_line_color,
                                   line_width, line_style, relative_gradient,
-                                  price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend)
+                                  price_line, price_label, price_scale_id, pane_index=pane_index, legend=legend, group=group)
         self._lines.append(baseline)
         return baseline
 
