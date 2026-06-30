@@ -482,9 +482,8 @@ def normal_df(df: pd.DataFrame, required_cols: Optional[list[str]] = None) -> pd
     :param required_cols: 必需列名列表，并且按照顺序排列，None 则不检查
     :return: 标准化后的 DataFrame（副本）
     """
-
     df = df.copy()
-
+    # 检查 time 列是否存在 和 按需转换时间到 秒级时间戳
     if 'time' not in df.columns:
         df['time'] = df.index
 
@@ -493,13 +492,14 @@ def normal_df(df: pd.DataFrame, required_cols: Optional[list[str]] = None) -> pd
     else:
         df['time'] = pd.to_datetime(df['time'], unit='s').dt.tz_localize(None)
         df['time'] = (df['time'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
-
+    # ------------------------------------------
+    # 检查必需列是否存在，并按顺序取出
     if required_cols is not None:
         missing = set(required_cols) - set(df.columns)
         if missing:
             raise ValueError(f"缺少必需列: {missing}")
         df = df[list(required_cols)]
-
+    # ------------------------------------------
     return df
 
 
@@ -557,10 +557,12 @@ def merge_volume_by_time(df: pd.DataFrame, is_tick: bool = False) -> pd.DataFram
             raise ValueError(f"tick 模式缺少必需列: {missing}")
 
         grouped = df.groupby('time')
-        new_df = pd.DataFrame({'time': list(grouped.groups)})
-        new_df['value'] = grouped['value'].sum().array
-        new_df['open'] = grouped['price'].first().array
-        new_df['close'] = grouped['price'].last().array
+        new_df = pd.DataFrame({
+            'time': list(grouped.groups),
+            'value': grouped['value'].sum().array,
+            'open': grouped['price'].first().array,
+            'close': grouped['price'].last().array,
+        })
         return new_df
 
     else:
@@ -571,10 +573,13 @@ def merge_volume_by_time(df: pd.DataFrame, is_tick: bool = False) -> pd.DataFram
             raise ValueError(f"bar 模式缺少必需列: {missing}")
 
         grouped = df.groupby('time')
-        new_df = pd.DataFrame({'time': list(grouped.groups)})
-        new_df['value'] = grouped['value'].last().array
-        new_df['open'] = grouped['open'].first().array
-        new_df['close'] = grouped['close'].last().array
+        new_df = pd.DataFrame({
+            'time': list(grouped.groups),
+            'value': grouped['value'].last().array,
+            'open': grouped['open'].first().array,
+            'close': grouped['close'].last().array,
+
+        })
         return new_df
 
 
@@ -583,21 +588,23 @@ def merge_candle_by_time(df: pd.DataFrame, is_tick: bool = False) -> pd.DataFram
 
     :param df: 输入 DataFrame
     :param is_tick: False = bar 模式（输入 time/open/high/low/close）
-                    True  = tick 模式（输入 time/price，聚合为 OHLC）
+                    True  = tick 模式（输入 time/value，聚合为 OHLC）
     :return: time, open, high, low, close
     """
     if is_tick:
-        required = {'time', 'price'}
+        required = {'time', 'value'}
         missing = required - set(df.columns)
         if missing:
             raise ValueError(f"tick 模式缺少必需列: {missing}")
 
         grouped = df.groupby('time')
-        new_df = pd.DataFrame({'time': list(grouped.groups)})
-        new_df['open'] = grouped['price'].first().array
-        new_df['high'] = grouped['price'].max().array
-        new_df['low'] = grouped['price'].min().array
-        new_df['close'] = grouped['price'].last().array
+        new_df = pd.DataFrame({
+            "time": list(grouped.groups),
+            "open": grouped['value'].first().array,
+            "high": grouped['value'].max().array,
+            "low": grouped['value'].min().array,
+            "close": grouped['value'].last().array
+        })
         return new_df
 
     else:
@@ -607,11 +614,13 @@ def merge_candle_by_time(df: pd.DataFrame, is_tick: bool = False) -> pd.DataFram
             raise ValueError(f"bar 模式缺少必需列: {missing}")
 
         grouped = df.groupby('time')
-        new_df = pd.DataFrame({'time': list(grouped.groups)})
-        new_df['open'] = grouped['open'].first().array
-        new_df['high'] = grouped['high'].max().array
-        new_df['low'] = grouped['low'].min().array
-        new_df['close'] = grouped['close'].last().array
+        new_df = pd.DataFrame({
+            "time": list(grouped.groups),
+            "open": grouped['open'].first().array,
+            "high": grouped['high'].max().array,
+            "low": grouped['low'].min().array,
+            "close": grouped['close'].last().array
+        })
         return new_df
 
 

@@ -55,12 +55,12 @@ if __name__ == '__main__':
     chart.topbar['status'].set('完成! 共 200 根 bar (50 + 50 + 50 + 50)')
 
     # 在参考K线上打标记，展示批量更新后标记功能
-    ref.marker(
+    ref.add_marker(
         time=df_ref['time'].iloc[25],
         position='above', shape='arrow_down', color='#FF6B35',
         text='起始标记'
     )
-    ref.marker(
+    ref.add_marker(
         time=df_batch3_ref['time'].iloc[-1],
         position='below', shape='arrow_up', color='#0096FF',
         text='结束标记'

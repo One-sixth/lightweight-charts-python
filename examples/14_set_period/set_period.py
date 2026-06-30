@@ -122,14 +122,14 @@ if __name__ == '__main__':
     status.set('⏳ Step 6: 即将添加标记并验证稳定性...')
     print("\nStep 6: Adding markers and re-setting data to verify no drift...")
     sleep(2)
-    chart.marker(
+    chart.add_marker(
         time=df_15min.iloc[10]['time'],
         text='Marker 1',
         position='above',
         shape='arrow_up',
         color='#FFD700'
     )
-    chart.marker(
+    chart.add_marker(
         time=df_15min.iloc[25]['time'],
         text='Marker 2',
         position='below',

@@ -60,7 +60,7 @@ ___
 
 Creates and returns a Line object, representing a `LineSeries` object in Lightweight Charts and can be used to create indicators. As well as the methods described below, the `Line` object also has access to:
 
-[`marker`](#marker), [`horizontal_line`](#AbstractChart.horizontal_line), [`hide_data`](#hide_data), [`show_data`](#show_data) and [`price_line`](#price_line).
+[`add_marker`](#add_marker), [`horizontal_line`](#AbstractChart.horizontal_line), [`hide_data`](#hide_data), [`show_data`](#show_data) and [`price_line`](#price_line).
 
 Its instance should only be accessed from this method.
 ```
@@ -141,7 +141,7 @@ ___
 
 
 
-```{py:method} marker(time: datetime, position: MARKER_POSITION, shape: MARKER_SHAPE, color: COLOR, text: str) -> str
+```{py:method} add_marker(time: datetime, position: MARKER_POSITION, shape: MARKER_SHAPE, color: COLOR, text: str) -> str
 
 Adds a marker to the chart, and returns its id.
 
@@ -154,7 +154,7 @@ ___
 
 
 
-```{py:method} marker_list(markers: list) -> List[str]
+```{py:method} add_markers(markers: list) -> List[str]
 
 Creates multiple markers and returns a list of marker ids.
 

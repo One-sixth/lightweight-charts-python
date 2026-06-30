@@ -93,7 +93,7 @@ def test_basic_create_delete():
 
         # Marker
         print("\n[3] Add marker ...")
-        m = ref.marker(time=df_ref['time'].iloc[5], position='above',
+        m = ref.add_marker(time=df_ref['time'].iloc[5], position='above',
                        shape='arrow_down', color='red', text='S')
         all_clean &= log_check(len(ref.markers) == 1, f"markers=1", errors, "markers_count")
         all_clean &= log_check(m.startswith('window.Marker_'), f"marker id={m}", errors, "marker_id")
@@ -259,21 +259,21 @@ def test_markers():
         # marker() with explicit time
         print("\n[1] marker() with explicit time ...")
         t = ref.data['time'].iloc[10]
-        m1 = ref.marker(time=t, position='above', shape='arrow_down',
+        m1 = ref.add_marker(time=t, position='above', shape='arrow_down',
                         color='red', text='sell')
         all_clean &= log_check(len(ref.markers) == 1, "1 marker", errors, "m1_count")
         print("      [OK]")
 
         # marker() without time (should use last bar)
         print("\n[2] marker() without time (last bar) ...")
-        m2 = ref.marker(position='below', shape='arrow_up',
+        m2 = ref.add_marker(position='below', shape='arrow_up',
                         color='blue', text='buy')
         all_clean &= log_check(len(ref.markers) == 2, "2 markers", errors, "m2_count")
         print("      [OK]")
 
         # marker_list() - batch markers
         print("\n[3] marker_list() batch ...")
-        ids = ref.marker_list([
+        ids = ref.add_markers([
             {'time': ref.data['time'].iloc[5], 'position': 'above',
              'shape': 'circle', 'color': '#ff0000', 'text': 'a'},
             {'time': ref.data['time'].iloc[15], 'position': 'below',
@@ -297,7 +297,7 @@ def test_markers():
 
         # Verify markers actually set in JS
         print("\n[6] Verify JS markers count ...")
-        ref.marker(time=ref.data['time'].iloc[0], position='above',
+        ref.add_marker(time=ref.data['time'].iloc[0], position='above',
                    shape='arrow_down', color='green', text='test')
         try:
             count = chart.win.run_script_and_get(f'{ref.id}.seriesMarkers.markers().length')
@@ -359,9 +359,9 @@ def test_multi_pane():
 
         # Markers on both
         print("\n[3] Markers on both ...")
-        ref1.marker(time=ref1.data['time'].iloc[5], position='above',
+        ref1.add_marker(time=ref1.data['time'].iloc[5], position='above',
                     shape='arrow_down', color='red', text='s1')
-        ref2.marker(time=ref2.data['time'].iloc[10], position='below',
+        ref2.add_marker(time=ref2.data['time'].iloc[10], position='below',
                     shape='arrow_up', color='blue', text='b2')
         all_clean &= log_check(len(ref1.markers) == 1, "ref1 has 1 marker", errors, "ref1_markers")
         all_clean &= log_check(len(ref2.markers) == 1, "ref2 has 1 marker", errors, "ref2_markers")
@@ -454,8 +454,8 @@ def test_candle_with_main():
 
         # Markers on both main and ref
         print("\n[2] Markers on main and ref ...")
-        chart.marker(df_main['time'].iloc[5], 'above', 'arrow_down', 'red', 'main_m')
-        ref.marker(df_ref['time'].iloc[10], 'below', 'arrow_up', 'blue', 'ref_m')
+        chart.add_marker(df_main['time'].iloc[5], 'above', 'arrow_down', 'red', 'main_m')
+        ref.add_marker(df_ref['time'].iloc[10], 'below', 'arrow_up', 'blue', 'ref_m')
         all_clean &= log_check(len(chart.markers) >= 1, "main markers", errors, "main_markers")
         all_clean &= log_check(len(ref.markers) == 1, "ref markers", errors, "ref_markers")
         print("      [OK]")

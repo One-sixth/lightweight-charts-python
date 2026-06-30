@@ -125,7 +125,7 @@ def demo():
 
     # Buy/sell markers
     for sig in generate_signals(df):
-        chart.marker(**sig)
+        chart.add_marker(**sig)
 
     # Subchart 1 Volume: pane 1
     print("[3/4] Subchart 1: Volume...")
@@ -180,7 +180,7 @@ def demo_absolute():
 
     # Buy/sell markers
     for sig in generate_signals(df):
-        chart.marker(**sig)
+        chart.add_marker(**sig)
 
     # ================================================================
     # Chart 2: bottom-right quarter (50%, 50%, 50%, 50%)

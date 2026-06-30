@@ -61,7 +61,7 @@ lightweight-charts-python/
 Pane (util.py)                          ← 所有组件的基类 (拥有 id, run_script)
 ├── Window (abstract.py)                ← JS 通信层: run_script(), run_script_and_get(), handlers
 │
-├── SeriesCommon (series.py)            ← 数据系列基类 (set/update/pop/clear_data/marker/marker_list/remove_marker/clear_markers)
+├── SeriesCommon (series.py)            ← 数据系列基类 (set/update/pop/clear_data/add_marker/add_markers/remove_marker/clear_markers)
 │   ├── CandleSeries (series.py)        ← 独立K线系列 (无 volume, 可在任意 pane)
 │   ├── VolumeSeries (series.py)        ← 成交量柱状图 (自动涨跌着色, self-managing)
 │   ├── OpenInterestSeries (series.py)  ← 持仓量折线 (self-managing)
@@ -102,10 +102,10 @@ Pane (util.py)                          ← 所有组件的基类 (拥有 id, ru
 
 **设计模式说明：**
 - **组合 > 继承**：`AbstractChart` 不再继承 `Candlestick`，而是通过 `self.candle` 组合持有。
-  所有 Candlestick 方法（`set()`, `update()`, `marker()` 等）通过委托保持向后兼容。
+  所有 Candlestick 方法（`set()`, `update()`, `add_marker()` 等）通过委托保持向后兼容。
 - **self-managing 系列**：`VolumeSeries` / `OpenInterestSeries` / `CandleSeries` 各自维护
   `self.data` + `self._last_bar`，支持独立的 `set()` / `update()` / `update_bars()` / `delete()`。
-- **marker 泛化**：`SeriesCommon` 上的 marker API 对所有系列类型均有效（Candlestick, Line, Histogram, CandleSeries 等）。
+- **marker 泛化**：`SeriesCommon` 上的 add_marker API 对所有系列类型均有效（Candlestick, Line, Histogram, CandleSeries 等）。
 
 ---
 
@@ -490,7 +490,7 @@ print(chart._period_locked)  # False
   - 例如：10 根 30min K 线锁定到 1h → 对齐后得到 5 个唯一时间戳
   - 同级别数据（5min→5min）不受影响，不会去重
 - `update()` / `update_from_tick()` 中的 `_single_datetime_format()` 使用锁定后的 `_interval` 对齐
-- `marker()` 中的时间对齐也同样受锁定影响
+- `add_marker()` 中的时间对齐也同样受锁定影响
 
 ### 3.6.4 标记 (Marker)
 
@@ -498,30 +498,30 @@ print(chart._period_locked)  # False
 
 ```python
 # ── 在 Candlestick（主图）上添加标记 ──
-chart.marker(time='2024-01-15', position='above', shape='arrow_down',
+chart.add_marker(time='2024-01-15', position='above', shape='arrow_down',
              color='#FF0000', text='卖出')
-chart.marker(time='2024-02-01', position='below', shape='arrow_up',
+chart.add_marker(time='2024-02-01', position='below', shape='arrow_up',
              color='#00FF00', text='买入')
 
 # ── 在 Line/Histogram 上添加标记 ──
 line20 = chart.create_line('SMA20', color='#2196F3')
 line20.set(sma_df)
-line20.marker(time='2024-01-20', position='below', shape='circle',
+line20.add_marker(time='2024-01-20', position='below', shape='circle',
               color='#2196F3', text='SMA20 Cross')
 
 hist = chart.create_histogram('Volume', color='rgba(100,100,200,0.5)', pane_index=1)
 hist.set(vol_df)
-hist.marker(time='2024-01-05', position='below', shape='square',
+hist.add_marker(time='2024-01-05', position='below', shape='square',
             color='#9C27B0', text='Vol Spike')
 
 # ── 在 CandleSeries 上添加标记 ──
 ref = chart.create_candle_series(name='参考K线', pane_index=1)
 ref.set(df_ref)
-ref.marker(time='2024-01-20', position='above', shape='arrow_down',
+ref.add_marker(time='2024-01-20', position='above', shape='arrow_down',
            color='#FF6B35', text='卖出信号')
 
 # ── 批量标记 ──
-line20.marker_list([
+line20.add_markers([
     {'time': '2024-02-10', 'position': 'below', 'shape': 'arrow_up',
      'color': '#00BCD4', 'text': 'Batch 1'},
     {'time': '2024-03-05', 'position': 'above', 'shape': 'arrow_down',
@@ -551,8 +551,8 @@ line = chart.create_line(
 line.set(df)           # df 列: time + value
 line.update(series)    # 逐点实时更新
 line.update_bars(df)   # 批量追加数据点
-line.marker(...)       # 在折线上添加标记 (见 §3.6.4)
-line.marker_list([...])# 批量添加标记
+line.add_marker(...)       # 在折线上添加标记 (见 §3.6.4)
+line.add_markers([...])# 批量添加标记
 line.delete()          # 删除 (JS + Python 双端清理)
 
 hist = chart.create_histogram(
@@ -564,7 +564,7 @@ hist = chart.create_histogram(
 hist.set(df)           # df 列: time + value + [color]
 hist.update(series)
 hist.update_bars(df)
-hist.marker(...)
+hist.add_marker(...)
 hist.scale(top=0.0, bottom=0.0)
 hist.delete()
 
@@ -598,7 +598,7 @@ hist.set(df)  # color 列自动携带到 JS 端
 
 > ⚠️ **注意**：`chart.set()` 不会转发 color 列，如需 histogram 上任意颜色需要**单独 `hist.set()`**。
 
-> **示例 35** (`examples/35_line_markers/line_markers.py`) 演示了在 Line、Histogram 和 CandleSeries 上使用 marker 和 marker_list 的完整用法。
+> **示例 35** (`examples/35_line_markers/line_markers.py`) 演示了在 Line、Histogram 和 CandleSeries 上使用 add_marker 和 add_markers 的完整用法。
 
 ### 3.7.1 独立 K 线系列 — CandleSeries
 
@@ -632,8 +632,8 @@ ref.set(df_ref)                     # 设置初始数据
 # 支持所有 SeriesCommon 方法
 ref.update(new_bar)                 # 更新最新 bar 或追加新 bar
 ref.update_bars(df_more)            # 批量追加
-ref.marker(time, position, shape, color, text)  # 添加标记
-ref.marker_list([...])              # 批量标记
+ref.add_marker(time, position, shape, color, text)  # 添加标记
+ref.add_markers([...])              # 批量标记
 ref.clear_data()                    # 清空数据
 ref.delete()                        # 删除系列
 ```
@@ -758,7 +758,7 @@ bar.bar_style(up_color='#00BCD4', down_color='#FF5722', thin_bars=True)
 # 所有 CandleSeries 方法均可用
 bar.update(new_bar)               # 更新最新 bar
 bar.update_bars(df_more)          # 批量追加
-bar.marker(time, position, shape, color, text)  # 添加标记
+bar.add_marker(time, position, shape, color, text)  # 添加标记
 bar.delete()                      # 删除系列
 ```
 
@@ -1394,13 +1394,13 @@ show() 三种模式:
 CandleSeries 对比品种:
   ref = chart.create_candle_series(name='参考K线', pane_index=1)
   ref.set(df_ref)
-  ref.marker(time, 'above', 'arrow_down', '#FF0000', '卖出')
+  ref.add_marker(time, 'above', 'arrow_down', '#FF0000', '卖出')
 
 Line/Histogram 标记:
   line = chart.create_line('SMA20', color='#2196F3')
   line.set(sma_df)
-  line.marker(time, 'below', 'circle', '#2196F3', '信号')
-  line.marker_list([{time, position, shape, color, text}, ...])
+  line.add_marker(time, 'below', 'circle', '#2196F3', '信号')
+  line.add_markers([{time, position, shape, color, text}, ...])
 
 子图重置:
   sub.reset_sub()        # 清除子图全部内容（13类资源）
@@ -1675,7 +1675,7 @@ Python 侧自动追踪资源，支持完整生命周期管理：
 | `chart._lines` | `create_line()` | `line.delete()` |
 | `chart._drawings` | `Drawing.__init__()` | `drawing.delete()` |
 | `chart._tables` | `chart.create_table()` | `table.delete()` |
-| `chart.markers` | `chart.marker()` | `chart.remove_marker()` |
+| `chart.markers` | `chart.add_marker()` | `chart.remove_marker()` |
 | `chart.win.handlers` | 自动注册 | `clear_handlers()` / `remove_handler()` |
 
 ```python

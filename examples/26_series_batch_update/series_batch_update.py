@@ -158,7 +158,7 @@ if __name__ == '__main__':
 
         # Add marker on the line series (not chart, which targets candle)
         if first_time is not None:
-            sma_line.marker(
+            sma_line.add_marker(
                 time=first_time,
                 text=f'▶ Batch {i+1} ({method})',
                 position='below',
@@ -179,7 +179,7 @@ if __name__ == '__main__':
     print("Tip: Always prefer batch methods over individual update() calls!")
     print("=" * 60)
 
-    sma_line.marker(
+    sma_line.add_marker(
         time=all_data.iloc[-1]['time'],
         text='🏁 Demo Complete',
         position='above',

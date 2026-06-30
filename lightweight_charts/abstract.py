@@ -210,9 +210,6 @@ class Window:
 
         :raises ValueError: 如果网格规格冲突（如先创建 311 再创建 221）
         """
-        # 获取当前图表数量（用于字符串格式转换）
-        chart_count = len(self.handlers) + 1
-
         # 解析 position 获取网格规格
         position_info = parse_position(position)
         new_grid_spec = (position_info['nrows'], position_info['ncols'])
@@ -481,41 +478,23 @@ class AbstractChart(Pane):
 
     # ── 高频数据方法（显式委托，IDE 友好）──
 
-    def set(self, df=None, keep_drawings=False):
+    def set(self, df: Optional[pd.DataFrame] = None):
         """设置 K 线数据。自动检测 volume/OI 列并转发数据给独立 series。
 
         .. deprecated::
             不再联动设置 _lines。Line/Histogram 需要各自调用 ``line.set(df)`` 独立设置数据。
         """
+        if self.toolbox is not None:
+            self.toolbox.clear_drawings()
+        self.candle.set(None)
+        self.volume.set(None)
+        self.oi.set(None)
+
         if df is not None and not df.empty:
-            # 需要先 normal ，才能设定 interval 。 所以这里的两次 normal_df 无法避免。
+            # 需要先 normal ，才能设定 interval
             df = normal_df(df)
             self._set_interval(df)
-            # 设置数据（AbstractChart 统一清洗一次，子 series 跳过重复清洗）
-            df = self._clean_df(df)
-
-            self.candle.set(df, _df_cleaned=True)
-            if 'volume' in df.columns:
-                vol_cols = ['time', 'volume']
-                for c in ('open', 'close'):
-                    if c in df.columns:
-                        vol_cols.append(c)
-                self.volume.set(df[vol_cols].rename(columns={'volume': 'value'}), _df_cleaned=True)
-            if 'open_interest' in df.columns:
-                self.oi.set(df[['time', 'open_interest']].rename(columns={'open_interest': 'value'}), _df_cleaned=True)
-
-            # keep_drawings 处理
-            if self.toolbox is not None:
-                if keep_drawings:
-                    self.toolbox.reposition_drawings()
-                else:
-                    self.toolbox.clear_drawings()
-
-        else:
-            # 清空所有数据
-            self.candle.set(None)
-            self.volume.set(None)
-            self.oi.set(None)
+            self.update_bars(df)
 
     def update_bar(self, series):
         """更新最新一根 bar 或追加新 bar。"""
@@ -531,13 +510,10 @@ class AbstractChart(Pane):
             不再联动更新 _lines。Line/Histogram 需要各自调用 ``line.update_bars(df)`` 独立更新。
         """
         df = self._clean_df(df)
-        self.candle.update_bars(df, _df_cleaned=True)
+        if 'open' in df.columns:
+            self.candle.update_bars(df, _df_cleaned=True)
         if 'volume' in df.columns:
-            vol_cols = ['time', 'volume']
-            for c in ('open', 'close'):
-                if c in df.columns:
-                    vol_cols.append(c)
-            self.volume.update_bars(df[vol_cols].rename(columns={'volume': 'value'}), _df_cleaned=True)
+            self.volume.update_bars(df[['time', 'volume', 'open', 'close']].rename(columns={'volume': 'value'}), _df_cleaned=True)
         if 'open_interest' in df.columns:
             self.oi.update_bars(df[['time', 'open_interest']].rename(columns={'open_interest': 'value'}), _df_cleaned=True)
 
@@ -592,17 +568,17 @@ class AbstractChart(Pane):
 
     # ── 标记方法（显式委托）──
 
-    def marker(self, time=None, position='below', shape='arrow_up', color='#2196F3', text='', size=1):
+    def add_marker(self, time=None, position='below', shape='arrow_up', color='#2196F3', text='', size=1):
         """创建标记。"""
-        return self.candle.marker(time=time, position=position, shape=shape, color=color, text=text, size=size)
+        return self.candle.add_marker(time=time, position=position, shape=shape, color=color, text=text, size=size)
 
     def remove_marker(self, marker_id):
         """移除标记。"""
         return self.candle.remove_marker(marker_id)
 
-    def marker_list(self, marker_list):
+    def add_markers(self, marker_list):
         """批量创建标记。"""
-        return self.candle.marker_list(marker_list)
+        return self.candle.add_markers(marker_list)
 
     def clear_markers(self, _dont_update: bool = False):
         """清空所有标记。"""

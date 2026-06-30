@@ -133,7 +133,7 @@ if __name__ == '__main__':
             print(f"    ▶ Adding {count} bars via update_bars()...")
             chart.update_bars(next_bars)
             # 在数据更新后加 marker（确保时间在可见范围内）
-            chart.marker(
+            chart.add_marker(
                 time=next_bars.iloc[0]['time'],
                 text=f'▶ Batch {i+1}: {count} bars',
                 position='below',
@@ -156,7 +156,7 @@ if __name__ == '__main__':
             print(f"    ▶ Adding {count} ticks via update_ticks()...")
             chart.update_ticks(ticks)
             # 在数据更新后加 marker（确保时间在可见范围内）
-            chart.marker(
+            chart.add_marker(
                 time=ticks.iloc[0]['time'],
                 text=f'▶ Batch {i+1}: {count} ticks',
                 position='below',
@@ -172,7 +172,7 @@ if __name__ == '__main__':
             sleep(0.5)
 
     # ── Step 3: Final marker ──
-    chart.marker(
+    chart.add_marker(
         time=last_bar['time'] if isinstance(last_bar, dict) else last_bar.iloc[-1]['time'],
         text='🏁 Batch Update Complete',
         position='above',

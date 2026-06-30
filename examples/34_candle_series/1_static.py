@@ -29,9 +29,9 @@ if __name__ == '__main__':
     ref.set(df_ref)
 
     # 打标记
-    ref.marker(time=df_ref['time'].iloc[20], position='above',
+    ref.add_marker(time=df_ref['time'].iloc[20], position='above',
                shape='arrow_down', color='#FF6B35', text='卖出信号')
-    ref.marker(time=df_ref['time'].iloc[50], position='below',
+    ref.add_marker(time=df_ref['time'].iloc[50], position='below',
                shape='arrow_up', color='#0096FF', text='买入信号')
 
     chart.fit()

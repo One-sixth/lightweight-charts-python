@@ -80,8 +80,8 @@ def add_resources_to_chart(chart, bars, prefix):
 
     line = chart.create_line(f'{prefix}_line', color='#ff0000')
     hist = chart.create_histogram(f'{prefix}_hist', color='#00ff00')
-    chart.marker(bars['time'].iloc[5], 'above', 'circle', '#ff0000', f'{prefix}_m1')
-    chart.marker(bars['time'].iloc[10], 'below', 'arrow_up', '#00ff00', f'{prefix}_m2')
+    chart.add_marker(bars['time'].iloc[5], 'above', 'circle', '#ff0000', f'{prefix}_m1')
+    chart.add_marker(bars['time'].iloc[10], 'below', 'arrow_up', '#00ff00', f'{prefix}_m2')
     pl = chart.create_price_line(price=102, title=f'{prefix}_PL', price_label=True)
 
     tbl = chart.create_table(

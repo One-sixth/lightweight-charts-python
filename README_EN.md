@@ -164,7 +164,7 @@ The built wheel package will be in the dist directory.
 | `chart.set(df)` | Set K-line data |
 | `chart.update(series)` | Update the last K-line |
 | `chart.update_from_tick(tick)` | Update K-line from tick data |
-| `chart.marker(text, ...)` | Add price marker |
+| `chart.add_marker(text, ...)` | Add price marker |
 | `chart.marker_auto_scale(enable)` | Control whether markers participate in price axis scaling |
 | `chart.pop(count)` | Remove N data points from the end |
 | `chart.create_line(name, ...)` | Create line indicator |
@@ -637,7 +637,7 @@ from lightweight_charts import Chart
 if __name__ == '__main__':
     chart = Chart(marker_auto_scale=False)
     chart.set(df)
-    chart.marker(time='2024-01-15', position='above', text='Event')
+    chart.add_marker(time='2024-01-15', position='above', text='Event')
     chart.show(block=True)
 ```
 
@@ -982,7 +982,7 @@ ref = chart.create_candle_series(
 ref.set(df_reference)       # Initial data
 ref.update(new_bar)         # Update/append
 ref.update_bars(df_more)   # Batch append
-ref.marker(...)             # Add marker
+ref.add_marker(...)             # Add marker
 
 chart.show(block=True)
 ```
@@ -995,7 +995,7 @@ chart.show(block=True)
 | `set(df)` | Set initial OHLC data |
 | `update(series)` | Update latest bar or append new bar |
 | `update_bars(df)` | Batch update multiple bars |
-| `marker(...)` | Add markers on independent K-line |
+| `add_marker(...)` | Add markers on independent K-line |
 | `delete()` | Delete series and clean up JS object |
 | `pane_index` | Control which pane to render in |
 
@@ -1016,15 +1016,15 @@ chart.set(candle_df)
 # Markers on Line series
 line20 = chart.create_line('SMA20', color='#2196F3', width=2)
 line20.set(sma20)
-line20.marker(dates[25], 'below', 'circle', '#2196F3', 'SMA20 Cross')
+line20.add_marker(dates[25], 'below', 'circle', '#2196F3', 'SMA20 Cross')
 
 # Markers on Histogram series
 hist = chart.create_histogram('Volume', color='rgba(100,100,200,0.5)', pane_index=1)
 hist.set(vol_df)
-hist.marker(dates[5], 'below', 'circle', '#9C27B0', 'Vol Spike')
+hist.add_marker(dates[5], 'below', 'circle', '#9C27B0', 'Vol Spike')
 
 # Batch markers on Line
-line20.marker_list([
+line20.add_markers([
     {'time': dates[35], 'position': 'below', 'shape': 'arrow_up', 'color': '#00BCD4', 'text': 'Batch 1'},
     {'time': dates[45], 'position': 'above', 'shape': 'arrow_down', 'color': '#00BCD4', 'text': 'Batch 2'},
 ])
@@ -1034,7 +1034,7 @@ chart.show(block=True)
 
 **Supported Series for Markers:**
 
-| Series | marker() | marker_list() |
+| Series | add_marker() | add_markers() |
 |--------|----------|---------------|
 | CandleSeries (main K-line) | ✅ | ✅ |
 | LineSeries (line) | ✅ | ✅ |

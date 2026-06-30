@@ -60,22 +60,22 @@ def main():
     hist.set(vol_df)
 
     # === Markers on CandleSeries (original) ===
-    chart.marker(dates[10], 'below', 'arrow_up', '#4CAF50', 'Buy Signal')
-    chart.marker(dates[50], 'above', 'arrow_down', '#F44336', 'Sell Signal')
+    chart.add_marker(dates[10], 'below', 'arrow_up', '#4CAF50', 'Buy Signal')
+    chart.add_marker(dates[50], 'above', 'arrow_down', '#F44336', 'Sell Signal')
 
     # === Markers on Line series (new!) ===
-    line20.marker(dates[25], 'below', 'circle', '#2196F3', 'SMA20 Cross')
-    line20.marker(dates[60], 'above', 'square', '#2196F3', 'SMA20 Peak')
+    line20.add_marker(dates[25], 'below', 'circle', '#2196F3', 'SMA20 Cross')
+    line20.add_marker(dates[60], 'above', 'square', '#2196F3', 'SMA20 Peak')
 
     # === Markers on another Line ===
-    line50.marker(dates[55], 'below', 'arrow_up', '#FF9800', 'SMA50 Support')
+    line50.add_marker(dates[55], 'below', 'arrow_up', '#FF9800', 'SMA50 Support')
 
     # === Markers on Histogram (new!) ===
-    hist.marker(dates[5], 'below', 'circle', '#9C27B0', 'Vol Spike')
-    hist.marker(dates[80], 'below', 'square', '#9C27B0', 'Vol Drop')
+    hist.add_marker(dates[5], 'below', 'circle', '#9C27B0', 'Vol Spike')
+    hist.add_marker(dates[80], 'below', 'square', '#9C27B0', 'Vol Drop')
 
     # === Batch markers on Line ===
-    line20.marker_list([
+    line20.add_markers([
         {'time': dates[35], 'position': 'below', 'shape': 'arrow_up',
          'color': '#00BCD4', 'text': 'Batch 1'},
         {'time': dates[45], 'position': 'above', 'shape': 'arrow_down',

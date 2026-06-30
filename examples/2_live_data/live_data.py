@@ -20,7 +20,7 @@ if __name__ == '__main__':
         chart.update(series)
 
         if series['close'] > 20 and last_close < 20:
-            chart.marker(text='The price crossed $20!')
+            chart.add_marker(text='The price crossed $20!')
 
         last_close = series['close']
         sleep(0.1)

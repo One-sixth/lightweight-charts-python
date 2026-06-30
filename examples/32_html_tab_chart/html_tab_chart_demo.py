@@ -104,14 +104,14 @@ def generate_trades(df, strategy_name):
 def add_trade_markers(chart, trades):
     """Add buy/sell markers from trade records"""
     for trade in trades:
-        chart.marker(
+        chart.add_marker(
             time=trade['dateopen'],
             position='below' if trade['size'] > 0 else 'above',
             color='red' if trade['size'] > 0 else 'green',
             shape='arrow_up' if trade['size'] > 0 else 'arrow_down',
             text=f"Open {trade['size']}"
         )
-        chart.marker(
+        chart.add_marker(
             time=trade['dateclose'],
             position='above' if trade['size'] > 0 else 'below',
             color='green' if trade['size'] > 0 else 'red',

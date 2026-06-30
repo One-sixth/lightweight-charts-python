@@ -77,7 +77,7 @@ if __name__ == '__main__':
 
     # Markers
     for i in range(8):
-        chart.marker(
+        chart.add_marker(
             time=dates[10 + i * 10],
             position='above' if i % 2 == 0 else 'below',
             shape='circle' if i % 2 == 0 else 'arrow_up',

@@ -88,7 +88,7 @@ class MainWindow(QMainWindow):
     def on_add_marker(self):
         """Add a marker at the latest bar."""
         last_bar = self.initial_df.iloc[-1]
-        self.chart.marker(
+        self.chart.add_marker(
             time=last_bar['time'],
             text=f'Bar #{self.bar_count}',
             position='above',

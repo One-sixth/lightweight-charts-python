@@ -970,4 +970,73 @@ if (scale_margin_top is None) != (scale_margin_bottom is None):
 
 ---
 
-*最后更新：2026-06-30（VolumeSeries 数据管线重构）*
+## 📐 数据管线统一（2026-06-30）
+
+### 目标
+将 VolumeSeries 成熟的数据管线模式（纯函数链 + filter_old_bars）移植到 CandleSeries 和 SeriesCommon，实现三种 series 的管线结构对称。
+
+### 新增纯函数
+
+| 函数 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `merge_candle_by_time(df, is_tick)` | bar: `time,O,H,L,C` / tick: `time,value` | `time,O,H,L,C` | OHLC 聚合（high=max, low=min） |
+| `merge_volume_by_time(df, is_tick)` | bar: `time,value,O,C` / tick: `time,value,price` | `time,value,O,C` | volume 聚合（value=sum） |
+| `merge_value_by_time(df)` | `time,[O,H,L,C,vol,OI,...]` | 保持原列结构 | 通用聚合（vol=sum, OI=last） |
+
+### CandleSeries 改造
+
+| 方法 | Before | After |
+|------|--------|-------|
+| `set()` | 内联全部逻辑 | `clear_data()` + `update_bars()` + markers |
+| `update_bars()` | `_clean_df` + 内联 mask | `normal_df` + `merge_candle_by_time` + `filter_old_bars` + 选列 |
+| `update_ticks()` | 内联 groupby + 手写 OHLC | `merge_candle_by_time(is_tick=True)` + `update_bars(_df_cleaned=True)` |
+
+### SeriesCommon 改造
+
+| 方法 | Before | After |
+|------|--------|-------|
+| `set()` | 内联 setData + 清空 | `clear_data()` + `update_bars()` |
+| `update_bars()` | 3 层嵌套调用 | 一气呵成（清洗→校验→更新） |
+| `update_ticks()` | 内联 groupby(last) + 手写校验 | `merge_value_by_time()` + `tick_required_cols` 校验 |
+
+### 删除的函数
+- `_check_has_value_column` → 内联到 `update_bars`
+- `_prepare_line_data` → 内联到 `update_bars`
+- `_clean_update_bars` → 内联到 `update_bars`
+- `_clean_df` → 死代码，由用户删除
+
+### AbstractChart 简化
+- `set()` / `update_bars()` 中 vol_cols 构建：循环+条件 → 直接列表 `['time','volume','open','close']`
+- `set()` 委托 `update_bars()`，不再重复列选择逻辑
+- `set()` 中 `toolbox.clear_drawings()` 加 `is not None` guard
+
+### 关键设计决策
+
+#### `_time_to_bar_time` 只在 SeriesCommon 保留
+- **SeriesCommon**（Line/Histogram）：独立使用时需要时间对齐 → 保留
+- **CandleSeries** / **VolumeSeries**：独立使用时不需要时间对齐，由 AbstractChart 统一负责 → 不加
+- **原则**：原始有的保留，新加的不加，guard 全删
+
+#### `update = update_bar` 别名已废弃
+- 旧代码有 `update = update_bar` 类级别别名
+- 现已删除，测试代码统一改为 `update_bar()`
+
+#### CandleSeries.update_bars 选列时机
+- AbstractChart 传入的 df 包含 volume/OI 等额外列
+- 选列 `df[bar_required_cols]` 必须在 assert 之前，否则 `list(df.columns) != bar_required_cols` 会误报
+
+### 兼容性破坏
+| 变更 | 影响 | 迁移 |
+|------|------|------|
+| `update()` 别名删除 | 调用 `series.update(bar)` 报 AttributeError | 改为 `series.update_bar(bar)` |
+| `marker()` → `add_marker()` | 调用 `chart.marker(...)` 报 AttributeError | 改为 `chart.add_marker(...)` |
+| `marker_list()` → `add_markers()` | 调用 `chart.marker_list([...])` 报 AttributeError | 改为 `chart.add_markers([...])` |
+| `_check_has_value_column` 删除 | 无外部调用者 | 无需迁移 |
+| `_prepare_line_data` 删除 | 无外部调用者 | 无需迁移 |
+| `_clean_update_bars` 删除 | 无外部调用者 | 无需迁移 |
+| `_clean_df` 删除 | 无外部调用者 | 无需迁移 |
+| `set(keep_drawings=True)` 参数删除 | `AbstractChart.set()` 不再接受 | 始终清空 drawings |
+
+---
+
+*最后更新：2026-06-30（marker 方法重命名）*

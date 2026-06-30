@@ -8,7 +8,8 @@ from .util import (
     Pane, as_enum, jbool, js_json, TIME, NUM, FLOAT,
     LINE_STYLE, MARKER_POSITION, MARKER_SHAPE,
     PRICE_SCALE_MODE, marker_position, marker_shape, js_data,
-    normal_df, merge_value_by_time, get_df_interval_offset, time_to_bar_time, merge_volume_by_time, filter_old_bars
+    normal_df, merge_value_by_time, merge_candle_by_time,
+    get_df_interval_offset, time_to_bar_time, merge_volume_by_time, filter_old_bars
 )
 
 
@@ -83,23 +84,6 @@ class SeriesCommon(Pane):
         """格式化单个时间值（委托到所属图表的时间级别）。"""
         return self._chart._single_datetime_format(arg)
 
-    def _check_has_value_column(self, df: pd.DataFrame):
-        """检查 DataFrame 是否包含 'value' 列，不包含则抛出异常。"""
-        if 'value' not in df.columns:
-            raise ValueError("DataFrame 缺少必需的 'value' 列。")
-
-    def _prepare_line_data(self, df, _df_cleaned=False):
-        """清洗、校验、选列，返回准备好的 df（time + value + option_columns），或 None（空时）。"""
-        df = self._clean_update_bars(df, _df_cleaned)
-        if df is None or df.empty:
-            return None
-        self._check_has_value_column(df)
-        cols = ['time', 'value']
-        for c in self._option_columns:
-            if c in df.columns and c not in cols:
-                cols.append(c)
-        return df[cols]
-
     def set(self, df: Optional[pd.DataFrame] = None, _df_cleaned=False):
         """
         设置或更新系列数据。
@@ -108,61 +92,14 @@ class SeriesCommon(Pane):
             如果为 None 或空 DataFrame，则清空数据。
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
-        self.run_script(f"{self.id}.series.setData([])")
-        self.data = pd.DataFrame()
-        self._last_bar = None
+        self.clear_data()
         if df is None or df.empty:
             return
         self.update_bars(df, _df_cleaned)
-        if self.markers:
-            self._update_markers()
-
-    def _clean_df(self, df, _df_cleaned=False):
-        """清洗 DataFrame（normal_df + _time_to_bar_time + merge_value_by_time）。
-
-        :param df: 输入 DataFrame
-        :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过全部三步。
-            False（默认）执行完整清洗流程。
-        """
-        if _df_cleaned:
-            return df
-        df = normal_df(df)
-        df = self._time_to_bar_time(df)
-        df = merge_value_by_time(df)
-        return df
 
     def update_bar(self, series: pd.Series):
         """更新最新一根 bar 或追加新 bar。"""
         self.update_bars(series.to_frame().T)
-
-    def _clean_update_bars(self, df: pd.DataFrame, _df_cleaned=False):
-        '''
-        通用函数，清理批量更新数据，确保时间是单调递增的，且在 _last_bar 后面。
-        :return:
-        '''
-        if df.empty:
-            return df
-
-        # 先直接清理格式
-        if not _df_cleaned:
-            df = normal_df(df)
-            df = self._time_to_bar_time(df)
-            df = merge_value_by_time(df)
-
-        # 确保时间是单调递增
-        if len(df) > 1:
-            if not df['time'].is_monotonic_increasing:
-                raise ValueError("Time column must be monotonic increasing.")
-
-        # 确保时间都在 _last_bar 后面
-        if self._last_bar is not None:
-            mask = df['time'] >= self._last_bar['time']
-            df = df[mask]
-            n_drop = len(mask) - mask.sum()
-            if n_drop > 0:
-                print(f'Warning! Drop {n_drop} lines because early than _last_bar.')
-
-        return df
 
     def update_bars(self, df: pd.DataFrame, _df_cleaned=False):
         """
@@ -174,17 +111,31 @@ class SeriesCommon(Pane):
         if df is None or df.empty:
             return
 
-        df = self._prepare_line_data(df, _df_cleaned)
+        # ── 清洗 ──
+        if not _df_cleaned:
+            df = normal_df(df)
+            df = self._time_to_bar_time(df)
+            df = merge_value_by_time(df)
+        df = filter_old_bars(df, self._last_bar['time'] if self._last_bar is not None else None)
         if df is None or df.empty:
             return
 
+        # ── 校验 + 选列 ──
+        missing = [c for c in self.bar_required_cols if c not in df.columns]
+        if missing:
+            raise ValueError(f"DataFrame 缺少必需列: {missing}")
+        cols = ['time', 'value']
+        for c in self._option_columns:
+            if c in df.columns and c not in cols:
+                cols.append(c)
+        df = df[cols]
+
+        # ── JS 更新 ──
         if self.data is None or self.data.empty:
-            # 首批数据 -> setData 批量写入
             self.data = df.copy()
             self._last_bar = df.iloc[-1]
             self.run_script(f'{self.id}.series.setData({js_data(df)})')
         else:
-            # 后续数据 -> per-row update
             js_commands = [f'{self.id}.series.update({js_data(row)});' for _, row in df.iterrows()]
             self.run_script(' '.join(js_commands))
             if self.data['time'].iloc[-1] == df['time'].iloc[0]:
@@ -210,27 +161,19 @@ class SeriesCommon(Pane):
         :param df: DataFrame，需要 time 列和 value 列
         :param _df_cleaned: True 表示数据已清洗过，跳过重复清洗。
         """
-        if df.empty:
+        if df is None or df.empty:
             return
-
-        if self._last_bar is None:
-            raise AssertionError('update_ticks() must be called after set()')
 
         if not _df_cleaned:
             df = normal_df(df)
             df = self._time_to_bar_time(df)
 
-        if 'value' not in df.columns:
-            raise ValueError("DataFrame 缺少必需的 'value' 列。")
+        missing = [c for c in self.tick_required_cols if c not in df.columns]
+        if missing:
+            raise ValueError(f"DataFrame 缺少必需列: {missing}")
 
-        # 按时间分组，取每组最后一条
-        group_df = df.groupby('time')
-        bars = pd.DataFrame({
-            'time': list(group_df.groups),
-            'value': group_df['value'].last().array,
-        })
-
-        self.update_bars(bars)
+        df = merge_value_by_time(df)
+        self.update_bars(df, _df_cleaned=True)
 
     def _update_markers(self):
         auto_scale = jbool(self._chart._marker_auto_scale)
@@ -253,7 +196,7 @@ class SeriesCommon(Pane):
                 if ({self.id}.seriesMarkers) {self.id}.seriesMarkers.setMarkers([]);
             ''')
 
-    def marker_list(self, markers: list[dict]):
+    def add_markers(self, markers: list[dict]):
         """
         Creates multiple markers.
 
@@ -283,10 +226,10 @@ class SeriesCommon(Pane):
         self._update_markers()
         return marker_ids
 
-    def marker(self, time: Optional[datetime] = None, position: MARKER_POSITION = 'below',
-               shape: MARKER_SHAPE = 'arrow_up', color: str = '#2196F3', text: str = '',
-               size: int = 1
-               ) -> str:
+    def add_marker(self, time: Optional[datetime] = None, position: MARKER_POSITION = 'below',
+                   shape: MARKER_SHAPE = 'arrow_up', color: str = '#2196F3', text: str = '',
+                   size: int = 1
+                   ) -> str:
         """
         Creates a new marker.
 
@@ -597,13 +540,15 @@ class VolumeSeries(SeriesCommon):
         ''')
         self.price_scale(scale_margin_top=self.scale_margin_top, scale_margin_bottom=self.scale_margin_bottom)
 
-    def set(self, df: pd.DataFrame, _df_cleaned=False):
+    def set(self, df: Optional[pd.DataFrame] = None, _df_cleaned=False):
         """设置成交量数据。自动根据 open/close 涨跌着色。
 
         :param df: DataFrame，需要包含 time, value, open, close 列。open/close 用于涨跌着色和持久化。
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
         self.clear_data()
+        if df is None or df.empty:
+            return
         self.update_bars(df, _df_cleaned)
 
     def update_bar(self, series: pd.Series):
@@ -623,23 +568,21 @@ class VolumeSeries(SeriesCommon):
             df = normal_df(df, self.bar_required_cols)
             df = merge_volume_by_time(df, is_tick=False)
 
-        vol_df = df
-
-        assert list(vol_df.columns) == list(self.bar_required_cols), \
-            f'发现数据列名不符合要求: {list(vol_df.columns)} != {list(self.bar_required_cols)}'
+        assert list(df.columns) == list(self.bar_required_cols),\
+            f'发现数据列名不符合要求: {list(df.columns)} != {list(self.bar_required_cols)}'
 
         # 过滤旧数据
         if self._last_bar is not None:
-            vol_df = filter_old_bars(vol_df, self._last_bar['time'])
+            df = filter_old_bars(df, self._last_bar['time'])
 
-        if vol_df.empty:
+        if df.empty:
             return
 
         if self.data is None or self.data.empty:
             # 首批数据 → setData 批量写入（JS 只需要 time, value, color）
-            self.data = vol_df.copy()
-            js_df = vol_df[['time', 'value']]
-            js_df['color'] = np.where(vol_df['close'] > vol_df['open'], self.up_color, self.down_color)
+            self.data = df.copy()
+            js_df = df[['time', 'value']]
+            js_df['color'] = np.where(df['close'] > df['open'], self.up_color, self.down_color)
             self.run_script(f'{self.id}.series.setData({js_data(js_df)})')
 
         else:
@@ -651,22 +594,22 @@ class VolumeSeries(SeriesCommon):
             col_open_idx = 2
 
             # 后续数据 → per-row update
-            df_len = len(vol_df)
-            if self.data.iat[-1, col_time_idx] == vol_df.iat[0, col_time_idx]:
+            df_len = len(df)
+            if self.data.iat[-1, col_time_idx] == df.iat[0, col_time_idx]:
                 if _cumulative_volume:
                     # 累加 volume
-                    vol_df.iat[0, col_value_idx] = self.data.iat[-1, col_value_idx] + vol_df.iat[0, col_value_idx]
+                    df.iat[0, col_value_idx] = self.data.iat[-1, col_value_idx] + df.iat[0, col_value_idx]
                     # 保留已有 open
-                    vol_df.iat[0, col_open_idx] = self.data.iat[-1, col_open_idx]
+                    df.iat[0, col_open_idx] = self.data.iat[-1, col_open_idx]
                 # 拼接到data上
-                self.data = pd.concat([self.data.iloc[:-1], vol_df], ignore_index=True)
+                self.data = pd.concat([self.data.iloc[:-1], df], ignore_index=True)
             else:
-                self.data = pd.concat([self.data, vol_df], ignore_index=True)
+                self.data = pd.concat([self.data, df], ignore_index=True)
 
-            vol_df = self.data.iloc[-df_len:]
+            df = self.data.iloc[-df_len:]
             # 现场计算 color，JS 只需要 time, value, color
-            js_df = vol_df[['time', 'value']]
-            js_df['color'] = np.where(vol_df['close'] > vol_df['open'], self.up_color, self.down_color)
+            js_df = df[['time', 'value']]
+            js_df['color'] = np.where(df['close'] > df['open'], self.up_color, self.down_color)
             js_commands = [f'{self.id}.series.update({js_data(row)})' for _, row in js_df.iterrows()]
             self.run_script('; '.join(js_commands))
 
@@ -683,6 +626,10 @@ class VolumeSeries(SeriesCommon):
             return
         if not _df_cleaned:
             df = normal_df(df, self.tick_required_cols)
+
+        assert list(df.columns) == list(self.tick_required_cols),\
+            f'发现数据列名不符合要求: {list(df.columns)} != {list(self.tick_required_cols)}'
+
         df = merge_volume_by_time(df, is_tick=True)
         self.update_bars(df, _df_cleaned=True, _cumulative_volume=True)
 
@@ -928,28 +875,10 @@ class CandleSeries(SeriesCommon):
             如果为 None 或空 DataFrame，则清空数据。
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
-        self.run_script(f"{self.id}.series.setData([])")
-        self.data = pd.DataFrame()
-
+        self.clear_data()
         if df is None or df.empty:
             return
-
-        df = self._clean_df(df, _df_cleaned)
-
-        required = ['open', 'high', 'low', 'close']
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            raise ValueError(f"DataFrame 缺少必需列: {missing}")
-
-        ohlc = df[['time', 'open', 'high', 'low', 'close']]
-        self.data = ohlc.copy()
-        self._last_bar = ohlc.iloc[-1]
-
-        ohlc_js_data = js_data(ohlc)
-        self.run_script(f'{self.id}.series.setData({ohlc_js_data}); ')
-
-        if self.markers:
-            self._update_markers()
+        self.update_bars(df, _df_cleaned)
 
     def update_bar(self, series: pd.Series):
         """更新最新一根 bar 或追加新 bar。"""
@@ -962,29 +891,22 @@ class CandleSeries(SeriesCommon):
         :param df: DataFrame，必须包含 time/date 列和 open, high, low, close 列。
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
-        if df.empty:
+        if df is None or df.empty:
             return
 
-        df = self._clean_df(df, _df_cleaned)
+        if not _df_cleaned:
+            df = normal_df(df, self.bar_required_cols)
+            df = merge_candle_by_time(df, is_tick=False)
 
-        required = ['open', 'high', 'low', 'close']
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            raise ValueError(f"DataFrame 缺少必需列: {missing}")
+        # 选列：AbstractChart 可能传入带 volume 等额外列的 df
+        ohlc = df[list(self.bar_required_cols)]
 
-        ohlc = df[['time', 'open', 'high', 'low', 'close']]
-
-        if len(ohlc) > 1 and not ohlc['time'].is_monotonic_increasing:
-            raise ValueError("Time column must be monotonic increasing.")
-
+        # 过滤旧数据
         if self._last_bar is not None:
-            mask = ohlc['time'] >= self._last_bar['time']
-            ohlc = ohlc[mask]
-            n_drop = len(mask) - mask.sum()
-            if n_drop > 0:
-                print(f'Warning! Drop {n_drop} bars because earlier than _last_bar.')
-            if ohlc.empty:
-                return
+            ohlc = filter_old_bars(ohlc, self._last_bar['time'])
+
+        if ohlc.empty:
+            return
 
         js_commands = []
         for _, row in ohlc.iterrows():
@@ -998,7 +920,6 @@ class CandleSeries(SeriesCommon):
             self.data = pd.concat([self.data, ohlc], ignore_index=True)
 
         self._last_bar = ohlc.iloc[-1]
-
         self.run_script(' '.join(js_commands))
 
     def update_tick(self, series: pd.Series):
@@ -1012,36 +933,25 @@ class CandleSeries(SeriesCommon):
         """
         批量使用 tick 更新图表，内部自动聚合成 bar。
 
+        输入为原始 tick：time, value(=price)。
+        同一时间窗口内的 tick 聚合为 OHLC。
+        聚合后委托 update_bars 统一处理过滤/更新/维护。
+
         :param df: DataFrame with columns: time, value (= price)
         :param _df_cleaned: True 表示数据已由 AbstractChart 清洗过，跳过重复清洗。
         """
-        if df.empty:
+        if df is None or df.empty:
             return
 
-        if self._last_bar is None:
-            raise AssertionError('update_ticks() must be called after set()')
+        if not _df_cleaned:
+            # AbstractChart 已做 normal_df + time_to_bar_time，列名是 time + value
+            df = normal_df(df, self.tick_required_cols)
 
-        df = self._clean_df(df, _df_cleaned)
+        assert list(df.columns) == list(self.tick_required_cols),\
+            f'发现数据列名不符合要求: {list(df.columns)} != {list(self.tick_required_cols)}'
 
-        if 'value' not in df.columns:
-            raise ValueError("DataFrame 缺少必需的 'value' 列。")
-
-        group_df = df.groupby('time')
-
-        bars = pd.DataFrame({
-            'time': list(group_df.groups),
-            'open': group_df['value'].first().array,
-            'high': group_df['value'].max().array,
-            'low': group_df['value'].min().array,
-            'close': group_df['value'].last().array,
-        })
-
-        if self._last_bar['time'] == bars['time'].iloc[0]:
-            bars.iloc[0, 1] = self._last_bar['open']
-            bars.iloc[0, 2] = max(self._last_bar['high'], bars.iloc[0, 2])
-            bars.iloc[0, 3] = min(self._last_bar['low'], bars.iloc[0, 3])
-
-        self.update_bars(bars)
+        df = merge_candle_by_time(df, is_tick=True)
+        self.update_bars(df, _df_cleaned=True)
 
 
 class AreaSeries(SeriesCommon):

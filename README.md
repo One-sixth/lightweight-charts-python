@@ -299,7 +299,7 @@ python -m build
 | `chart.set(df)` | 设置 K线数据 |
 | `chart.update(series)` | 更新最后一根 K线 |
 | `chart.update_from_tick(tick)` | 从逐笔成交更新 K线 |
-| `chart.marker(text, ...)` | 添加价格标记 |
+| `chart.add_marker(text, ...)` | 添加价格标记 |
 | `chart.marker_auto_scale(enable)` | 控制标记是否参与价格轴缩放 |
 | `chart.pop(count)` | 从末尾移除 N 个数据点 |
 | `chart.create_line(name, ...)` | 创建折线指标 |
@@ -773,7 +773,7 @@ from lightweight_charts import Chart
 if __name__ == '__main__':
     chart = Chart(marker_auto_scale=False)
     chart.set(df)
-    chart.marker(time='2024-01-15', position='above', text='Event')
+    chart.add_marker(time='2024-01-15', position='above', text='Event')
     chart.show(block=True)
 ```
 
@@ -1118,7 +1118,7 @@ ref = chart.create_candle_series(
 ref.set(df_reference)       # 初始数据
 ref.update(new_bar)         # 更新/追加
 ref.update_bars(df_more)   # 批量追加
-ref.marker(...)             # 打标记
+ref.add_marker(...)             # 打标记
 
 chart.show(block=True)
 ```
@@ -1131,7 +1131,7 @@ chart.show(block=True)
 | `set(df)` | 设置初始 OHLC 数据 |
 | `update(series)` | 更新最新一根 bar 或追加新 bar |
 | `update_bars(df)` | 批量更新多根 bar |
-| `marker(...)` | 在独立K线上打标记 |
+| `add_marker(...)` | 在独立K线上打标记 |
 | `delete()` | 删除系列并清理 JS 对象 |
 | `pane_index` | 控制绘制在哪个 pane |
 
@@ -1152,15 +1152,15 @@ chart.set(candle_df)
 # 在 Line 上打标记
 line20 = chart.create_line('SMA20', color='#2196F3', width=2)
 line20.set(sma20)
-line20.marker(dates[25], 'below', 'circle', '#2196F3', 'SMA20 Cross')
+line20.add_marker(dates[25], 'below', 'circle', '#2196F3', 'SMA20 Cross')
 
 # 在 Histogram 上打标记
 hist = chart.create_histogram('Volume', color='rgba(100,100,200,0.5)', pane_index=1)
 hist.set(vol_df)
-hist.marker(dates[5], 'below', 'circle', '#9C27B0', 'Vol Spike')
+hist.add_marker(dates[5], 'below', 'circle', '#9C27B0', 'Vol Spike')
 
 # 批量打标记
-line20.marker_list([
+line20.add_markers([
     {'time': dates[35], 'position': 'below', 'shape': 'arrow_up', 'color': '#00BCD4', 'text': 'Batch 1'},
     {'time': dates[45], 'position': 'above', 'shape': 'arrow_down', 'color': '#00BCD4', 'text': 'Batch 2'},
 ])
@@ -1170,7 +1170,7 @@ chart.show(block=True)
 
 **支持标记的系列：**
 
-| 系列 | marker() | marker_list() |
+| 系列 | add_marker() | add_markers() |
 |------|----------|---------------|
 | CandleSeries（主 K 线） | ✅ | ✅ |
 | LineSeries（折线） | ✅ | ✅ |

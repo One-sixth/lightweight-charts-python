@@ -60,8 +60,8 @@ def add_full_resources(chart, bars, prefix, line_color):
     chart.create_line(f'{prefix} MA5', color=line_color, width=2).set(ma5)
 
     # 标记
-    chart.marker(bars['time'].iloc[10], 'above', 'circle', '#ff4444', f'{prefix} 卖出')
-    chart.marker(bars['time'].iloc[30], 'below', 'arrow_up', '#44ff44', f'{prefix} 买入')
+    chart.add_marker(bars['time'].iloc[10], 'above', 'circle', '#ff4444', f'{prefix} 卖出')
+    chart.add_marker(bars['time'].iloc[30], 'below', 'arrow_up', '#44ff44', f'{prefix} 买入')
 
     # 价格线
     chart.create_price_line(price=bars['close'].mean(), title=f'{prefix} 均价',

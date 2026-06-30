@@ -132,9 +132,9 @@ def _test_resource_full_cleanup_impl(toolbox: bool):
         assert len(chart._lines) == 3
         print("  2b2. create_histogram [OK]")
 
-        chart.marker(bars['time'].iloc[5], 'above', 'circle', '#ff0000', 'm1')
-        chart.marker(bars['time'].iloc[10], 'below', 'arrow_up', '#00ff00', 'm2')
-        chart.marker_list([
+        chart.add_marker(bars['time'].iloc[5], 'above', 'circle', '#ff0000', 'm1')
+        chart.add_marker(bars['time'].iloc[10], 'below', 'arrow_up', '#00ff00', 'm2')
+        chart.add_markers([
             {'time': bars['time'].iloc[15], 'position': 'above', 'shape': 'square',
              'color': '#0000bf', 'text': 'm3'},
             {'time': bars['time'].iloc[20], 'position': 'below', 'shape': 'circle',
@@ -533,7 +533,7 @@ def test_reset_cleanup():
 
         # --- Step 2: add markers and lines ---
         print("\n[2] Add markers + lines ...")
-        chart.marker(bars['time'].iloc[5], 'above', 'circle', 'red', 'm1')
+        chart.add_marker(bars['time'].iloc[5], 'above', 'circle', 'red', 'm1')
         line1 = chart.create_line('line1', color='#ff0000')
         line1.set(bars[['time', 'close']].rename(columns={'close': 'value'}))
         all_clean &= log_check(len(chart.candle.markers) == 1, "1 marker", errors, "r_marker_added")

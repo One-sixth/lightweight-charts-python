@@ -64,14 +64,14 @@ if __name__ == '__main__':
         pos = positions[i]
         color = '#26A69A' if pos == 'above' else '#EF5350'
 
-        chart.marker(
+        chart.add_marker(
             time=target_time,
             position=pos,
             shape='arrow_up' if pos == 'above' else 'arrow_down',
             color=color,
             text=f'M{i+1}',
         )
-        sub.marker(
+        sub.add_marker(
             time=target_time,
             position=pos,
             shape='arrow_up' if pos == 'above' else 'arrow_down',
