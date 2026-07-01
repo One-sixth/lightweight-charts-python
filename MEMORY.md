@@ -4,6 +4,26 @@
 
 ---
 
+## 🎉 v3.0 里程碑
+
+2026-07-01 正式发布 **v3.0.0**。从 v2.7.x 到 v3.0 经历了 **7 个子版本迭代**，核心功能覆盖率达到 **~85%**。
+
+### v3.0 关键成就
+- **7 种 Series 类型**：Candle/OHLCBar/Line/Area/Baseline/Histogram/Volume/OI
+- **完整 API 封装**：TimeScaleApi（14 方法）、PriceScaleApi（6 方法）
+- **ToolBox 绘图系统**：跨 Pane 绘图、Pane Primitive 架构、on_change 回调
+- **40 个示例**，**8 个测试套件**
+- **QUICK_REFERENCE.md** 1886 行完整快查文档
+- **HtmlTabChart** 快照重放架构
+- **Multi-window 支持**：多图表、子图、跨进程、Reflex 嵌入
+
+### 注意
+- 所有 Breaking Changes 已在 v2.8.x 系列中分阶段完成，v3.0 确认最终状态
+- `Line`/`Histogram` 等旧别名已移除，统一使用 `LineSeries`/`HistogramSeries`
+- `update_from_ticks()` 等旧方法已移除，统一使用 `update_ticks()`
+
+---
+
 ## ⚠️ pywebview 关键陷阱（最高优先级）
 
 ### evaluate_js 无法序列化 lightweight-charts API 对象
@@ -1389,4 +1409,4 @@ flush():                  _pending → postMessage → 清空
 
 ---
 
-*最后更新：2026-07-01（TimeScaleApi & PriceScaleApi 实现）*
+*最后更新：2026-07-01（v2.8.6 API 补全：TimeScaleApi、PriceScaleApi、build_price_scale_options、price_scale 重构）*

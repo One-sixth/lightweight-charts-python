@@ -1,11 +1,16 @@
-# 📊lightweight-charts-python
+# 📊lightweight-charts-python **v3.0** 🚀
 
 # [MIT License](LICENSE)
 
 ![cover1](images/29_grid_layout.png)
 ![cover2](images/12_audit.png)
 
-**lightweight-charts-python** is dedicated to providing a simple, Pythonic way to access TradingView's Lightweight Charts.
+**lightweight-charts-python v3.0** — A **forked & enhanced version** based on the original v2.1 by the upstream author, with significant feature expansions.
+
+> From the initial fork point (v2.5.1) to **v3.0**, it has undergone **15 sub-version iterations** and **21 days of intensive development**, achieving **~85% core API coverage**.
+
+> ✅ 7 Series types · TimeScaleApi · PriceScaleApi · 40 examples · 8 test suites  
+> 📖 [Migration Guide v2.5→v3.0](MIGRATION_v2.5_to_v3.0.md) | [Quick Reference](QUICK_REFERENCE.md) | [Changelog](CHANGELOG.md)
 
 中文版 ReadMe: [README.md](README.md)
 
@@ -37,53 +42,92 @@ Other repositories are also welcome to use the code as needed.
 ---
 
 
-## 📓 Updates and Enhancements
+## 🚀 New Features / Changes / Enhancements vs. Original v2.1
 
-Below is the consolidated and optimized Markdown version, retaining all information with ordered lists and emojis for a clear, readable structure:
+> The list below compares this forked version against the original upstream v2.1.
 
-1. ✅ **Series Batch Update API** — `Line.update_bars()` / `Histogram.update_bars()` updates multiple data points at once, significantly improving performance
-2. 🚀 **K-line Batch Update** — `chart.update_bars()` / `chart.update_from_ticks()` batch data processing acceleration up to 10x
-3. 📊 **Open Interest Visualization** — Independent Y-axis scaling for Open Interest, overlaid with volume display
-4. 🔄 **Reflex Integration** — `ReflexChart(StaticLWC)` embeds K-line charts in [Reflex](https://reflex.dev) applications; incremental real-time updates via postMessage bridge; JS→Python callback bridge auto-forwards events like crosshair_move to State
-5. 🧩 **Initialization Idempotency** — Resolves duplicate chart creation caused by module double-import during Reflex compile/runtime
-6. 📚 **Example 26** — Performance comparison demo for Line and Histogram batch updates
-7. 📚 **Example 27** — Complete Reflex example (SMA indicator + bar push + crosshair callback), with `clean.ps1` / `run.ps1` scripts
-8. 🖥️ **Cross-Process Qt Embedding** — `CrossProcessChart` embeds pywebview chart window into PySide6/PyQt6 QWidget via native handle, supporting borderless mode and window size synchronization, similar to Chrome's multi-process architecture (Windows + Linux/X11)
-9. 📚 **Example 28** — CrossProcessChart cross-process embedding into PySide6 QWidget complete demo
-10. 🎛️ **Grid Layout System** — `position` parameter supports three formats: integer (e.g., `111`), tuple (e.g., `(2,2,1)`), string (deprecated), similar to matplotlib's subplot
-11. 🔧 **Runtime Position Control** — New `get_position()` and `set_position()` methods for dynamic chart position adjustment
-12. 📏 **Relative Size Control** — `width`/`height` parameters relative to grid cells, supporting shrink (<1.0) and expansion (>1.0)
-13. 📚 **Example 29** — Grid layout complete demo
-14. 🔗 **Chart Synchronization** — `create_subchart()` supports multi-chart synchronized timelines and crosshairs
-15. 📚 **Example 31** — Chart synchronization complete demo
-16. ⚠️ **Grid Conflict Detection** — Automatically detects grid specification conflicts within the same window to prevent layout confusion
-17. 🧹 **Code Optimization** — Refactored `parse_position()` and `_convert_string_to_grid()` functions for improved code maintainability
-18. 🌊 **Real-time Streaming Updates** — Supports direct K-line updates from tick data
-19. 📈 **Multi-Panel Charts** — Create subcharts using `create_subchart()` (works in conjunction with chart synchronization)
-20. ✏️ **Toolbox** — Draw trendlines, rectangles, rays, and horizontal lines directly on charts
-21. 🎯 **Event System** — Timeframe selector, search, keyboard shortcuts, etc.
-22. 📋 **Table Component** — For watchlists, order management, and position management
-23. 🔌 **Polygon.io Integration** — Direct market data fetching
-24. 🏷️ **Persistent Legend** — OHLC remains visible when mouse moves off the chart
-25. 🎨 **Vertical Span Highlighting** — Semi-transparent fill marking date ranges
-26. 🧹 **Resource Cleanup API** — `reset()`, `clear_handlers()`, `audit()`, `delete()`
-27. 📐 **_PriceLine_ Object** — `create_price_line().delete()`
-28. 🗑️ **Table.delete()** — Destroys table and cleans up JS state
-29. 🔤 **Human-Readable IDs** — `window.Chart_1`, `window.Line_3`, etc.
-30. 📊 **Resource Audit** — `chart.audit(use_js=True)` returns complete TOML format JS variable state
-31. ✅ **Comprehensive Cleanup Tests** — `test_cleanup.py` verifies Python + JS leak-free for all resource types
-32. 🗂️ **Multiple Chart Instances** — Fully independent chart objects
-33. 📑 **HtmlTabChart** — Multi-strategy Tab switching chart, supports strategy switching, trade details, performance metrics (adapted from [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python)'s HtmlChart_BN)
-34. 📚 **Example 32** — HtmlTabChart multi-strategy Tab switching complete demo
-35. 🔄 **Subchart Content Reset** — `reset_sub()` clears all subchart content (data/lines/markers/drawings/tables/ToolBox/TopBar/Legend/Events/sync/handlers), preserves layout, does not affect other subcharts, reusable after reset
-36. 📚 **Example 33** — reset_sub subchart content reset complete demo (4-subchart grid + main chart reset + independent subchart + crosshair sync recovery)
-37. 🔗 **`sync_id` Group Sync API (v2.6.0)** — New group-name-based chart synchronization. All `AbstractChart` subclasses uniformly support `sync_id` and `sync_crosshairs_only` parameters
+### 🔄 Architecture Changes
 
-    🧰 **Primary Supported Environments** — PySide6, PyQt6, wxPython
+| Change | Original v2.1 | This Fork v3.0 | Notes |
+|--------|---------------|----------------|-------|
+| Composition | CandleSeries with attached volume/OI | Volume/OI independent, AbstractChart manages | Auto-rebuild after reset |
+| Series management | `candle.attach_volume()` | `chart.volume` / `chart.oi` auto-managed | Set-and-forget |
+| Input columns | Inconsistent across series | Unified `time` + `value` | Standardized column names |
+| normal_df | Auto lowercase + date→time | No auto conversion | Column names must match exactly |
+| Sync | `sync=chart.id` pair sync | `sync_id='group'` group sync | Main chart can also sync |
+| `_lines` linking | `chart.set()` auto-fills lines | No auto-forward to _lines | Manual `line.set(df)` required |
+
+### 📝 API Renames
+
+| Original v2.1 | This Fork v3.0 | Notes |
+|---------------|----------------|-------|
+| `marker()` | `add_marker()` | Add single marker |
+| `markers()` | `add_markers()` | Batch add markers |
+| `markers` (method) | `markers` (property) | Use `chart.markers` to view marker list |
+| `update()` | `update_bar()` | Single bar update |
+| `update_from_tick()` | `update_tick()` | Single tick update |
+| `update_from_ticks()` | `update_ticks()` | Batch tick update |
+| `Line` / `Histogram` class | `LineSeries` / `HistogramSeries` | Unified naming |
+| `toolbox.save_drawings_under()` | `toolbox.on_change += func` | Callback registration |
+| `price_scale(perm_width=N)` | Removed | No replacement |
 
 ---
 
-## ⚠️ v2.6.0 Breaking Change: Chart Sync API Rewrite
+### ✨ New Features
+
+#### New Series Types
+- **AreaSeries** — Area chart (line + gradient fill)
+- **OHLCBarSeries** — OHLC bar chart
+- **BaselineSeries** — Baseline chart (split color above/below)
+- **CandleSeries** — Independent K-line series (any pane, no volume/OI)
+
+#### New APIs
+- **TimeScaleApi** — `chart.time_scale_api()` full time axis control (14 methods)
+- **PriceScaleApi** — `chart.price_scale_api(scale_id)` full price axis control (6 methods)
+- **`chart.fit()` / `chart.set_visible_range()`** — View control
+- **`chart.show(wait=N)`** — Auto-close after N seconds
+- **`chart.chart_options()`** — Advanced chart options
+
+#### New Chart Types
+- **HtmlTabChart** — Multi-strategy Tab switching, init snapshot replay
+- **CrossProcessChart** — Cross-process Qt embedding (Windows + Linux/X11)
+- **ReflexChart** — Reflex framework embedding
+- **HTMLChart / JupyterChart / StreamlitChart / QtChart / WxChart** — Multiple embedding options
+
+#### Drawing System
+- **ToolBox Cross-Pane Drawing** — Auto-detect target pane
+- **Pane Primitive Architecture** — Drawing attaches directly to pane
+- **ToolBox on_change Callback** — `+=` / `-=` register/unregister
+- **DrawingInfo Enhanced** — Added pane_index/time/price fields
+- **Legend OHLC Support** — Bar/Candlestick shows O H L C
+- **Legend Grouping** — Group toggle for one-click visibility
+
+#### Batch & Performance
+- **`update_bars(df)`** — Batch OHLCV incremental update
+- **`update_ticks(df)`** — Batch tick incremental update
+- **`update_bars()` for Line/Histogram** — Series batch update
+- **Message loop exception protection** — Single message failure won't crash
+
+#### Other Enhancements
+- **Histogram Per-Bar Colors** — Independent coloring via `color` column
+- **reset_sub()** — Subchart content reset, layout preserved
+- **Grid Layout System** — `position` parameter: integer/tuple formats
+- **Runtime Position Control** — `get_position()` / `set_position()`
+- **8 Test Suites** — Resource cleanup / features / data aggregation / position / etc.
+- **40 Examples** — From basic to advanced cross-pane drawing
+- **Fine-grained resource reclamation** — Near zero memory leaks in long runs
+- **`_remove_my_handlers()`** — Precise handler cleanup, multi-chart safe
+
+> 🧰 **Primary Supported Environments** — PySide6, PyQt6, wxPython
+
+---
+
+## ⚠️ Breaking Changes (v2.5.1 → v3.0)
+
+> v3.0 is the first official major release. All breaking changes were completed in phases during the v2.8.x series.  
+> See the complete [Migration Guide v2.5→v3.0](MIGRATION_v2.5_to_v3.0.md) for step-by-step migration and verification checklist.
+
+### v2.6.0 — Chart Sync API Rewrite
 
 **Old API (v2.5.x and earlier)**: `create_subchart(sync=chart.id)` — Pass the target chart's ID (e.g. `window.Chart_1`) to establish **pair sync** between A↔B. The main chart could not participate in sync (no `sync_id` parameter).
 
@@ -162,25 +206,29 @@ The built wheel package will be in the dist directory.
 | Method | Description |
 |--------|-------------|
 | `chart.set(df)` | Set K-line data |
-| `chart.update(series)` | Update the last K-line |
-| `chart.update_from_tick(tick)` | Update K-line from tick data |
-| `chart.add_marker(text, ...)` | Add price marker |
+| `chart.update_bar(series)` | Update the last K-line |
+| `chart.update_tick(series)` | Update K-line from tick data |
+| `chart.add_marker(time, ...)` | Add price marker |
 | `chart.marker_auto_scale(enable)` | Control whether markers participate in price axis scaling |
 | `chart.pop(count)` | Remove N data points from the end |
-| `chart.create_line(name, ...)` | Create line indicator |
-| `chart.create_histogram(name, ...)` | Create histogram indicator |
+| `chart.create_line(name, ...)` | Create line indicator (returns LineSeries) |
+| `chart.create_histogram(name, ...)` | Create histogram indicator (returns HistogramSeries) |
+| `chart.create_area_series(name, ...)` | Create area series |
+| `chart.create_ohlc_bar_series(name, ...)` | Create OHLC bar series |
+| `chart.create_baseline_series(name, ...)` | Create baseline series |
 | `chart.create_subchart(...)` | Create sub-panel |
 | `chart.create_price_line(price, ...)` | Create price line |
 | `chart.horizontal_line(price, ...)` | Create horizontal line |
 | `chart.vertical_span(start, end, ...)` | Create vertical highlight span |
-| `chart.get_position()` | Get chart render position (x, y, width, height) in percentages (before or after show) |
-| `chart.set_position(x, y, width, height)` | Dynamically set chart render position (before or after show, pass None to reset) |
+| `chart.get_position()` | Get chart render position (x, y, width, height) |
+| `chart.set_position(x, y, width, height)` | Dynamically set chart render position |
 | `chart.audit(use_js=False)` | Resource audit (Python side) |
 | `chart.audit(use_js=True)` | Resource audit (JS side, TOML format) |
 | `chart.reset()` | Reset chart to initial state |
-| `chart.screenshot(...)` | Screenshot (v5.2.0+ enhancement: supports add_top_layer and include_crosshair) |
-| `chart.clear_handlers()` | Clear all event handlers |
-| `chart.price_scale(price_format=...)` | Configure price scale, supports price_format to avoid floating-point precision issues |
+| `chart.screenshot(...)` | Screenshot (supports add_top_layer and include_crosshair) |
+| `chart.price_scale(price_format=...)` | Configure price scale |
+| `chart.time_scale_api()` | Time axis API (scroll/range/event subscription) |
+| `chart.price_scale_api(scale_id)` | Price axis API (options/range/size) |
 
 ---
 
@@ -273,8 +321,11 @@ Learning through examples is recommended. There is extensive reference code and 
 | 35 | `35_line_markers` | Line / Histogram series markers |
 | 36 | `36_histogram_colors` | Histogram arbitrary per-bar colors |
 | 37 | `37_more_series_types` | AreaSeries / OHLCBarSeries / BaselineSeries |
+| 38 | `38_drawing_multi_pane` | Cross-pane Drawing distribution |
+| 39 | `39_legend_group` | Legend grouping: group toggle + individual switches |
+| 40 | `40_toolbox_multi_pane` | ToolBox cross-pane drawing: 3 pane demo |
 
----
+> **Total: 40 examples** (v3.0)
 
 
 ## Example Screenshots
@@ -332,7 +383,7 @@ if __name__ == '__main__':
     chart.set(pd.read_csv('ohlc.csv'))
     chart.show()
     for _, tick in pd.read_csv('ticks.csv').iterrows():
-        chart.update_from_tick(tick)
+        chart.update_tick(tick)
         sleep(0.03)
 ```
 
@@ -545,7 +596,7 @@ if __name__ == '__main__':
     chart.show()
     # Batch update
     chart.update_bars(new_bars_df)
-    chart.update_from_ticks(ticks_df)
+    chart.update_ticks(ticks_df)
 ```
 
 ![Batch Update](images/13_batch_update.png)
@@ -1018,7 +1069,7 @@ ref = chart.create_candle_series(
     down_color='rgba(255, 100, 0, 0.8)',
 )
 ref.set(df_reference)       # Initial data
-ref.update(new_bar)         # Update/append
+ref.update_bar(new_bar)         # Update/append
 ref.update_bars(df_more)   # Batch append
 ref.add_marker(...)             # Add marker
 
@@ -1031,7 +1082,7 @@ chart.show(block=True)
 |---------|-------------|
 | `create_candle_series()` | Create independent K-line (no volume/open interest) |
 | `set(df)` | Set initial OHLC data |
-| `update(series)` | Update latest bar or append new bar |
+| `update_bar(series)` | Update latest bar or append new bar |
 | `update_bars(df)` | Batch update multiple bars |
 | `add_marker(...)` | Add markers on independent K-line |
 | `delete()` | Delete series and clean up JS object |
@@ -1073,7 +1124,7 @@ chart.show(block=True)
 **Supported Series for Markers:**
 
 | Series | add_marker() | add_markers() |
-|--------|----------|---------------|
+|--------|----------|-----------|
 | CandleSeries (main K-line) | ✅ | ✅ |
 | LineSeries (line) | ✅ | ✅ |
 | HistogramSeries (histogram) | ✅ | ✅ |
@@ -1169,5 +1220,100 @@ chart.show(block=True)
 | `legend=False` | All series support it | Hide auxiliary series (background bands, helper lines) from legend |
 
 ![New Series Types](images/37_more_series_types.png)
+
+---
+
+### Example 38: Cross-Pane Drawing
+
+```python
+from lightweight_charts import Chart
+
+# 3-pane drawing demo
+chart = Chart(width=1200, height=800, title='Drawing Series Multi-Pane', toolbox=True)
+chart.legend(visible=True)
+chart.set(df)
+
+# Pane 0: K-line + horizontal line + trend line + Box
+chart.horizontal_line(price=200, color='orange', width=2, text='Avg Price')
+chart.trend_line(start_time, start_price, end_time, end_price, color='#1E80F0')
+chart.box(start_time, start_price, end_time, end_price, color='#E91E63')
+
+# Pane 1: histogram + ray + horizontal line
+hist = chart.create_histogram('RSI Dev', pane_index=1)
+chart.ray_line(start_time, value=50, color='gray', pane_index=1)
+chart.horizontal_line(price=70, color='red', pane_index=1)
+
+# Pane 2: line + vertical line
+sma = chart.create_line('SMA 50', pane_index=2)
+chart.vertical_line(time=key_time, color='#FF5722', pane_index=2)
+
+chart.show(block=True)
+```
+
+![Cross-Pane Drawing](images/38_drawing_multi_pane.png)
+
+---
+
+### Example 39: Legend Grouping
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart()
+chart.legend(visible=True, ohlc=True, percent=True, lines=True)
+chart.set(df)
+
+# group='MA': both MAs in the same legend row
+sma20 = chart.create_line('SMA 20', color='yellow', width=1, group='MA')
+ema50 = chart.create_line('EMA 50', color='cyan', width=1, group='MA')
+
+# group='MOM': momentum indicators same row
+roc = chart.create_line('ROC 10', color='red', width=1, group='MOM')
+mom = chart.create_line('MOM 10', color='green', width=1, group='MOM')
+
+# No group: independent row
+rsi = chart.create_line('RSI 14', color='purple', pane_index=1)
+
+chart.show(block=True)
+```
+
+**Legend Interaction:**
+- ♦ **Group toggle**: one-click toggle all series in the group
+- 👁 **Eye icon**: toggle individual series, group toggle updates automatically
+- Cross-pane group names are supported
+
+![Legend Grouping](images/39_legend_group.png)
+
+---
+
+### Example 40: ToolBox Cross-Pane Drawing
+
+```python
+from lightweight_charts import Chart
+from lightweight_charts.toolbox import DrawingInfo
+
+chart = Chart(width=1200, height=800, toolbox=True)
+chart.set(df)
+
+# 3 panes
+sma = chart.create_line('SMA 7', color='red', pane_index=0)
+hist = chart.create_histogram('Delta', color='#9B59B6', pane_index=1)
+rsi = chart.create_line('RSI', color='#26A69A', pane_index=2)
+
+# Register drawing change callback (auto-includes pane_index)
+def on_drawings_change(drawings: list[DrawingInfo]):
+    for d in drawings:
+        print(f'pane={d.pane_index}  type={d.type}')
+
+chart.toolbox.on_change += on_drawings_change
+chart.show(block=True)
+```
+
+**Cross-Pane ToolBox:**
+- ToolBox UI stays on Pane 0
+- Click any pane to draw there
+- Callbacks include `pane_index` automatically
+
+![ToolBox Cross-Pane](images/40_toolbox_multi_pane.png)
 
 ---

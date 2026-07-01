@@ -1,11 +1,17 @@
-# 📊lightweight-charts-python
+# 📊lightweight-charts-python **v3.0** 🚀
 
 # [MIT License](LICENSE)
 
 ![cover1](images/29_grid_layout.png)
 ![cover2](images/12_audit.png)
 
-**lightweight-charts-python** 致力于提供简单、Pythonic 的方式接入 TradingView 的 Lightweight Charts。
+**lightweight-charts-python v3.0** — 基于原作者 v2.1 的**特化维护版本**，大幅扩展功能。
+
+> 原版 v2.1 由原作者维护，此后由我接手进行深度定制和功能增强。  
+> 从接手时的 **v2.5.1** 到 **v3.0**，经历了 **15 个子版本迭代**、**21 天密集开发**，核心功能覆盖率达 **~85%**。
+
+> ✅ 7 种 Series 类型 · TimeScaleApi · PriceScaleApi · 40 个示例 · 8 个测试套件  
+> 📖 [迁移指南 v2.5→v3.0](MIGRATION_v2.5_to_v3.0.md) | [快查文档](QUICK_REFERENCE.md) | [更新日志](CHANGELOG.md)
 
 English Version ReadMe: [README_EN.md](README_EN.md)
 
@@ -28,62 +34,85 @@ https://github.com/gopalparashar421/lightweight-charts-python
 https://github.com/smalinin/bn_lightweight-charts-python  
 https://github.com/EsIstJosh/lightweight-charts-python  
 
-
-## 🤣如果要说我的项目有啥明显的优势，可能是为了长时间运行，而增加的精细资源回收，几乎不存在内存泄露。  
-对了，还有支持类似figure的 Grid布局，调整布局更加轻松精确。  
-还有批量更新API，支持一次性多个数据点，批量更新性能大幅提升。  
-
-同时也欢迎其他仓库按需取用代码。  
-
-# ⬇️下方有更多示例画廊
-
 ---
 
+## 🚀 相比原版 v2.1 的新功能 / 变更 / 增强
 
-## 📓更新与增强
+> 以下列出本特化版本相对原作者 v2.1 的全部新增和变更内容。
 
-以下是合并优化后的 Markdown 版本，保留了所有信息，并采用有序列表 + 表情符号，结构清晰易读：
+### 🔄 架构变更
 
-1. ✅ **序列批量更新 API** — `Line.update_bars()` / `Histogram.update_bars()` 一次性更新多个数据点，性能大幅提升
-2. 🚀 **K线批量更新** — `chart.update_bars()` / `chart.update_ticks()` 批量数据处理加速 10x
-3. 📊 **持仓量可视化** — Open Interest 独立 Y 轴缩放，与成交量叠加显示
-4. 🔄 **Reflex 集成** — `ReflexChart(StaticLWC)` 在 [Reflex](https://reflex.dev) 应用中嵌入 K线图；通过 postMessage 桥接实现增量实时更新；JS→Python 回调桥接将 crosshair_move 等事件自动转发到 State
-5. 🧩 **初始化幂等性** — 解决 Reflex 编译/运行时模块双重导入导致的图表重复创建问题
-6. 📚 **示例 26** — Line 和 Histogram 的 batch update 性能对比演示
-7. 📚 **示例 27** — 完整 Reflex 示例（SMA 指标 + bar 推送 + crosshair 回调），附带 `clean.ps1` / `run.ps1` 脚本
-8. 🖥️ **跨进程嵌入 Qt** — `CrossProcessChart` 将 pywebview 图表窗口通过原生句柄嵌入 PySide6/PyQt6 QWidget，支持无边框、窗口大小同步，类似 Chrome 多进程架构（Windows + Linux/X11）
-9. 📚 **示例 28** — CrossProcessChart 跨进程嵌入 PySide6 QWidget 完整演示
-10. 🎛️ **网格布局系统** — `position` 参数支持三种格式：整数（如 `111`）、元组（如 `(2,2,1)`）、字符串（已弃用），类似 matplotlib 的 subplot
-11. 🔧 **运行时位置控制** — 新增 `get_position()` 和 `set_position()` 方法，支持动态调整图表位置
-12. 📏 **相对大小控制** — `width`/`height` 参数相对于网格单元，支持内缩（<1.0）和侵占（>1.0）
-13. 📚 **示例 29** — 网格布局完整演示
-14. 🔗 **图表同步功能** — `create_subchart()` 支持多图表同步时间轴和十字光标
-15. 📚 **示例 31** — 图表同步功能完整演示
-16. ⚠️ **网格冲突检测** — 自动检测同一窗口中图表网格规格冲突，防止布局混乱
-17. 🧹 **代码优化** — 重构 `parse_position()` 和 `_convert_string_to_grid()` 函数，提高代码可维护性
-18. 🌊 **实时数据流式更新** — 支持直接从 tick 数据更新 K线
-19. 📈 **多面板图表** — 使用 `create_subchart()` 创建子图（与图表同步功能协同）
-20. ✏️ **工具箱** — 在图表上直接绘制趋势线、矩形、射线、水平线
-21. 🎯 **事件系统** — 时间周期选择器、搜索、快捷键等
-22. 📋 **表格组件** — 用于自选股、下单、持仓管理
-23. 🔌 **Polygon.io 集成** — 直接获取市场数据
-24. 🏷️ **常驻图例** — 鼠标移出图表时 OHLC 仍可见
-25. 🎨 **垂直区间高亮** — 半透明填充标记日期范围
-26. 🧹 **资源清理 API** — `reset()`、`clear_handlers()`、`audit()`、`delete()`
-27. 📐 **_PriceLine_ 对象** — `create_price_line().delete()`
-28. 🗑️ **Table.delete()** — 销毁表格并清理 JS 状态
-29. 🔤 **人类可读的 ID** — `window.Chart_1`、`window.Line_3` 等
-30. 📊 **资源审计** — `chart.audit(use_js=True)` 返回完整 TOML 格式的 JS 变量状态
-31. ✅ **全面的清理测试** — `test_cleanup.py` 验证所有资源类型的 Python + JS 无泄漏
-32. 🗂️ **多 Chart 实例** — 完全独立的图表对象  
-33. 📑 **HtmlTabChart** — 多策略 Tab 切换图表，支持多策略切换、交易明细、绩效指标展示（改自 [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python) 的 HtmlChart_BN）
-34. 📚 **示例 32** — HtmlTabChart 多策略 Tab 切换完整演示
-35. 🔄 **子图内容重置** — `reset_sub()` 清除子图全部内容（数据/线条/标记/绘图/表格/ToolBox/TopBar/Legend/Events/sync/handlers），保留布局，不影响其他子图，reset 后可重用
-36. 📚 **示例 33** — reset_sub 子图内容重置完整演示（4 子图网格 + 主图 reset + 独立子图 + 十字光标同步恢复）
-37. 🔗 **`sync_id` 组同步 API（v2.6.0）** — 全新的基于组名的图表同步机制，所有 `AbstractChart` 子类统一支持 `sync_id` 和 `sync_crosshairs_only` 参数
-38. 🕯️ **示例 34** — CandleSeries 独立K线系列（主K线+参考K线在不同 pane，支持 set/update/update_bars/marker）
+| 变更 | 原版 v2.1 | 本版 v3.0 | 说明 |
+|------|-----------|-----------|------|
+| 组合架构 | CandleSeries 附属 volume/OI | Volume/OI 独立化 + AbstractChart 组合管理 | reset 后自动重建，常驻存在 |
+| 系列管理 | `candle.attach_volume()` | `chart.volume` / `chart.oi` 自动管理 | 设置即用，无需手动挂载 |
+| 统一输入 | 各系列列名不统一 | 统一 `time` + `value` 列 | 列名标准化 |
+| normal_df | 自动小写 + date→time | 不再自动转换 | 列名必须精确匹配 |
+| sync 同步 | `sync=chart.id` 配对同步 | `sync_id='组名'` 组同步 | 主图也能参与同步 |
+| `_lines` 联动 | chart.set() 自动填充 line | chart.set() 不再联动 _lines | 需手动 `line.set(df)` |
 
-    🧰 **主要支持环境** — PySide6、PyQt6、wxPython
+### 📝 API 重命名
+
+| 原版 v2.1 | 本版 v3.0 | 说明 |
+|-----------|-----------|------|
+| `marker()` | `add_marker()` | 添加单条标记 |
+| `markers()` | `add_markers()` | 批量添加标记 |
+| `markers`（方法名） | `markers`（列表属性） | 用 `chart.markers` 查看标记列表 |
+| `update()` | `update_bar()` | K 线单条更新 |
+| `update_from_tick()` | `update_tick()` | Tick 单条更新 |
+| `update_from_ticks()` | `update_ticks()` | Tick 批量更新 |
+| `Line` / `Histogram` 类 | `LineSeries` / `HistogramSeries` | 统一 `XxxSeries` 命名 |
+| `toolbox.save_drawings_under()` | `toolbox.on_change += func` | 回调注册方式 |
+| `price_scale(perm_width=N)` | 已移除 | 无替代 |
+
+### ✨ 新增功能
+
+#### 新增 Series 类型
+- **AreaSeries** — 面积图（折线+渐变填充）
+- **OHLCBarSeries** — 美国线（横向 OHLC 柱状图）
+- **BaselineSeries** — 基准线（以基准值为界上下分色）
+- **CandleSeries** — 独立 K 线系列（任意 pane，无 volume/OI）
+
+#### 新增 API
+- **TimeScaleApi** — `chart.time_scale_api()` 时间轴完整控制（14 方法）
+- **PriceScaleApi** — `chart.price_scale_api(scale_id)` 价格轴完整控制（6 方法）
+- **`build_price_scale_options()`** — snake_case→JS 驼峰纯函数
+- **`chart.fit()` / `chart.set_visible_range()`** — 视图控制
+- **`chart.show(wait=N)`** — 计时自动关闭窗口
+- **`chart.chart_options()`** — 图表级高级选项
+
+#### 新增图表类型
+- **HtmlTabChart** — 多策略 Tab 切换，init 快照重放
+- **CrossProcessChart** — 跨进程嵌入 Qt（Windows + Linux/X11）
+- **ReflexChart** — Reflex 框架嵌入
+- **HTMLChart / JupyterChart / StreamlitChart / QtChart / WxChart** — 多种嵌入方式
+
+#### 绘图系统增强
+- **ToolBox 跨 Pane 绘图** — 鼠标点击自动识别目标 pane
+- **Pane Primitive 架构** — Drawing 直接附着到 pane，不依赖 series 数据
+- **ToolBox on_change 回调** — `+=` / `-=` 注册/卸载多回调
+- **DrawingInfo 增强** — 新增 pane_index/time/price 字段
+- **Legend OHLC 支持** — Bar/Candlestick 显示 O H L C
+- **Legend 分组** — 组开关一键切换可见性
+
+#### 批量 & 性能
+- **`update_bars(df)`** — 批量 OHLCV 增量更新（JS 命令合并发送）
+- **`update_ticks(df)`** — 批量 Tick 增量更新
+- **`update_bars()` 用于 Line/Histogram** — 序列批量更新
+- **消息循环异常保护** — 不会因为单条消息失败而终止
+
+#### 其他增强
+- **Histogram 任意颜色** — 每根柱子独立着色（`color` 列）
+- **reset_sub()** — 子图内容重置，保留布局
+- **网格布局系统** — `position` 参数三种格式，类似 matplotlib subplot
+- **运行时位置控制** — `get_position()` / `set_position()`
+- **`sync_id` 组同步** — 替代旧配对同步
+- **8 个测试套件** — 全面覆盖资源清理 / 功能 / 数据聚合 / 位置解析等
+- **40 个示例** — 从基础到高级跨 Pane 绘图
+- **精细资源回收** — 长时间运行几乎无内存泄露
+- **`_remove_my_handlers()`** — 精确清除 handler，避免多图表误杀
+
+> 🧰 **主要支持环境** — PySide6、PyQt6、wxPython
 
 ---
 
@@ -117,9 +146,14 @@ sub2 = chart.create_subchart(sync_id='main')    # 自动互相同步
 
 ---
 
-## ⚠️ 破坏性更改记录
+## ⚠️ 破坏性更改记录（v2.5.1 → v3.0）
 
-> **本栏目持续记录所有破坏性更改，除非明确说明，否则不会删除。**
+> v3.0 是 lightweight-charts-python 的第一个正式大版本，所有 Breaking Changes 已在 v2.8.x 系列中分阶段完成。  
+> 详细迁移步骤见 [MIGRATION_v2.5_to_v3.0.md](MIGRATION_v2.5_to_v3.0.md)，包含逐项对照和验证清单。
+
+### v2.6.0 — 同步机制重构
+
+`sync=chart.id` → `sync_id='组名'`。详见上方「图表同步 API 重写」章节。
 
 ### v2.8.0 — 函数重命名
 
@@ -133,7 +167,7 @@ sub2 = chart.create_subchart(sync_id='main')    # 自动互相同步
 ```python
 # ❌ 旧写法
 chart.update_from_tick(tick)
-chart.update_from_ticks(ticks_df)
+chart.update_ticks(ticks_df)
 
 # ✅ 新写法
 chart.update_tick(tick)
@@ -297,25 +331,29 @@ python -m build
 | 方法 | 说明 |
 |------|------|
 | `chart.set(df)` | 设置 K线数据 |
-| `chart.update(series)` | 更新最后一根 K线 |
-| `chart.update_from_tick(tick)` | 从逐笔成交更新 K线 |
-| `chart.add_marker(text, ...)` | 添加价格标记 |
+| `chart.update_bar(series)` | 更新最后一根 K线 |
+| `chart.update_tick(series)` | 从逐笔成交更新 K线 |
+| `chart.add_marker(time, ...)` | 添加价格标记 |
 | `chart.marker_auto_scale(enable)` | 控制标记是否参与价格轴缩放 |
 | `chart.pop(count)` | 从末尾移除 N 个数据点 |
-| `chart.create_line(name, ...)` | 创建折线指标 |
-| `chart.create_histogram(name, ...)` | 创建柱状图指标 |
+| `chart.create_line(name, ...)` | 创建折线指标（返回 LineSeries） |
+| `chart.create_histogram(name, ...)` | 创建柱状图指标（返回 HistogramSeries） |
+| `chart.create_area_series(name, ...)` | 创建面积图 |
+| `chart.create_ohlc_bar_series(name, ...)` | 创建美国线 |
+| `chart.create_baseline_series(name, ...)` | 创建基准线 |
 | `chart.create_subchart(...)` | 创建子面板 |
 | `chart.create_price_line(price, ...)` | 创建价格线 |
 | `chart.horizontal_line(price, ...)` | 创建水平线 |
 | `chart.vertical_span(start, end, ...)` | 创建垂直高亮区间 |
-| `chart.get_position()` | 获取图表渲染位置 (x, y, width, height) 百分比（show 前后均可） |
-| `chart.set_position(x, y, width, height)` | 动态设置图表渲染位置（show 前后均可，传入 None 恢复默认） |
+| `chart.get_position()` | 获取图表渲染位置 (x, y, width, height) 百分比 |
+| `chart.set_position(x, y, width, height)` | 动态设置图表渲染位置 |
 | `chart.audit(use_js=False)` | 资源审计（Python 侧） |
 | `chart.audit(use_js=True)` | 资源审计（JS 侧，TOML 格式） |
 | `chart.reset()` | 重置图表到初始状态 |
-| `chart.screenshot(...)` | 截图（v5.2.0+ 增强：支持 add_top_layer 和 include_crosshair） |
-| `chart.clear_handlers()` | 清空所有事件处理器 |
-| `chart.price_scale(price_format=...)` | 配置价格坐标轴，支持 price_format 避免浮点精度问题 |
+| `chart.screenshot(...)` | 截图（支持 add_top_layer 和 include_crosshair） |
+| `chart.price_scale(price_format=...)` | 配置价格坐标轴 |
+| `chart.time_scale_api()` | 时间轴 API（滚动/范围/事件订阅） |
+| `chart.price_scale_api(scale_id)` | 价格轴 API（选项/范围/尺寸） |
 
 ---
 
@@ -409,8 +447,11 @@ chart.price_scale_api('left').apply_options(scale_margin_top=0.1)
 | 35 | `35_line_markers` | Line / Histogram 系列标记（marker） |
 | 36 | `36_histogram_colors` | Histogram 任意颜色（per-bar 着色） |
 | 37 | `37_more_series_types` | AreaSeries / OHLCBarSeries / BaselineSeries 新系列 |
+| 38 | `38_drawing_multi_pane` | 跨 Pane 绘图：Drawing 在多个面板间分布 |
+| 39 | `39_legend_group` | Legend 分组：组开关 + 个人眼睛切换 |
+| 40 | `40_toolbox_multi_pane` | ToolBox 跨 Pane 绘图：3 pane 绘图工具箱 |
 
----
+> **共 40 个示例**（v3.0）
 
 
 ## 示例截图展示
@@ -448,7 +489,7 @@ if __name__ == '__main__':
     chart.set(df1)
     chart.show()
     for _, bar in df2.iterrows():
-        chart.update(bar)
+        chart.update_bar(bar)
         sleep(0.1)
 ```
 
@@ -468,7 +509,7 @@ if __name__ == '__main__':
     chart.set(pd.read_csv('ohlc.csv'))
     chart.show()
     for _, tick in pd.read_csv('ticks.csv').iterrows():
-        chart.update_from_tick(tick)
+        chart.update_tick(tick)
         sleep(0.03)
 ```
 
@@ -681,7 +722,7 @@ if __name__ == '__main__':
     chart.show()
     # 批量更新
     chart.update_bars(new_bars_df)
-    chart.update_from_ticks(ticks_df)
+    chart.update_ticks(ticks_df)
 ```
 
 ![批量更新](images/13_batch_update.png)
@@ -1154,7 +1195,7 @@ ref = chart.create_candle_series(
     down_color='rgba(255, 100, 0, 0.8)',
 )
 ref.set(df_reference)       # 初始数据
-ref.update(new_bar)         # 更新/追加
+ref.update_bar(new_bar)         # 更新/追加
 ref.update_bars(df_more)   # 批量追加
 ref.add_marker(...)             # 打标记
 
@@ -1209,9 +1250,10 @@ chart.show(block=True)
 **支持标记的系列：**
 
 | 系列 | add_marker() | add_markers() |
-|------|----------|---------------|
+|------|----------|-----------|
 | CandleSeries（主 K 线） | ✅ | ✅ |
 | LineSeries（折线） | ✅ | ✅ |
+| HistogramSeries（柱状图） | ✅ | ✅ |
 | HistogramSeries（柱状图） | ✅ | ✅ |
 
 ![Line Series Markers](images/35_line_markers.png)
@@ -1305,5 +1347,102 @@ chart.show(block=True)
 | `legend=False` | 所有系列均支持 | 隐藏辅助系列（背景带、辅助线等）不显示在图例中 |
 
 ![New Series Types](images/37_more_series_types.png)
+
+---
+
+### 示例 38：跨 Pane 绘图
+
+```python
+from lightweight_charts import Chart
+
+# 3 个 pane 的绘图演示
+chart = Chart(width=1200, height=800, title='Drawing Series Multi-Pane', toolbox=True)
+chart.legend(visible=True)
+chart.set(df)
+
+# Pane 0: K线 + 水平线 + 趋势线 + Box
+chart.horizontal_line(price=200, color='orange', width=2, text='均价')
+chart.trend_line(start_time, start_price, end_time, end_price, color='#1E80F0')
+chart.box(start_time, start_price, end_time, end_price, color='#E91E63')
+
+# Pane 1: 柱状图 + 射线 + 水平线
+hist = chart.create_histogram('RSI Dev', pane_index=1)
+chart.ray_line(start_time, value=50, color='gray', pane_index=1)
+chart.horizontal_line(price=70, color='red', pane_index=1)
+
+# Pane 2: 折线 + 垂直线
+sma = chart.create_line('SMA 50', pane_index=2)
+chart.vertical_line(time=key_time, color='#FF5722', pane_index=2)
+
+chart.show(block=True)
+```
+
+![跨 Pane 绘图](images/38_drawing_multi_pane.png)
+
+---
+
+### 示例 39：Legend 分组
+
+```python
+from lightweight_charts import Chart
+
+chart = Chart()
+chart.legend(visible=True, ohlc=True, percent=True, lines=True)
+chart.set(df)
+
+# group='MA' 的均线组：同一行显示，♦ MA 组开关一键切换
+sma20 = chart.create_line('SMA 20', color='yellow', width=1, group='MA')
+ema50 = chart.create_line('EMA 50', color='cyan', width=1, group='MA')
+
+# group='MOM' 的动量组
+roc = chart.create_line('ROC 10', color='red', width=1, group='MOM')
+mom = chart.create_line('MOM 10', color='green', width=1, group='MOM')
+
+# 无组的独立显示
+rsi = chart.create_line('RSI 14', color='purple', pane_index=1)
+
+chart.show(block=True)
+```
+
+**Legend 交互：**
+- ♦ **组开关**：点击一键切换组内所有 series 可见性
+- 👁 **个人眼睛**：切换单个 series，同步更新组开关状态
+- 支持跨 pane 同名分组
+
+![Legend 分组](images/39_legend_group.png)
+
+---
+
+### 示例 40：ToolBox 跨 Pane 绘图
+
+```python
+from lightweight_charts import Chart
+from lightweight_charts.toolbox import DrawingInfo
+
+chart = Chart(width=1200, height=800, title='ToolBox Multi-Pane', toolbox=True)
+chart.set(df)
+
+# 创建 3 个 pane
+sma = chart.create_line('SMA 7', color='red', pane_index=0)
+hist = chart.create_histogram('SMA 20', color='#9B59B6', pane_index=1)
+rsi = chart.create_line('RSI', color='#26A69A', pane_index=2)
+
+# 注册绘图变化回调（自动携带 pane_index）
+def on_drawings_change(drawings: list[DrawingInfo]):
+    for d in drawings:
+        print(f'pane={d.pane_index}  type={d.type}  '
+              f'time=[{d.start_time}, {d.end_time}]')
+
+chart.toolbox.on_change += on_drawings_change
+
+chart.show(block=True)
+```
+
+**ToolBox 跨 Pane 特性：**
+- ToolBox UI 固定在 Pane 0
+- 鼠标点击哪个 pane 就在哪个 pane 上创建 drawing
+- 回调中自动携带 `pane_index` 信息
+
+![ToolBox 跨 Pane](images/40_toolbox_multi_pane.png)
 
 ---

@@ -6,51 +6,59 @@
 ## 一、项目架构
 
 ```
-lightweight-charts-python/
-├── lightweight_charts/         ← Python 后端 (核心包)
-│   ├── __init__.py             # 导出 AbstractChart, Chart, CrossProcessChart, JupyterChart,
-│   │                           #        HTMLChart, HtmlTabChart, PolygonChart, ReflexChart,
-│   │                           #        CandleSeries, VolumeSeries, OpenInterestSeries
-│   ├── abstract.py             # 核心类: Window, AbstractChart
-│   ├── series.py               # SeriesCommon, CandleSeries, VolumeSeries, OpenInterestSeries,
-│   │                           #         Line, Histogram
-│   ├── chart.py                # Chart (pywebview 桌面窗口实现) + CrossProcessChart (跨进程嵌入 Qt)
-│   ├── widgets.py              # JupyterChart, HTMLChart, HtmlTabChart, QtChart, WxChart, StreamlitChart
-│   ├── reflex_chart.py         # ReflexChart (Reflex 框架嵌入，iframe + postMessage 通信)
-│   ├── toolbox.py              # ToolBox (绘图的保存/加载/导入/导出)
-│   ├── topbar.py               # TopBar + Widget/Switcher/Menu/Button/TextWidget
-│   ├── table.py                # Table + Row + Section
-│   ├── drawings.py             # Drawing 基类 + HorizontalLine, TrendLine, Box, VerticalLine, RayLine, VerticalSpan
-│   ├── polygon.py              # Polygon.io API 集成
-│   ├── util.py                 # Pane, Events, Emitter, IDGen, BulkRunScript, 类型别名, 工具函数
-│   └── js/                     # 构建后前端 (bundle.js, index.html, index_tab.html, styles.css)
-├── src/                        ← TypeScript 前端 (由 rollup 构建到 js/)
-│   ├── index.ts                # 入口
-│   ├── plugin-base.ts          # 插件基类
-│   ├── general/                # 通用 UI: handler, legend, menu, toolbox, topbar, table, global-params, styles.css
-│   ├── drawing/                # 绘图引擎: data-source, drawing-tool, drawing, two-point-drawing, pane-renderer/view, options
-│   ├── context-menu/           # 上下文菜单: context-menu, color-picker, style-picker
-│   ├── trend-line/             # 趋势线
-│   ├── horizontal-line/        # 水平线 + 射线
-│   ├── vertical-line/          # 垂直线
-│   ├── box/                    # 矩形框
-│   └── helpers/                # canvas 渲染辅助, 时间处理, assertions, dimensions/
-├── examples/                   # 35 个完整示例 (见下文)
-├── test/                       # 单元测试 (8 个测试文件 + 2 个运行入口)
-│   ├── run_tests.py            # 测试入口 (原始)
-│   ├── run_new_tests.py        # 测试入口 (新增)
-│   ├── test_cleanup.py         # 资源全链路创建/删除 + JS TOML 审计 + 多图表独立清理
-│   ├── test_features.py        # 功能测试: 数据重命名/line追踪/截图/topbar事件
-│   ├── test_candle_series.py   # CandleSeries 独立系列测试
-│   ├── test_data_aggregation.py# 数据聚合/清洗测试
-│   ├── test_position.py        # position 参数解析测试: 字符串转换/整数格式/元组格式/网格冲突检测
-│   ├── test_reset_sub.py       # reset_sub 子图重置测试
-│   ├── test_sync_debug.py      # 同步组调试测试
-│   └── test_util.py            # 工具函数单元测试
-├── docs/                       # Sphinx 文档源
-│   ├── source/                 # 文档源文件 (reference/, examples/, tutorials/)
-│   └── archive/                # 归档文档
-└── js/                         # 构建后前端 (bundle.js + lightweight-charts.js) — 由 rollup 生成
+lightweight-charts-python/          ← v3.0.0
+├── lightweight_charts/             ← Python 后端 (核心包)
+│   ├── __init__.py                 # 导出 AbstractChart, Chart, CrossProcessChart, JupyterChart,
+│   │                               #        HTMLChart, HtmlTabChart, PolygonChart, ReflexChart,
+│   │                               #        CandleSeries, VolumeSeries, OpenInterestSeries,
+│   │                               #        AreaSeries, OHLCBarSeries, BaselineSeries
+│   ├── abstract.py                 # 核心类: Window, AbstractChart
+│   ├── series.py                   # SeriesCommon, CandleSeries, VolumeSeries, OpenInterestSeries,
+│   │                               #         LineSeries, HistogramSeries, AreaSeries,
+│   │                               #         OHLCBarSeries, BaselineSeries
+│   ├── chart.py                    # Chart (pywebview 桌面窗口) + CrossProcessChart (跨进程嵌入 Qt)
+│   ├── widgets.py                  # JupyterChart, HTMLChart, HtmlTabChart, QtChart, WxChart, StreamlitChart
+│   ├── reflex_chart.py             # ReflexChart (Reflex 框架嵌入，iframe + postMessage 通信)
+│   ├── toolbox.py                  # ToolBox (绘图管理 + on_change 回调)
+│   ├── drawing_series.py           # DrawingSeries — 每 pane 独立绘图管理器
+│   ├── topbar.py                   # TopBar + Widget/Switcher/Menu/Button/TextWidget
+│   ├── table.py                    # Table + Row + Section
+│   ├── drawings.py                 # Drawing 基类 + HorizontalLine, TrendLine, Box, VerticalLine, RayLine, VerticalSpan
+│   ├── polygon.py                  # Polygon.io API 集成
+│   ├── util.py                     # Pane, Events, Emitter, IDGen, BulkRunScript, 纯函数, 类型别名
+│   └── js/                         # 构建后前端 (bundle.js, index.html, index_tab.html, styles.css)
+├── src/                            ← TypeScript 前端 (由 rollup 构建到 js/)
+│   ├── index.ts                    # 入口
+│   ├── plugin-base.ts              # 插件基类 (IPlugin)
+│   ├── pane-plugin-base.ts         # IPanePrimitive 接口 (v2.8.2+, Drawing 直接附着 pane)
+│   ├── general/                    # 通用 UI: handler, legend, menu, toolbox, topbar, table, global-params, styles.css
+│   ├── drawing/                    # 绘图引擎: data-source, drawing-tool, drawing, two-point-drawing, pane-renderer/view, options
+│   ├── context-menu/               # 上下文菜单: context-menu, color-picker, style-picker
+│   ├── trend-line/                 # 趋势线
+│   ├── horizontal-line/            # 水平线 + 射线
+│   ├── vertical-line/              # 垂直线
+│   ├── box/                        # 矩形框
+│   └── helpers/                    # canvas 渲染辅助, 时间处理, assertions, dimensions/
+├── examples/                       # 40 个完整示例 (见下文)
+├── test/                           # 单元测试 (8 个测试套件 + 统一运行入口)
+│   ├── run_tests.py                # 统一测试入口 (全部 8 个套件)
+│   ├── test_cleanup.py             # 资源全链路创建/删除 + JS TOML 审计 + 多图表清理
+│   ├── test_features.py            # 功能测试: 数据重命名/line追踪/截图/topbar事件
+│   ├── test_candle_series.py       # CandleSeries 独立系列测试
+│   ├── test_data_aggregation.py    # 数据聚合/清洗测试 (含混沌测试)
+│   ├── test_position.py            # position 参数解析测试
+│   ├── test_reset_sub.py           # reset_sub 子图重置测试
+│   ├── test_volume_series.py       # VolumeSeries 独立测试
+│   ├── test_sync_debug.py          # 同步组调试测试
+│   └── test_util.py                # 工具函数单元测试 (13 个)
+├── docs/                           # Sphinx 文档源
+│   ├── source/                     # 文档源文件 (reference/, examples/, tutorials/)
+│   └── archive/                    # 归档文档
+├── MIGRATION_v2.5_to_v3.0.md       # 2.5.1 → 3.0 迁移指南 (见文末)
+├── MEMORY.md                       # 项目长期记忆 (1393 行)
+├── QUICK_REFERENCE.md              # 本文件 (快查文档)
+├── AGENT.md                        # Agent 操作指南
+└── js/                             # 构建后前端 (bundle.js + lightweight-charts.js)
 ```
 
 ---
@@ -61,12 +69,16 @@ lightweight-charts-python/
 Pane (util.py)                          ← 所有组件的基类 (拥有 id, run_script)
 ├── Window (abstract.py)                ← JS 通信层: run_script(), run_script_and_get(), handlers
 │
-├── SeriesCommon (series.py)            ← 数据系列基类 (set/update/pop/clear_data/add_marker/add_markers/remove_marker/clear_markers)
-│   ├── CandleSeries (series.py)        ← 独立K线系列 (无 volume, 可在任意 pane)
+├── SeriesCommon (series.py)            ← 数据系列基类 (set/update/update_bars/update_ticks/
+│   │                                         pop/clear_data/marker/markers/delete)
+│   ├── LineSeries (series.py)          ← 折线 (继承全部, 支持 marker)
+│   ├── HistogramSeries (series.py)     ← 柱状图 (同上, 支持任意颜色 `color` 列)
+│   ├── AreaSeries (series.py)          ← 面积图 (折线+渐变填充, 同上)
+│   ├── BaselineSeries (series.py)      ← 基准线 (以基准值为界上下分色, 同上)
 │   ├── VolumeSeries (series.py)        ← 成交量柱状图 (自动涨跌着色, self-managing)
 │   ├── OpenInterestSeries (series.py)  ← 持仓量折线 (self-managing)
-│   ├── Line (series.py)                ← 折线 (支持 marker)
-│   └── Histogram (series.py)           ← 柱状图 (支持 marker)
+│   └── CandleSeries (series.py)        ← 独立K线系列 (OHLC, 可在任意 pane)
+│       └── OHLCBarSeries (series.py)   ← 美国线 (继承 CandleSeries, 共享 OHLC 逻辑)
 │
 ├── AbstractChart (abstract.py)         ← 图表主类 (继承 Pane, 组合模式)
 │   │   内部组件:
@@ -74,21 +86,24 @@ Pane (util.py)                          ← 所有组件的基类 (拥有 id, ru
 │   │     self.volume  → VolumeSeries   ← 独立成交量 (始终存在, reset 后自动重建)
 │   │     self.oi      → OpenInterestSeries ← 独立持仓量 (始终存在, reset 后自动重建)
 │   │   持有:
-│   │     self._lines  → list[LineSeries|HistogramSeries]  ← 所有附加系列
+│   │     self._lines  → list[SeriesCommon]  ← 所有附加系列 (Line/Histogram/Area/Baseline/Candle/OHLCBar)
 │   │     self._drawing_series → dict[int, DrawingSeries]  ← 按 pane 管理绘图 (兼容: self.drawings 属性)
 │   │     self._tables / self._price_lines ← 各类资源
 │   │     self.topbar / self.toolbox    ← 顶栏和工具箱
+│   │     self._syncGroup               ← 同步组名
 │   │
 │   ├── Chart (chart.py)                ← pywebview 桌面窗口
 │   ├── CrossProcessChart (chart.py)    ← 跨进程嵌入 Qt (Windows + Linux/X11)
-│   ├── HtmlTabChart (widgets.py)       ← 多策略 Tab 切换
+│   ├── HtmlTabChart (widgets.py)       ← 多策略 Tab 切换 (init 快照重放)
 │   ├── HTMLChart (widgets.py)          ← 静态 HTML 导出
 │   ├── JupyterChart (widgets.py)       ← Jupyter Notebook
 │   ├── QtChart (widgets.py)            ← PyQt5/6/PySide6 嵌入
 │   ├── WxChart (widgets.py)            ← wxPython 嵌入
 │   ├── StreamlitChart (widgets.py)     ← Streamlit 嵌入
-│   └── ReflexChart (reflex_chart.py)   ← Reflex 框架嵌入 (iframe + postMessage)
+│   └── ReflexChart (reflex_chart.py)   ← Reflex 框架嵌入 (iframe + postMessage, _html_frozen)
 │
+├── TimeScaleApi (abstract.py)          ← 时间轴 API (滚动/范围/事件订阅/尺寸, 14 方法)
+├── PriceScaleApi (abstract.py)         ← 价格轴 API (选项/范围/尺寸, 6 方法)
 ├── PriceLine (drawings.py)             ← 价格线 (create_price_line 返回, 支持 update/delete)
 ├── DrawingSeries (drawing_series.py)   ← 每 pane 独立的绘图管理 (惰性创建不可见 JS LineSeries)
 ├── Drawing (drawings.py)               ← 绘图基类 (持有 drawing_series, detach + delete)
@@ -97,15 +112,17 @@ Pane (util.py)                          ← 所有组件的基类 (拥有 id, ru
 ├── TopBar + Widget 系列 (topbar.py)
 │   ├── TextWidget / SwitcherWidget / MenuWidget / ButtonWidget
 ├── Table / Row / Section (table.py)
-└── ToolBox (toolbox.py)
+└── ToolBox (toolbox.py)                ← 绘图工具箱 (on_change 回调, 跨 Pane 绘图)
 ```
 
-**设计模式说明：**
-- **组合 > 继承**：`AbstractChart` 不再继承 `Candlestick`，而是通过 `self.candle` 组合持有。
+**v3.0 设计模式：**
+- **组合 > 继承**：`AbstractChart` 不再继承 `Candlestick`，通过 `self.candle` 组合持有。
   所有 Candlestick 方法（`set()`, `update()`, `add_marker()` 等）通过委托保持向后兼容。
 - **self-managing 系列**：`VolumeSeries` / `OpenInterestSeries` / `CandleSeries` 各自维护
-  `self.data` + `self._last_bar`，支持独立的 `set()` / `update()` / `update_bars()` / `delete()`。
-- **marker 泛化**：`SeriesCommon` 上的 add_marker API 对所有系列类型均有效（Candlestick, Line, Histogram, CandleSeries 等）。
+  `self.data` + `self._last_bar`，支持完整的独立生命周期。
+- **marker 泛化**：`SeriesCommon` 上的 `add_marker()` API 对所有系列类型均有效。
+- **Pane Primitive**：Drawing 改为 `IPanePrimitive`（v2.8.2+），直接附着到 pane，
+  不再依赖 series 数据状态，跨 pane 稳定渲染。
 
 ---
 
@@ -246,30 +263,27 @@ chart.export('charts.html')         # 导出 HTML 文件
 
 支持多策略切换、交易明细、绩效指标展示。改自 [smalinin/bn_lightweight-charts-python](https://github.com/smalinin/bn_lightweight-charts-python) 的 HtmlChart_BN。
 
+**v3.0 新特性：init 快照重放** — `new_window()` 不再手动构建组件，
+而是重放 `__init__` 阶段保存的完整 JS 命令快照，自动覆盖所有组件（candle/volume/oi/toolbox + 未来新增）。
+
 ```python
 from lightweight_charts import HtmlTabChart
 
 chart = HtmlTabChart(
     width=1200, height=800,
+    toolbox=True,                   # 支持绘图工具箱
     position=111,                   # 图表位置 (网格格式)
-    pane_index=0,                   # 面板索引
-    marker_auto_scale=True          # 标记是否自动缩放
 )
 
 # 策略1
 chart.set_name('均线交叉策略')
 chart.set(df1)
-chart.set_trades(trades1)
-chart.set_performance_metrics(perf1, '均线交叉策略')
-chart.set_parameters_list(params1)
-chart.new_window()  # 切换到下一个策略
+chart.new_window()  # 切换到下一个策略（init 快照重放）
 
 # 策略2
 chart.set_name('布林带策略')
 chart.set(df2)
 chart.set_trades(trades2)
-chart.set_performance_metrics(perf2, '布林带策略')
-chart.set_parameters_list(params2)
 
 chart.export('multi_charts.html')   # 导出 HTML 文件
 ```
@@ -373,17 +387,17 @@ app.exec()
 | `StreamlitChart` | `lightweight_charts.widgets` | Streamlit 嵌入 |
 | `ReflexChart` | `lightweight_charts` | Reflex 嵌入（生成 HTML / 直接返回 rx.Component） |
 
-### 3.6 数据方法 (Candlestick)
+### 3.6 数据方法
 
 ```python
 chart.set(df, keep_drawings=False)
 # 设置初始数据。df 列: time/open/high/low/close + 可选 volume/open_interest
 
-chart.update(series)
+chart.update_bar(series)
 # 更新最后一根 K 线
 
 chart.update_tick(series)
-# 从 tick 更新 K 线（旧名 update_from_tick，已废弃）
+# 从 tick 更新 K 线
 
 chart.pop(count=1)
 # 从系列末尾移除指定数量的数据点
@@ -392,8 +406,9 @@ chart.update_bars(df)
 # 批量 OHLCV 增量更新: 遍历df每行调用update()，JS命令合并为一条发送
 
 chart.update_ticks(df)
-# 批量 Tick 增量更新（旧名 update_from_ticks，已废弃）
+# 批量 Tick 增量更新
 # 输入: time, price, [volume], [open_interest]
+# 各系列各自聚合: candle(OHLC from price), volume(sum), OI(last)
 
 chart.set_period(seconds)
 # 锁定时间级别: set()时跳过自动推断，所有时间戳对齐到锁定间隔
@@ -489,21 +504,21 @@ print(chart._period_locked)  # False
 - **去重保护：** 对齐后按时间戳去重（保留每组最后一行），防止 JS `Value is null` 错误
   - 例如：10 根 30min K 线锁定到 1h → 对齐后得到 5 个唯一时间戳
   - 同级别数据（5min→5min）不受影响，不会去重
-- `update()` / `update_from_tick()` 中的 `_single_datetime_format()` 使用锁定后的 `_interval` 对齐
+- `update_bar()` / `update_tick()` 中的 `_single_datetime_format()` 使用锁定后的 `_interval` 对齐
 - `add_marker()` 中的时间对齐也同样受锁定影响
 
 ### 3.6.4 标记 (Marker)
 
-标记 API 在 `SeriesCommon` 上定义，**对所有系列类型均有效**（Candlestick、Line、Histogram、CandleSeries 等）。
+标记 API 在 `SeriesCommon` 上定义，**对所有系列类型均有效**（CandleSeries、LineSeries、HistogramSeries 等）。
 
 ```python
-# ── 在 Candlestick（主图）上添加标记 ──
+# ── 在主 K 线上添加标记 ──
 chart.add_marker(time='2024-01-15', position='above', shape='arrow_down',
              color='#FF0000', text='卖出')
 chart.add_marker(time='2024-02-01', position='below', shape='arrow_up',
              color='#00FF00', text='买入')
 
-# ── 在 Line/Histogram 上添加标记 ──
+# ── 在 LineSeries/HistogramSeries 上添加标记 ──
 line20 = chart.create_line('SMA20', color='#2196F3')
 line20.set(sma_df)
 line20.add_marker(time='2024-01-20', position='below', shape='circle',
@@ -534,9 +549,9 @@ chart.remove_marker(marker_id)          # 按 ID 删除单个标记
 chart.clear_markers()                   # 删除当前系列的所有标记
 
 # ── 查看标记数量 ──
-print(len(chart.markers))       # Candlestick 上的标记
-print(len(line20.markers))      # Line 上的标记
-print(len(hist.markers))        # Histogram 上的标记
+print(len(chart.markers))       # 主 K 线上的标记
+print(len(line20.markers))      # LineSeries 上的标记
+print(len(hist.markers))        # HistogramSeries 上的标记
 ```
 
 ### 3.7 折线与柱状图
@@ -550,10 +565,10 @@ line = chart.create_line(
     legend=True, group=None          # ← legend 分组
 )
 line.set(df)           # df 列: time + value
-line.update(series)    # 逐点实时更新
+line.update_bar(series)    # 逐点实时更新
 line.update_bars(df)   # 批量追加数据点
 line.add_marker(...)       # 在折线上添加标记 (见 §3.6.4)
-line.add_markers([...])# 批量添加标记
+line.add_markers([...])    # 批量添加标记
 line.delete()          # 删除 (JS + Python 双端清理)
 
 hist = chart.create_histogram(
@@ -564,15 +579,15 @@ hist = chart.create_histogram(
     legend=True, group=None          # ← legend 分组
 )
 hist.set(df)           # df 列: time + value + [color]
-hist.update(series)
+hist.update_bar(series)
 hist.update_bars(df)
 hist.add_marker(...)
 hist.scale(top=0.0, bottom=0.0)
 hist.delete()
 
-chart.lines()  # 返回所有已创建的 LineSeries/HistogramSeries/CandleSeries 列表
+chart.lines()  # 返回所有已创建的 SeriesCommon 列表（LineSeries/HistogramSeries/AreaSeries/CandleSeries 等）
 
-# 注意：Line/Histogram 不再由 chart.set() 自动填充数据
+# 注意：LineSeries/HistogramSeries 不再由 chart.set() 自动填充数据
 # 需要手动调用 line.set(df) 独立设置，df 必须包含 time 和 value 列
 ```
 
@@ -600,7 +615,7 @@ hist.set(df)  # color 列自动携带到 JS 端
 
 > ⚠️ **注意**：`chart.set()` 不会转发 color 列，如需 histogram 上任意颜色需要**单独 `hist.set()`**。
 
-> **示例 35** (`examples/35_line_markers/line_markers.py`) 演示了在 Line、Histogram 和 CandleSeries 上使用 add_marker 和 add_markers 的完整用法。
+> **示例 35** (`examples/35_line_markers/line_markers.py`) 演示了在 LineSeries、HistogramSeries 和 CandleSeries 上使用 `add_marker()` 和 `add_markers()` 的完整用法。
 
 ### 3.7.1 独立 K 线系列 — CandleSeries
 
@@ -632,7 +647,7 @@ ref = chart.create_candle_series(
 ref.set(df_ref)                     # 设置初始数据
 
 # 支持所有 SeriesCommon 方法
-ref.update(new_bar)                 # 更新最新 bar 或追加新 bar
+ref.update_bar(new_bar)                 # 更新最新 bar 或追加新 bar
 ref.update_bars(df_more)            # 批量追加
 ref.add_marker(time, position, shape, color, text)  # 添加标记
 ref.add_markers([...])              # 批量标记
@@ -758,7 +773,7 @@ bar.set(df[['time', 'open', 'high', 'low', 'close']])
 bar.bar_style(up_color='#00BCD4', down_color='#FF5722', thin_bars=True)
 
 # 所有 CandleSeries 方法均可用
-bar.update(new_bar)               # 更新最新 bar
+bar.update_bar(new_bar)               # 更新最新 bar
 bar.update_bars(df_more)          # 批量追加
 bar.add_marker(time, position, shape, color, text)  # 添加标记
 bar.delete()                      # 删除系列
@@ -872,7 +887,7 @@ chart.legend(
     shorthand=True,       # Volume/OI 缩写 (24.5K)
 )
 
-# ── Legend 分组（v2.9.0+）──
+# ── Legend 分组（v3.0）──
 # group 参数：同组的 series 在 legend 中显示在同一行
 sma20 = chart.create_line('SMA 20', color='yellow', group='MA')
 ema50 = chart.create_line('EMA 50', color='cyan', group='MA')
@@ -949,8 +964,9 @@ chart.price_scale(
     align_labels=True, scale_margin_top=0.2, scale_margin_bottom=0.2,
     border_visible=True, border_color=None, text_color=None,
     entire_text_only=False, visible=True, ticks_visible=False,
-    tick_mark_density=None,            # v5.2.0+ : 刻度标签密度
-    minimum_width=0, perm_width=0
+    tick_mark_density=None,            # 刻度标签密度
+    minimum_width=0,                   # 最小宽度
+    ensure_edge_tick_marks_visible=None # 始终在顶部/底部绘制刻度线
 )
 
 # 十字光标
@@ -1229,16 +1245,25 @@ chart.topbar.button('btn2', 'New Button')
 # 启用工具箱
 chart = Chart(toolbox=True)
 
-# 保存绘图关联 widget
-chart.toolbox.save_drawings_under(chart.topbar['symbol'])
+# 监听绘图变化回调（v3.0 推荐方式）
+def on_drawing_change(drawings: list[DrawingInfo]):
+    for d in drawings:
+        print(f"Drawing {d.id}: type={d.type}, "
+              f"pane={d.pane_index}, "
+              f"time=({d.start_time}→{d.end_time}), "
+              f"price=({d.start_price}→{d.end_price})")
 
-# 导入/导出绘图
-chart.toolbox.import_drawings('drawings.json')
-chart.toolbox.export_drawings('drawings.json')
-chart.toolbox.load_drawings('tag_name')
+chart.toolbox.on_change += on_drawing_change  # 注册回调
+chart.toolbox.on_change -= on_drawing_change  # 卸载回调
+
+# 获取当前所有绘图
+drawings = chart.toolbox.drawings_list  # list[DrawingInfo]
+
+# 清空所有绘图
+chart.toolbox.clear_drawings()
 
 # 绘制形状 (Python 端创建)
-h_line = chart.horizontal_line(price=200, color='#1E80F0',
+h_line = chart.horizontal_line(price=200, color='#1E80F0', pane_index=0,
                                 width=4, style='solid', text='',
                                 axis_label_visible=True, func=on_move)
 t_line = chart.trend_line(start_time, start_price, end_time, end_price,
@@ -1251,8 +1276,6 @@ v_line = chart.vertical_line(time, color='#1E80F0', width=4, style='solid')
 # VerticalSpan — 高亮区域
 v_span = chart.vertical_span(start_time, end_time,
                               color='rgba(30,128,240,0.2)')
-# 单时间点/列表: 显示为细柱
-# 起止时间: 连续区域填充
 
 # PriceLine — 价格线
 price_line = chart.create_price_line(price=100, color='#1E80F0',
@@ -1266,6 +1289,9 @@ drawing.delete()                          # 删除
 drawing.update(time1, price1, time2, price2)  # 更新点位 (TwoPointDrawing)
 drawing.options(color='red', style='dashed', width=2)  # 更新样式
 ```
+
+> ⚠️ **v3.0 移除**：`save_drawings_under()`、`load_drawings()`、`import_drawings()`、`export_drawings()` 已移除。
+> 使用 `on_change` 回调自行实现持久化。
 
 ### 3.14 表格 (Table)
 
@@ -1442,7 +1468,7 @@ get_last_trade(ticker)
 | 10 | `persistent_legend` | OHLC 常驻 + 简写开关示例 | `persistent_legend.py` |
 | 11 | `vertical_span` | 区域高亮: 两日期区间 + 多点标记 | `vertical_span.py` |
 | 12 | `audit` | 资源审计: 展示 Python/JS 侧审计用法 | `audit.py` |
-| 13 | `batch_update` | 批量增量更新: `update_bars()` + `update_from_ticks()` | `batch_update.py` |
+| 13 | `batch_update` | 批量增量更新: `update_bars()` + `update_ticks()` | `batch_update.py` |
 | 14 | `set_period` | 锁定时间级别: `set_period()` 演示 | `set_period.py` |
 | 15 | `pyside6_simple` | PySide6 + QtChart 嵌入测试 | `pyside6_simple.py` |
 | 16 | `pyside6_race` | PySide6 速度赛跑: update vs update_bars vs set 对比 | `pyside6_race.py` |
@@ -1463,7 +1489,14 @@ get_last_trade(ticker)
 | 32 | `32_html_tab_chart` | HtmlTabChart 多策略演示：2 子图 × 2 面板 + 交易明细 + 绩效指标 | `html_tab_chart_demo.py`, `html_chart_demo.py` |
 | 33 | `33_reset_sub` | reset_sub 子图重置：2×2 网格中填充→清除→重填→验证独立性 | `reset_sub_demo.py` |
 | 34 | `34_candle_series` | CandleSeries 独立 K 线：静态并排 + 实时更新 + 批量更新 | `1_static.py`, `2_live_update.py`, `3_batch_update.py` |
-| 35 | `35_line_markers` | Line/Histogram marker：marker + marker_list 在各系列类型上的用法 | `line_markers.py` |
+| 35 | `35_line_markers` | Line/Histogram marker：marker + markers 在各系列类型上的用法 | `line_markers.py` |
+| 36 | `36_histogram_colors` | Histogram 任意颜色：每根柱子独立着色，买卖量差正负渐变色 | `histogram_colors.py` |
+| 37 | `37_more_series_types` | 新增 Series 类型：AreaSeries / OHLCBarSeries / BaselineSeries 完整演示 | `more_series_types.py` |
+| 38 | `38_drawing_multi_pane` | 跨 Pane 绘图：Drawing 在多个面板间分布 | `drawing_multi_pane.py` |
+| 39 | `39_legend_group` | Legend 分组：组开关 + 个人眼睛切换 + 跨 pane 同名分组 | `legend_group.py` |
+| 40 | `40_toolbox_multi_pane` | ToolBox 跨 Pane 绘图：3 pane 绘图工具箱示例 | `toolbox_multi_pane.py` |
+
+> **共 40 个示例**（v3.0）
 
 ---
 
@@ -1541,8 +1574,8 @@ show() 三种模式:
   chart.set(initial_df)
   chart.show()
   for each update:
-    chart.update(new_bar)        # K线更新
-    或 chart.update_from_tick(tick)  # Tick更新
+    chart.update_bar(new_bar)    # K线更新
+    or chart.update_tick(tick)   # Tick更新
 
 多面板:
   sub = chart.create_subchart(position=122)
@@ -1562,6 +1595,7 @@ show() 三种模式:
 
 事件驱动:
   chart.events.search += handler
+  chart.events.crosshair_move += on_crosshair  # v5.2.0+
   chart.topbar.switcher('tf', options, func=handler)
 
 CandleSeries 对比品种:
@@ -1963,17 +1997,17 @@ chart.legend(visible=True, shorthand=False)
 
 ---
 
-## 十四、update / update_from_tick 内部流程简要说明
+## 十四、update_bar / update_tick 内部流程简要说明
 
 本节仅保留关键机制，原详细调用链分析已移除。
 
 ### 14.1 核心差异
 
-| 维度 | `update(series)` | `update_from_tick(series)` |
-|------|-----------------|---------------------------|
+| 维度 | `update_bar(series)` | `update_tick(series)` |
+|------|---------------------|-----------------------|
 | **输入** | OHLCV 完整 K 线 | 单条 Tick `{time, price, volume?}` |
 | **聚合逻辑** | ❌ 无 — 直接作为 K 线 | ✅ 有 — 聚合为 OHLC |
-| **触发 new_bar** | ✅ 时间变化时 | ✅ 时间变化时（通过 update 内部） |
+| **触发 new_bar** | ✅ 时间变化时 | ✅ 时间变化时（通过 update_bar 内部） |
 | **典型场景** | 批量更新 / 实时 K 线推送 | 逐 Tick 实时聚合 K 线 |
 
 ### 14.2 `_interval` 时间对齐机制
@@ -1988,6 +2022,6 @@ arg = self._interval * (arg.timestamp() // self._interval) + self.offset
 |------|-----------------|
 | `set(df)` (未锁定) | ✅ 从数据 diff 推断 |
 | `set(df)` (已锁定) | ❌ 用 `set_period()` 值 |
-| `update()` / `update_from_tick()` | ❌ 不变 |
+| `update_bar()` / `update_tick()` | ❌ 不变 |
 
-⚠️ **精度不匹配陷阱**: 15min 图表传入 5min K 线 → 时间对齐后覆盖，3 根变 1 根。先用 `chart.set()` 切换周期再 `update()`。
+⚠️ **精度不匹配陷阱**: 15min 图表传入 5min K 线 → 时间对齐后覆盖，3 根变 1 根。先用 `chart.set()` 切换周期再 `update_bar()`。

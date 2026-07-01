@@ -4,6 +4,249 @@
 
 ---
 
+## [v3.0.0] - 2026-07-01
+
+### 🎉 里程碑：v3.0 正式发布
+
+v3.0 是 lightweight-charts-python 的第一个大版本，标志着项目进入成熟稳定期。
+从上次发布版本 **v2.5.1** 到 v3.0，经历了 **15 个子版本迭代**、**21 天的密集开发**。
+
+核心功能覆盖率达到 **~85%**，API 设计趋于完善，架构经过多轮重构验证。
+
+---
+
+### 📜 版本演进简史
+
+| 版本 | 日期 | 定位 | 核心变更 |
+|------|------|------|---------|
+| **v2.5.1** | 06-10 | 上次发布 | HtmlTabChart iframe 嵌入、reset_sub() 子图重置 |
+| v2.5.2 | 06-15 | 参数扩展 | StaticLWC 新参数支持、QUICK_REFERENCE 更新 |
+| v2.5.3 | 06-15 | 布局修复 | HtmlTabChart 多子图布局溢出修复、操作柄双击重置修复 |
+| **v2.6.0** | 06-16 | 同步重构 | CandleSeries 独立K线系列、`sync` → `sync_id` 组同步 |
+| v2.6.1 | 06-16 | 关键修复 | evaluate_js 卡死修复（`;0` 后缀）、消息循环终止修复 |
+| **v2.7.0** | 06-21 | 组合架构 | 固定 ID、VolumeSeries/OI 独立化、组合架构重构 |
+| v2.7.1 | 06-21 | 清理优化 | Handler seriesMarkers 移除、`_marker_auto_scale` 修复 |
+| v2.7.2 | 06-21 | 转发修复 | volume/OI update_bars/ticks 转发、TS 编译警告消除 |
+| v2.7.3 | 06-23 | 功能增强 | Histogram 任意颜色支持、abstract.py 拆分 → `series.py` |
+| **v2.8.0** | 06-26 | 统一契约 | 统一输入列、set→update_bars 委托、normal_df 精简 |
+| v2.8.1 | 06-27 | 类型扩展 | Area/OHLCBar/Baseline 三种新 Series、DrawingSeries |
+| v2.8.2 | 06-28 | 绘图革新 | Pane Primitive 架构、ToolBox on_change 回调 |
+| v2.8.3 | 06-30 | API 清理 | 旧别名/方法/参数全面移除、price_scale 重写 |
+| v2.8.4 | 07-01 | 跨 Pane 绘图 | ToolBox 跨 Pane 自动识别、DrawingInfo 增强 |
+| v2.8.6 | 07-01 | API 补全 | TimeScaleApi、PriceScaleApi、HtmlTabChart 快照重放 |
+| **v3.0.0** | 07-01 | 正式发布 | 确认最终 API，提供完整迁移指南 |
+
+---
+
+### 💥 Breaking Changes 汇总
+
+#### v2.6.0 引入
+
+| 变更 | 旧 API | 新 API | 迁移要点 |
+|------|--------|--------|---------|
+| 同步机制 | `sync=chart.id` | `sync_id='组名'` | 不再依赖 chart.id，改为组名字符串。`True`→`'True'`，`False/None`→不同步 |
+| 参数字段 | `sync` | `sync_id` | 方法签名重命名 |
+
+#### v2.7.0 引入
+
+| 变更 | 旧 API | 新 API | 迁移要点 |
+|------|--------|--------|---------|
+| volume/OI 管理 | `candle.attach_volume(df)` | AbstractChart 直接管理 | `chart.volume`/`chart.oi` 由 AbstractChart 创建 |
+| volume/OI 创建 | `candle.attach_open_interest(df)` | `Chart(...)` 自动创建 | 不再需要手动 attach，设置即自动创建 |
+| CandleSeries delete | 级联删除附属 series | 只删除自身 | volume/OI 独立生命周期 |
+| CandleSeries clear_data | 级联清空附属 | 只清自身 | AbstractChart.clear_data() 统一处理 |
+
+#### v2.8.0 引入
+
+| 变更 | 旧 API | 新 API | 迁移要点 |
+|------|--------|--------|---------|
+| 函数重命名 | `update_from_tick()` | `update_tick()` | 旧名已在 v2.8.3 移除 |
+| 函数重命名 | `update_from_ticks()` | `update_ticks()` | 旧名已在 v2.8.3 移除 |
+| 类重命名 | `Line` | `LineSeries` | 旧名已在 v2.8.3 移除 |
+| 类重命名 | `Histogram` | `HistogramSeries` | 旧名已在 v2.8.3 移除 |
+| `update` 别名 | `series.update(s)` | `series.update_bar(s)` | 统一方法名 |
+| normal_df 行为 | 自动小写 + date→time | 不再自动转换 | 列名必须精确匹配 |
+| _lines 联动 | 自动转发数据 | 不再自动转发 | 需手动 `line.set(df)` |
+| 输入列统一 | 各 series 格式不一致 | 统一 `time` + `value` | VolumeSeries 需要 open/close 列 |
+| cumulative_volume | `update_ticks` 参数 | 已移除 | 无替代 |
+
+#### v2.8.2 引入
+
+| 变更 | 旧 API | 新 API | 迁移要点 |
+|------|--------|--------|---------|
+| 回调注册 | `toolbox.save_drawings_under(cb)` | `toolbox.on_change += func` | 支持多回调 |
+| Drawing 架构 | `ISeriesPrimitive` | `IPanePrimitive` | 直接附着到 pane |
+| Ctrl+Z 撤销 | 内置支持 | 已移除 | 需自行实现 |
+
+#### v2.8.3 移除
+
+| 变更 | 旧 API | 新 API | 迁移要点 |
+|------|--------|--------|---------|
+| 持久化保存 | `toolbox.save_drawings_under(w)` | 用 `on_change` 回调 | 自行实现持久化 |
+| 持久化加载 | `toolbox.load_drawings(tag)` | 用 `on_change` 回调 | 自行实现持久化 |
+| 持久化导入 | `toolbox.import_drawings(path)` | 用 `on_change` 回调 | 自行实现持久化 |
+| 持久化导出 | `toolbox.export_drawings(path)` | 用 `on_change` 回调 | 自行实现持久化 |
+| 参数删除 | `price_scale(perm_width=N)` | 已删除 | 无替代 |
+| 参数默认值 | `price_scale()` 硬编码默认值 | 默认值改为 `None` | 需显式传入依赖的旧默认值 |
+
+#### v2.8.1 引入
+
+| 变更 | 旧 API | 新 API | 迁移要点 |
+|------|--------|--------|---------|
+| _drawings 列表 | `chart._drawings` | `chart._drawing_series` | dict {pane_index: DrawingSeries} |
+
+---
+
+### ✨ 全部新增功能（v2.5.1 → v3.0）
+
+#### 核心功能
+
+| 功能 | 版本 | 说明 |
+|------|------|------|
+| **CandleSeries 独立K线系列** | v2.6.0 | 任意 pane 上绘制独立 K 线，无 volume/OI |
+| **sync_id 组同步** | v2.6.0 | 基于组名的图表同步机制，替代旧配对同步 |
+| **VolumeSeries / OI 独立化** | v2.7.0 | 独立生命周期，由 AbstractChart 直接管理 |
+| **Histogram 任意颜色着色** | v2.7.3 | 每根柱子独立颜色，支持 set/update_bars |
+| **统一输入契约** | v2.8.0 | 所有 Series 统一 `time` + `value` 列 |
+| **set→update_bars 委托** | v2.8.0 | 统一清空→委托模式 |
+
+#### 新增 Series 类型
+
+| Series | 说明 | 工厂方法 | 版本 |
+|--------|------|---------|------|
+| **AreaSeries** | 面积图（折线+渐变填充） | `chart.create_area()` | v2.8.1 |
+| **OHLCBarSeries** | 美国线（横向 OHLC 柱状图） | `chart.create_ohlc_bar()` | v2.8.1 |
+| **BaselineSeries** | 基准线（以基准值为界上下分色） | `chart.create_baseline()` | v2.8.1 |
+
+#### 图表 API
+
+| API | 说明 | 版本 |
+|-----|------|------|
+| **TimeScaleApi** | `chart.time_scale_api()` — 时间轴完整控制（14 方法） | v2.8.6 |
+| **PriceScaleApi** | `chart.price_scale_api(scale_id)` — 价格轴完整控制（6 方法） | v2.8.6 |
+| **`_apply_options()`** | chart/series 级统一选项入口 | v2.8.6 |
+| **`build_price_scale_options()`** | snake_case→JS 驼峰纯函数 | v2.8.6 |
+| **`fit()` / `set_visible_range()`** | 复用 TimeScaleApi | v2.8.6 |
+| **reset_sub()** | 子图内容重置，保留布局 | v2.5.1 |
+| **chart.show(wait=N)** | 计时自动关闭窗口 | v2.8.1 |
+| **StaticLWC 新参数** | position/pane_index/marker_auto_scale | v2.5.2 |
+
+#### ToolBox 绘图系统
+
+| 功能 | 版本 | 说明 |
+|------|------|------|
+| **Pane Primitive 架构** | v2.8.2 | Drawing 改为 `IPanePrimitive`，跨 pane 稳定渲染 |
+| **ToolBox on_change 回调** | v2.8.2 | `+=` / `-=` 注册/卸载多回调 |
+| **DrawingSeries per-pane** | v2.8.1 | 每个 pane 独立 DrawingSeries 管理 |
+| **ToolBox 跨 Pane 绘图** | v2.8.4 | 鼠标点击自动识别目标 pane |
+| **DrawingInfo 增强** | v2.8.4 | 新增 pane_index/time/price 字段 |
+| **ToolBox 生命周期管理** | v2.8.2 | `_delete()` + `_build()` 模式 |
+| **Legend OHLC 支持** | v2.8.1 | Bar/Candlestick 显示 O H L C |
+
+#### HtmlTabChart
+
+| 功能 | 版本 | 说明 |
+|------|------|------|
+| **init 快照重放** | v2.8.6 | new_window 重放 init 全量 JS 命令 |
+| **iframe 嵌入** | v2.5.1 | 双文件方案（外壳 HTML + 内容 HTML） |
+| **多子图布局** | v2.5.3 | subcharts/panes/absolute 三种布局方式 |
+| **操作柄双击重置** | v2.5.3 | 拖拽后双击恢复原始尺寸 |
+
+#### 其他改进
+
+| 改进 | 版本 | 说明 |
+|------|------|------|
+| **abstract.py 拆分** | v2.7.3 | SeriesCommon 等移入 `series.py`，-45% 行数 |
+| **SeriesCommon.delete() 基类统一** | v2.7.3 | 5 个子类全部简化 |
+| **price_scale() 重写** | v2.8.3 | dict 构建 + js_json() 序列化，-80 行 |
+| **子类冗余 delete() 清理** | v2.8.3 | 7 个子类纯透传全部删除 |
+| **常驻系列重构** | v2.7.3 | candle/volume/oi 始终存在 |
+| **clear_data() 统一清空** | v2.7.3 | 基类默认实现 + 子类调用 super() |
+| **测试补全** | v2.7.3/v2.8.4 | 从 3 个 → 8 个测试套件 |
+| **示例** | 持续 | 从约 30 个 → 40 个 |
+
+---
+
+### 🏗️ 架构演进路线图
+
+```
+v2.5.x                    v2.6.x                       v2.7.x
+┌──────────────────┐      ┌──────────────────┐        ┌──────────────────┐
+│ 旧配对同步模式    │      │ CandleSeries 独立 │        │ 组合架构重构      │
+│ sync=chart.id    │ ───→ │ sync_id 组同步    │ ───→   │ 固定ID + 常驻系列 │
+│ attach 附属模式   │      │ CandleSeries 脱离 │        │ Volume/OI 独立化  │
+│ volume/OI 捆绑    │      │ 主 chart 独立使用 │        │ series.py 拆分    │
+└──────────────────┘      └──────────────────┘        └──────────────────┘
+                               │                              │
+                               v                              v
+                    v2.8.0                   v2.8.1-2              v2.8.3-6
+                    ┌──────────────────┐    ┌──────────────┐      ┌──────────────────┐
+                    │ 统一输入契约      │    │ 3种新Series   │      │ API 清理          │
+                    │ set→update_bars  │──→ │ Pane Primitive│──→   │ TimeScaleApi      │
+                    │ normal_df 精简    │    │ DrawingSeries │      │ PriceScaleApi     │
+                    │ 不联动 _lines     │    │ on_change     │      │ 快照重放          │
+                    └──────────────────┘    └──────────────┘      └──────────────────┘
+                                                                         │
+                                                                         v
+                                                                    ┌──────────┐
+                                                                    │  v3.0.0  │
+                                                                    │  正式发布 │
+                                                                    └──────────┘
+```
+
+---
+
+### 🐛 重要 Bug 修复（v2.5.1 → v3.0 累积）
+
+| Bug | 修复版本 | 根因 |
+|-----|---------|------|
+| CandleSeries 边界替换 OHLC 丢失 | v2.8.6 | 旧 bar 的 open/high/low 被新 bar 覆盖 |
+| time_to_bar_time 返回类型错误 | v2.8.6 | Series 输入返回 ndarray |
+| HtmlTabChart 图表全背景色 | v2.8.6 | callbackFunction 未定义 |
+| ReflexChart _html 内存泄漏 | v2.8.6 | _html 无限增长 |
+| HtmlTabChart 多 tab legend/candle 不可见 | v2.8.6 | 旧全局变量未清理 + _build 未加防重复 |
+| ToolBox _delete 顺序 | v2.8.3 | JS 清理后 Python handler 已不存在 |
+| _clear_handlers 误杀其他图表 | v2.8.3 | 清空整个 Window 所有 handler |
+| Legend reset_sub 后不恢复 | v2.8.2 | div.remove() 不可逆 + 重建时序错误 |
+| volume/OI update_bars/ticks 不转发 | v2.8.1 | AbstractChart 只委托 candle |
+| _seriesList 含 volume/OI 审计错误 | v2.8.1 | create 方法无条件 push |
+| clear_data 漏清 volume/OI | v2.8.0 | 组合架构后未同步 |
+| evaluate_js 卡死（`;0` 后缀） | v2.6.1 | pywebview 无法序列化 ISeriesApi |
+| 消息循环 return 终止 | v2.6.1 | 异常处理误用 return |
+| CandleSeries 标记不显示 | v2.6.1 | _update_markers 缺少 try-catch |
+| HtmlTabChart 多子图布局溢出 | v2.5.3 | 容器高度 `100vh` 导致溢出 |
+| 操作柄双击重置尺寸异常 | v2.5.3 | px/百分比混用 |
+
+---
+
+### 📊 v3.0 最终数据
+
+| 指标 | 数据 |
+|------|------|
+| Series 类型 | **7/7 ✅** (Candle / OHLCBar / Line / Area / Baseline / Histogram / Volume / OI) |
+| TimeScaleApi 方法 | **14/14 ✅** |
+| PriceScaleApi 方法 | **6/6 ✅** |
+| 测试套件 | **8 个 ✅** |
+| 示例 | **40 个 ✅** |
+| 核心功能覆盖率 | **~85%** |
+| 总迭代版本 | **16 个版本**（v2.5.1 → v3.0） |
+| 开发周期 | **21 天**（06-10 → 07-01） |
+| 文档 | QUICK_REFERENCE.md (1886 行) + MEMORY.md (1393 行) |
+| Python 源文件 | abstract.py / series.py / chart.py / widgets.py / toolbox.py / ...（~8000 行） |
+| TypeScript 源文件 | handler.ts / legend.ts / toolbox.ts / drawing 引擎 / ...（大幅重构） |
+
+---
+
+### 📦 依赖与兼容性
+
+- Python >= **3.8**（不变）
+- 核心依赖：**pandas**、**pywebview>=5.0.5**（不变）
+- 可选依赖：pyside6 / pyqt5 / pyqt6 / wxpython / ipython / reflex（不变）
+- lightweight-charts **v5.2.0** 官方引擎（不变）
+- 窗口系统：Windows / macOS / Linux 均支持（不变）
+
+---
+
 ## [v2.8.6] - 2026-07-01
 
 ### Added
