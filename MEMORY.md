@@ -1282,4 +1282,26 @@ HtmlTabChart 切换 tab 后，第一个 tab 的 legend/candle 正常，第二个
 
 ---
 
-*最后更新：2026-07-01（HtmlTabChart new_window 命令重放）*
+## 🐛 HtmlTabChart + ToolBox 图表全背景色修复（2026-07-01）
+
+### 根因
+`window.callbackFunction` 在静态 HTML 中**未定义**。`DrawingTool` 初始化时订阅 chart 事件，执行过程中调用了 `callbackFunction`，抛出 `TypeError: window.callbackFunction is not a function`，导致：
+- `async function updateChart()` 的 Promise 被 reject
+- `setData([])` + `update()` 等数据加载代码**未执行**
+- 图表创建成功但数据为 0 → 显示为全背景色
+
+### 修复
+`widgets.py` `HtmlTabChart.get_html()` 开头加一行：
+```javascript
+window.callbackFunction = function(){};
+```
+静态 HTML 不需要与 Python 通信，设空函数即可。
+
+### 验证
+- ✅ 单 tab + toolbox: data=50, tb=true
+- ✅ 多 tab (new_window) + toolbox: 两 tab 各 50 数据、toolbox 正常
+- ✅ 切换 tab 完美恢复
+
+---
+
+*最后更新：2026-07-01（HtmlTabChart + ToolBox 修复、new_window 命令重放）*

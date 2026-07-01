@@ -161,7 +161,8 @@ def demo():
         width=1200,
         height=1200,
         position=211,
-        marker_auto_scale=True
+        marker_auto_scale=True,
+        toolbox=True,
     )
 
     # ================================================================

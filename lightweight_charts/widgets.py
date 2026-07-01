@@ -303,6 +303,9 @@ class HtmlTabChart(StaticLWC):
             '''
         html_code = f'''{self._html_init}
 
+        // 静态 HTML 不需要与 Python 通信，设空函数防止未定义错误
+        window.callbackFunction = function(){{}};
+
         let html = []
         const stocks = {json.dumps(self.names)};
         const trades = {json.dumps(self.trades)};

@@ -4,7 +4,29 @@
 
 ---
 
-## [v2.8.5] - 2026-07-01
+## [v2.8.6] - 2026-07-01
+
+### Changed
+
+- **HtmlTabChart `new_window()` 重构为 init 快照重放**：
+  - `__init__` 末尾保存 `self._init_html = self._html`（init 阶段全量 JS 命令快照）
+  - `new_window()` 直接 `self._html = self._init_html` 重放完整 init 命令
+  - 删除 6 行手动 `_build()`/`run_script`/`toolbox._build()` 代码
+  - 自动覆盖所有 init 组件（candle/volume/oi/toolbox + 未来新增）
+
+### Fixed
+
+- **HtmlTabChart + ToolBox 图表全背景色**：
+  - **根因**：`window.callbackFunction` 在静态 HTML 中未定义。`DrawingTool` 初始化时触发回调调用，抛出 `TypeError`，导致 `setData`/`update` 等数据加载代码未执行，图表数据为 0。
+  - **修复**：`get_html()` 开头加 `window.callbackFunction = function(){};`，静态 HTML 无需与 Python 通信。
+
+### Modified Files
+
+| 文件 | 改动 |
+|------|------|
+| `lightweight_charts/widgets.py` | `__init__` 加快照 + `new_window()` 重放 + `get_html()` 加 `callbackFunction` 空函数 |
+
+---
 
 ### Fixed
 
