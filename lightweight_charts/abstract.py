@@ -18,7 +18,8 @@ from .util import (
     LINE_STYLE, MARKER_POSITION, MARKER_SHAPE, CROSSHAIR_MODE,
     PRICE_SCALE_MODE, marker_position, marker_shape, js_data,
     Position, GridPosition, parse_position,
-    normal_df, merge_value_by_time, get_df_interval_offset, time_to_bar_time
+    normal_df, merge_value_by_time, get_df_interval_offset, time_to_bar_time,
+    TimeScaleApi, PriceScaleApi
 )
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -420,6 +421,50 @@ class AbstractChart(Pane):
         """标记字典。"""
         return self.candle.markers
 
+    def time_scale_api(self) -> 'TimeScaleApi':
+        """获取时间轴 API，封装 chart.timeScale() 的所有方法。
+
+        :return: TimeScaleApi 实例
+
+        示例::
+
+            chart = Chart()
+            chart.set(df)
+
+            # 获取滚动位置
+            pos = chart.time_scale_api().scroll_position()
+
+            # 滚动到实时数据
+            chart.time_scale_api().scroll_to_real_time()
+
+            # 获取可见范围
+            visible_range = chart.time_scale_api().get_visible_range()
+        """
+        return TimeScaleApi(self)
+
+    def price_scale_api(self, scale_id: str = 'right') -> 'PriceScaleApi':
+        """获取价格轴 API，封装 chart.priceScale() 的所有方法。
+
+        :param scale_id: 价格轴 ID（'left' 或 'right'），默认 'right'
+        :return: PriceScaleApi 实例
+
+        示例::
+
+            chart = Chart()
+            chart.set(df)
+
+            # 获取右侧价格轴宽度
+            width = chart.price_scale_api().width()
+
+            # 设置自动缩放
+            chart.price_scale_api().set_auto_scale(True)
+
+            # 获取左侧价格轴
+            left_ps = chart.price_scale_api('left')
+            left_ps.set_visible_range({'from': 100, 'to': 200})
+        """
+        return PriceScaleApi(self, scale_id)
+
     # ── 时间级别方法（图表级，不再委托到 candle）──
 
     def _set_interval(self, df: pd.DataFrame):
@@ -605,9 +650,21 @@ class AbstractChart(Pane):
             scale_margin_top=scale_margin_top, scale_margin_bottom=scale_margin_bottom, color=color
         )
 
-    def price_scale(self, **kwargs):
-        """配置价格坐标轴。"""
-        return self.candle.price_scale(**kwargs)
+    def price_scale(self, scale_id: str = 'right', **kwargs):
+        """配置图表级价格坐标轴。
+
+        :param scale_id: 价格轴 ID（'left' 或 'right'），默认 'right'
+        :param kwargs: 选项参数（snake_case），参见 build_price_scale_options()
+
+        示例::
+
+            # 配置右侧价格轴
+            chart.price_scale(auto_scale=True, mode='normal')
+
+            # 配置左侧价格轴
+            chart.price_scale('left', scale_margin_top=0.1, scale_margin_bottom=0.2)
+        """
+        self.price_scale_api(scale_id).apply_options(**kwargs)
 
     # ── 绘图方法（委托到内部 DrawingSeries）──
 
@@ -674,7 +731,7 @@ class AbstractChart(Pane):
         """
         Fits the maximum amount of the chart data within the viewport.
         """
-        self.run_script(f'{self.id}.chart.timeScale().fitContent()')
+        self.time_scale_api().fit_content()
 
     @staticmethod
     def _normalize_sync_id(sync_id):
@@ -1326,12 +1383,10 @@ class AbstractChart(Pane):
         """设置时间轴的可见范围。
         :param start_time: 可见范围起始时间
         :param end_time: 可见范围结束时间"""
-        self.run_script(f'''
-        {self.id}.chart.timeScale().setVisibleRange({{
-            from: {pd.to_datetime(start_time).tz_localize(None).timestamp()},
-            to: {pd.to_datetime(end_time).tz_localize(None).timestamp()}
-        }})
-        ''')
+        self.time_scale_api().set_visible_range({
+            'from': pd.to_datetime(start_time).tz_localize(None).timestamp(),
+            'to': pd.to_datetime(end_time).tz_localize(None).timestamp()
+        })
 
     def resize(self, width: Optional[float] = None, height: Optional[float] = None):
         """
@@ -1532,7 +1587,7 @@ class AbstractChart(Pane):
 
         :param options: 选项字典，键名使用 JS 驼峰格式（如 layout, grid, crosshair）。
                         None 值会被 js_json 自动过滤。
-        
+
         示例::
 
             chart._apply_options({
@@ -1571,25 +1626,25 @@ class AbstractChart(Pane):
         l_id = f'{self.id}.legend'
         if not visible:
             self.run_script(f'''
-            {l_id}.div.style.display = "none"
-            {l_id}.ohlcEnabled = false
-            {l_id}.percentEnabled = false
-            {l_id}.linesEnabled = false
+                {l_id}.div.style.display = "none"
+                {l_id}.ohlcEnabled = false
+                {l_id}.percentEnabled = false
+                {l_id}.linesEnabled = false
             ''')
             return
         self.run_script(f'''
-        {l_id}.div.style.display = 'flex'
-        {l_id}.ohlcEnabled = {jbool(ohlc)}
-        {l_id}.percentEnabled = {jbool(percent)}
-        {l_id}.linesEnabled = {jbool(lines)}
-        {l_id}.colorBasedOnCandle = {jbool(color_based_on_candle)}
-        {l_id}.persistent = {jbool(persistent)}
-        {l_id}.shorthand = {jbool(shorthand)}
-        {l_id}.div.style.color = '{color}'
-        {l_id}.color = '{color}'
-        {l_id}.div.style.fontSize = '{font_size}px'
-        {l_id}.div.style.fontFamily = '{font_family}'
-        {l_id}.text.innerText = '{text}'
+            {l_id}.div.style.display = 'flex'
+            {l_id}.ohlcEnabled = {jbool(ohlc)}
+            {l_id}.percentEnabled = {jbool(percent)}
+            {l_id}.linesEnabled = {jbool(lines)}
+            {l_id}.colorBasedOnCandle = {jbool(color_based_on_candle)}
+            {l_id}.persistent = {jbool(persistent)}
+            {l_id}.shorthand = {jbool(shorthand)}
+            {l_id}.div.style.color = '{color}'
+            {l_id}.color = '{color}'
+            {l_id}.div.style.fontSize = '{font_size}px'
+            {l_id}.div.style.fontFamily = '{font_family}'
+            {l_id}.text.innerText = '{text}'
         ''')
 
     def spinner(self, visible):

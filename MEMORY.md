@@ -1340,4 +1340,53 @@ flush():                  _pending → postMessage → 清空
 
 ---
 
-*最后更新：2026-07-01（ReflexChart callbackFunction 顺序修复）*
+## 🎯 v2.8.6 API 补全（2026-07-01）
+
+### 新增功能
+
+#### 1. AbstractChart._apply_options(options)
+- **用途**：通用图表选项设置入口
+- **位置**：`abstract.py`
+- **调用方式**：`chart._apply_options({'layout': {'background': {'color': '#000'}}})`
+- **说明**：内部方法，与 Series 级别的 `_apply_options()` 对称
+
+#### 2. TimeScaleApi 时间轴 API
+- **用途**：封装 `chart.timeScale()` 的完整 API
+- **位置**：`util.py`
+- **调用方式**：`chart.time_scale_api()` 返回 `TimeScaleApi` 实例
+- **主要方法**（14个）：
+  - 滚动控制：`scroll_position()`, `scroll_to_position()`, `scroll_to_real_time()`
+  - 范围管理：`get_visible_range()`, `set_visible_range()`, `get_visible_logical_range()`, `set_visible_logical_range()`
+  - 视图控制：`fit_content()`, `width()`
+  - 事件订阅：`subscribe_visible_logical_range_change()`, `subscribe_visible_time_range_change()`, `subscribe_size_change()`
+- **复用**：`AbstractChart.fit()` 和 `set_visible_range()` 内部调用此 API
+
+#### 3. build_price_scale_options() 纯函数
+- **用途**：将 Python snake_case 参数转换为 JS 驼峰格式的选项字典
+- **位置**：`util.py`
+- **调用方式**：`build_price_scale_options(auto_scale=True, mode='normal')`
+- **说明**：供 `SeriesCommon.price_scale()` 和 `PriceScaleApi.apply_options()` 复用
+
+#### 4. PriceScaleApi 价格轴 API
+- **用途**：封装 `chart.priceScale()` 的完整 API
+- **位置**：`util.py`
+- **调用方式**：`chart.price_scale_api(scale_id)` 返回 `PriceScaleApi` 实例
+- **主要方法**（6个）：
+  - 选项管理：`apply_options(**kwargs)`, `options()`
+  - 范围控制：`get_visible_range()`, `set_visible_range()`, `set_auto_scale()`
+  - 尺寸获取：`width()`
+- **复用**：`AbstractChart.price_scale(scale_id, **kwargs)` 内部调用此 API
+
+### 设计决策
+
+1. **单例模式 vs 方法调用**：选择方法调用（每次返回新实例），更简洁，无需缓存
+2. **API 命名**：`time_scale_api()` 和 `price_scale_api(scale_id)`，与官方库命名风格一致
+3. **位置**：API 类放在 `util.py`，避免 `abstract.py` 过于臃肿
+4. **向后兼容**：新增功能，不影响现有代码
+5. **纯函数复用**：`build_price_scale_options()` 供 Series 和 Chart 两级 API 共用，避免代码重复
+6. **方法复用**：`AbstractChart.fit()` 和 `set_visible_range()` 内部调用 `TimeScaleApi`，减少重复代码
+7. **price_scale 重构**：`AbstractChart.price_scale()` 从委托到 `candle.price_scale()` 改为使用 `PriceScaleApi`，支持指定价格轴 ID
+
+---
+
+*最后更新：2026-07-01（TimeScaleApi & PriceScaleApi 实现）*

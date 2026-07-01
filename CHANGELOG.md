@@ -10,6 +10,28 @@
 
 - **AbstractChart `_apply_options(options)` 内部方法**：直接调用 `chart.applyOptions()` 的通用入口，接受 JS 驼峰格式的选项字典。与 Series 级别的 `_apply_options()` 对称，用于图表级选项的灵活设置。
 
+- **TimeScaleApi 时间轴 API**：封装 `chart.timeScale()` 的完整 API，通过 `chart.time_scale_api()` 方法访问。支持：
+  - 滚动控制：`scroll_position()`, `scroll_to_position()`, `scroll_to_real_time()`
+  - 范围管理：`get_visible_range()`, `set_visible_range()`, `get_visible_logical_range()`, `set_visible_logical_range()`
+  - 视图控制：`fit_content()`
+  - 事件订阅：`subscribe_visible_logical_range_change()`, `subscribe_visible_time_range_change()`, `subscribe_size_change()`
+  - 尺寸获取：`width()`
+
+- **AbstractChart 方法复用 TimeScaleApi**：`fit()` 和 `set_visible_range()` 现在内部调用 `time_scale_api()`，代码更简洁，逻辑复用。
+
+- **AbstractChart.price_scale() 重构**：从委托到 `candle.price_scale()` 改为使用 `PriceScaleApi`，支持指定价格轴 ID（'left' 或 'right'）。默认配置右侧价格轴。
+
+- **QUICK_REFERENCE.md 更新**：新增 3.8.2.1 章节，包含 TimeScaleApi 与 PriceScaleApi 的完整方法对比表格。
+
+- **build_price_scale_options() 纯函数**：将 Python snake_case 参数转换为 JS 驼峰格式的选项字典。供 `SeriesCommon.price_scale()` 和 `PriceScaleApi.apply_options()` 复用。
+
+- **PriceScaleApi 价格轴 API**：封装 `chart.priceScale()` 的完整 API，通过 `chart.price_scale_api(scale_id)` 方法访问。支持：
+  - 选项管理：`apply_options(**kwargs)` (使用 snake_case 参数)
+  - 范围控制：`get_visible_range()`, `set_visible_range()`, `set_auto_scale()`
+  - 尺寸获取：`width()`
+
+- **SeriesCommon.price_scale() 重构**：简化为使用 `build_price_scale_options()` 纯函数，代码量从 ~80 行减少到 ~5 行。
+
 ### Changed
 
 - **HtmlTabChart `new_window()` 重构为 init 快照重放**：

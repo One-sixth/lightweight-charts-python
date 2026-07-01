@@ -9,7 +9,8 @@ from .util import (
     LINE_STYLE, MARKER_POSITION, MARKER_SHAPE,
     PRICE_SCALE_MODE, marker_position, marker_shape, js_data,
     normal_df, merge_value_by_time, merge_candle_by_time,
-    get_df_interval_offset, time_to_bar_time, merge_volume_by_time, filter_old_bars
+    get_df_interval_offset, time_to_bar_time, merge_volume_by_time, filter_old_bars,
+    build_price_scale_options
 )
 
 
@@ -320,25 +321,7 @@ class SeriesCommon(Pane):
         """
         self.run_script(f'{self.id}.series.applyOptions({js_json(options)})')
 
-    def price_scale(
-        self,
-        auto_scale: Optional[bool] = None,
-        mode: Optional[PRICE_SCALE_MODE] = None,
-        invert_scale: Optional[bool] = None,
-        align_labels: Optional[bool] = None,
-        scale_margin_top: Optional[float] = None,
-        scale_margin_bottom: Optional[float] = None,
-        border_visible: Optional[bool] = None,
-        border_color: Optional[str] = None,
-        text_color: Optional[str] = None,
-        entire_text_only: Optional[bool] = None,
-        visible: Optional[bool] = None,
-        ticks_visible: Optional[bool] = None,
-        tick_mark_density: Optional[float] = None,
-        minimum_width: Optional[int] = None,
-        ensure_edge_tick_marks_visible: Optional[bool] = None,
-        price_format: Optional[dict] = None,
-    ):
+    def price_scale(self, **kwargs):
         """配置价格坐标轴的外观与行为。
 
         所有参数均为可选，不传则由 JS 端使用官方默认值。
@@ -361,44 +344,7 @@ class SeriesCommon(Pane):
         :param ensure_edge_tick_marks_visible: 始终在价格轴顶部和底部绘制刻度线
         :param price_format: 价格格式，如 {'type': 'base', 'base': 100, 'precision': 2}
         """
-        if (scale_margin_top is None) != (scale_margin_bottom is None):
-            raise ValueError(
-                'scale_margin_top 和 scale_margin_bottom 必须同时指定，'
-                f'当前只传了 {"scale_margin_top" if scale_margin_top is not None else "scale_margin_bottom"}。'
-            )
-
-        options = {}
-        if auto_scale is not None:
-            options['autoScale'] = auto_scale
-        if mode is not None:
-            options['mode'] = as_enum(mode, PRICE_SCALE_MODE)
-        if invert_scale is not None:
-            options['invertScale'] = invert_scale
-        if align_labels is not None:
-            options['alignLabels'] = align_labels
-        if scale_margin_top is not None:
-            options['scaleMargins'] = {'top': scale_margin_top, 'bottom': scale_margin_bottom}
-        if border_visible is not None:
-            options['borderVisible'] = border_visible
-        if border_color is not None:
-            options['borderColor'] = border_color
-        if text_color is not None:
-            options['textColor'] = text_color
-        if entire_text_only is not None:
-            options['entireTextOnly'] = entire_text_only
-        if visible is not None:
-            options['visible'] = visible
-        if ticks_visible is not None:
-            options['ticksVisible'] = ticks_visible
-        if tick_mark_density is not None:
-            options['tickMarkDensity'] = tick_mark_density
-        if minimum_width is not None:
-            options['minimumWidth'] = minimum_width
-        if ensure_edge_tick_marks_visible is not None:
-            options['ensureEdgeTickMarksVisible'] = ensure_edge_tick_marks_visible
-        if price_format is not None:
-            options['priceFormat'] = price_format
-
+        options = build_price_scale_options(**kwargs)
         if options:
             self.run_script(f'{self.id}.series.priceScale().applyOptions({js_json(options)})')
 

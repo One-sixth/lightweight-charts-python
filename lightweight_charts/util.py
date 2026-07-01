@@ -659,3 +659,380 @@ def merge_value_by_time(df: pd.DataFrame) -> pd.DataFrame:
         new_df[col] = group_df[col].last().array
 
     return new_df
+
+
+# ============================================================================
+# TimeScaleApi & PriceScaleApi
+# ============================================================================
+
+class TimeScaleApi:
+    """时间轴 API，封装 chart.timeScale() 的所有方法。
+
+    通过 chart.time_scale_api 访问。
+
+    示例::
+
+        chart = Chart()
+        chart.set(df)
+
+        # 获取滚动位置
+        pos = chart.time_scale_api.scroll_position()
+
+        # 滚动到实时数据
+        chart.time_scale_api.scroll_to_real_time()
+
+        # 获取可见范围
+        visible_range = chart.time_scale_api.get_visible_range()
+    """
+
+    def __init__(self, chart):
+        """
+        :param chart: AbstractChart 实例
+        """
+        self._chart = chart
+
+    def _ts(self) -> str:
+        """获取 timeScale() JS 表达式"""
+        return f'{self._chart.id}.chart.timeScale()'
+
+    def scroll_position(self) -> float:
+        """获取滚动位置（距离最新 bar 的 bar 数量）。
+
+        :return: 滚动位置，0 表示最新 bar 在最右侧
+        """
+        result = self._chart.win.run_script_and_get(f'{self._ts()}.scrollPosition()')
+        return float(result) if result is not None else 0.0
+
+    def scroll_to_position(self, position: int, animated: bool = True):
+        """滚动到指定位置。
+
+        :param position: 目标位置（0 = 最新 bar 在最右侧）
+        :param animated: 是否启用动画
+        """
+        self._chart.run_script(
+            f'{self._ts()}.scrollToPosition({position}, {jbool(animated)})'
+        )
+
+    def scroll_to_real_time(self):
+        """滚动到实时数据（最新 bar 在最右侧）。始终带动画。"""
+        self._chart.run_script(f'{self._ts()}.scrollToRealTime()')
+
+    def fit_content(self):
+        """将图表数据最大化适应到视口中。"""
+        self._chart.run_script(f'{self._ts()}.fitContent()')
+
+    def get_visible_range(self) -> Optional[dict]:
+        """获取当前可见的时间范围。
+
+        :return: {'from': time, 'to': time} 或 None（无数据时）
+        """
+        result = self._chart.win.run_script_and_get(
+            f'JSON.stringify({self._ts()}.getVisibleRange())'
+        )
+        return json.loads(result) if result else None
+
+    def set_visible_range(self, range_dict: dict):
+        """设置可见的时间范围。
+
+        :param range_dict: {'from': time, 'to': time}
+
+        示例::
+
+            chart.time_scale_api.set_visible_range({
+                'from': 1609459200,  # 2021-01-01
+                'to': 1612137600    # 2021-02-01
+            })
+        """
+        self._chart.run_script(
+            f'{self._ts()}.setVisibleRange({js_json(range_dict)})'
+        )
+
+    def get_visible_logical_range(self) -> Optional[dict]:
+        """获取当前可见的逻辑范围。
+
+        :return: {'from': float, 'to': float} 或 None（无数据时）
+        """
+        result = self._chart.win.run_script_and_get(
+            f'JSON.stringify({self._ts()}.getVisibleLogicalRange())'
+        )
+        return json.loads(result) if result else None
+
+    def set_visible_logical_range(self, range_dict: dict):
+        """设置可见的逻辑范围。
+
+        :param range_dict: {'from': float, 'to': float}
+        """
+        self._chart.run_script(
+            f'{self._ts()}.setVisibleLogicalRange({js_json(range_dict)})'
+        )
+
+    def width(self) -> int:
+        """获取时间轴宽度（像素）。
+
+        :return: 宽度（像素）
+        """
+        result = self._chart.win.run_script_and_get(f'{self._ts()}.width()')
+        return int(result) if result is not None else 0
+
+    def subscribe_visible_logical_range_change(self, handler):
+        """订阅逻辑范围变化事件。
+
+        :param handler: 回调函数，接收 logical_range 参数
+        """
+        salt = '_' + self._chart.id[self._chart.id.index('.')+1:]
+        self._chart.win.handlers[f'visibleLogicalRangeChange{salt}'] = handler
+        self._chart.run_script(f'''
+            window.visibleLogicalRangeHandler{salt} = (logical) => {{
+                window.callbackFunction(`visibleLogicalRangeChange{salt}_~_${{JSON.stringify(logical)}}`);
+            }};
+            {self._ts()}.subscribeVisibleLogicalRangeChange(window.visibleLogicalRangeHandler{salt});
+        ''')
+
+    def unsubscribe_visible_logical_range_change(self):
+        """取消订阅逻辑范围变化事件。"""
+        salt = '_' + self._chart.id[self._chart.id.index('.')+1:]
+        self._chart.run_script(f'''
+            if (window.visibleLogicalRangeHandler{salt}) {{
+                {self._ts()}.unsubscribeVisibleLogicalRangeChange(window.visibleLogicalRangeHandler{salt});
+                delete window.visibleLogicalRangeHandler{salt};
+            }}
+        ''')
+        if f'visibleLogicalRangeChange{salt}' in self._chart.win.handlers:
+            del self._chart.win.handlers[f'visibleLogicalRangeChange{salt}']
+
+    def subscribe_visible_time_range_change(self, handler):
+        """订阅时间范围变化事件。
+
+        :param handler: 回调函数，接收 time_range 参数
+        """
+        salt = '_' + self._chart.id[self._chart.id.index('.')+1:]
+        self._chart.win.handlers[f'visibleTimeRangeChange{salt}'] = handler
+        self._chart.run_script(f'''
+            window.visibleTimeRangeHandler{salt} = (range) => {{
+                window.callbackFunction(`visibleTimeRangeChange{salt}_~_${{JSON.stringify(range)}}`);
+            }};
+            {self._ts()}.subscribeVisibleTimeRangeChange(window.visibleTimeRangeHandler{salt});
+        ''')
+
+    def unsubscribe_visible_time_range_change(self):
+        """取消订阅时间范围变化事件。"""
+        salt = '_' + self._chart.id[self._chart.id.index('.')+1:]
+        self._chart.run_script(f'''
+            if (window.visibleTimeRangeHandler{salt}) {{
+                {self._ts()}.unsubscribeVisibleTimeRangeChange(window.visibleTimeRangeHandler{salt});
+                delete window.visibleTimeRangeHandler{salt};
+            }}
+        ''')
+        if f'visibleTimeRangeChange{salt}' in self._chart.win.handlers:
+            del self._chart.win.handlers[f'visibleTimeRangeChange{salt}']
+
+    def subscribe_size_change(self, handler):
+        """订阅时间轴尺寸变化事件。
+
+        :param handler: 回调函数，接收 (width, height) 参数
+        """
+        salt = '_' + self._chart.id[self._chart.id.index('.')+1:]
+        self._chart.win.handlers[f'timeScaleSizeChange{salt}'] = handler
+        self._chart.run_script(f'''
+            window.timeScaleSizeChangeHandler{salt} = (width, height) => {{
+                window.callbackFunction(`timeScaleSizeChange{salt}_~_${{width}};;;${{height}}`);
+            }};
+            {self._ts()}.subscribeSizeChange(window.timeScaleSizeChangeHandler{salt});
+        ''')
+
+    def unsubscribe_size_change(self):
+        """取消订阅时间轴尺寸变化事件。"""
+        salt = '_' + self._chart.id[self._chart.id.index('.')+1:]
+        self._chart.run_script(f'''
+            if (window.timeScaleSizeChangeHandler{salt}) {{
+                {self._ts()}.unsubscribeSizeChange(window.timeScaleSizeChangeHandler{salt});
+                delete window.timeScaleSizeChangeHandler{salt};
+            }}
+        ''')
+        if f'timeScaleSizeChange{salt}' in self._chart.win.handlers:
+            del self._chart.win.handlers[f'timeScaleSizeChange{salt}']
+
+
+def build_price_scale_options(
+    auto_scale: Optional[bool] = None,
+    mode: Optional[str] = None,
+    invert_scale: Optional[bool] = None,
+    align_labels: Optional[bool] = None,
+    scale_margin_top: Optional[float] = None,
+    scale_margin_bottom: Optional[float] = None,
+    border_visible: Optional[bool] = None,
+    border_color: Optional[str] = None,
+    text_color: Optional[str] = None,
+    entire_text_only: Optional[bool] = None,
+    visible: Optional[bool] = None,
+    ticks_visible: Optional[bool] = None,
+    tick_mark_density: Optional[float] = None,
+    minimum_width: Optional[int] = None,
+    ensure_edge_tick_marks_visible: Optional[bool] = None,
+    price_format: Optional[dict] = None,
+) -> dict:
+    """构建价格轴选项字典（纯函数）。
+
+    将 Python snake_case 参数转换为 JS 驼峰格式的选项字典，供 priceScale().applyOptions() 使用。
+
+    :param auto_scale: 自动缩放以适应可见数据范围
+    :param mode: 价格轴模式 — 'normal' | 'logarithmic' | 'percentage' | 'indexedTo100'
+    :param invert_scale: 反转价格轴
+    :param align_labels: 对齐标签防止重叠
+    :param scale_margin_top: 顶部留白比例 (0~1)
+    :param scale_margin_bottom: 底部留白比例 (0~1)
+    :param border_visible: 是否在价格轴和图表区域之间绘制边框
+    :param border_color: 边框颜色，如 '#2B2B43'
+    :param text_color: 标签文字颜色
+    :param entire_text_only: 仅在完整文字可见时显示角标
+    :param visible: 是否显示此价格轴
+    :param ticks_visible: 是否在标签旁绘制小水平刻度线
+    :param tick_mark_density: 标签密度
+    :param minimum_width: 价格轴最小宽度（像素）
+    :param ensure_edge_tick_marks_visible: 始终在价格轴顶部和底部绘制刻度线
+    :param price_format: 价格格式，如 {'type': 'base', 'base': 100, 'precision': 2}
+    :return: 选项字典
+
+    示例::
+
+        options = build_price_scale_options(
+            auto_scale=True,
+            mode='normal',
+            border_visible=True
+        )
+        # options = {'autoScale': True, 'mode': 0, 'borderVisible': True}
+    """
+    if (scale_margin_top is None) != (scale_margin_bottom is None):
+        raise ValueError(
+            'scale_margin_top 和 scale_margin_bottom 必须同时指定，'
+            f'当前只传了 {"scale_margin_top" if scale_margin_top is not None else "scale_margin_bottom"}。'
+        )
+
+    options = {}
+    if auto_scale is not None:
+        options['autoScale'] = auto_scale
+    if mode is not None:
+        options['mode'] = as_enum(mode, PRICE_SCALE_MODE)
+    if invert_scale is not None:
+        options['invertScale'] = invert_scale
+    if align_labels is not None:
+        options['alignLabels'] = align_labels
+    if scale_margin_top is not None:
+        options['scaleMargins'] = {'top': scale_margin_top, 'bottom': scale_margin_bottom}
+    if border_visible is not None:
+        options['borderVisible'] = border_visible
+    if border_color is not None:
+        options['borderColor'] = border_color
+    if text_color is not None:
+        options['textColor'] = text_color
+    if entire_text_only is not None:
+        options['entireTextOnly'] = entire_text_only
+    if visible is not None:
+        options['visible'] = visible
+    if ticks_visible is not None:
+        options['ticksVisible'] = ticks_visible
+    if tick_mark_density is not None:
+        options['tickMarkDensity'] = tick_mark_density
+    if minimum_width is not None:
+        options['minimumWidth'] = minimum_width
+    if ensure_edge_tick_marks_visible is not None:
+        options['ensureEdgeTickMarksVisible'] = ensure_edge_tick_marks_visible
+    if price_format is not None:
+        options['priceFormat'] = price_format
+
+    return options
+
+
+class PriceScaleApi:
+    """价格轴 API，封装 chart.priceScale() 的所有方法。
+
+    通过 chart.price_scale_api() 或 chart.price_scale_api('left') 访问。
+
+    示例::
+
+        chart = Chart()
+        chart.set(df)
+
+        # 获取右侧价格轴宽度
+        width = chart.price_scale_api().width()
+
+        # 设置自动缩放
+        chart.price_scale_api().set_auto_scale(True)
+
+        # 获取左侧价格轴
+        left_ps = chart.price_scale_api('left')
+        left_ps.set_visible_range({'from': 100, 'to': 200})
+    """
+
+    def __init__(self, chart, scale_id: str = 'right'):
+        """
+        :param chart: AbstractChart 实例
+        :param scale_id: 价格轴 ID（'left' 或 'right'）
+        """
+        self._chart = chart
+        self._scale_id = scale_id
+
+    def _ps(self) -> str:
+        """获取 priceScale() JS 表达式"""
+        return f'{self._chart.id}.chart.priceScale("{self._scale_id}")'
+
+    def apply_options(self, **kwargs):
+        """应用价格轴选项。
+
+        :param kwargs: 选项参数（snake_case），参见 build_price_scale_options()
+
+        示例::
+
+            chart.price_scale_api().apply_options(
+                auto_scale=True,
+                mode='normal',
+                border_visible=True
+            )
+        """
+        options = build_price_scale_options(**kwargs)
+        if options:
+            self._chart.run_script(f'{self._ps()}.applyOptions({js_json(options)})')
+
+    def options(self) -> dict:
+        """获取当前价格轴选项。
+
+        :return: 选项字典
+        """
+        result = self._chart.win.run_script_and_get(
+            f'JSON.stringify({self._ps()}.options())'
+        )
+        return json.loads(result) if result else {}
+
+    def width(self) -> int:
+        """获取价格轴宽度（像素）。
+
+        :return: 宽度（像素），不可见时返回 0
+        """
+        result = self._chart.win.run_script_and_get(f'{self._ps()}.width()')
+        return int(result) if result is not None else 0
+
+    def get_visible_range(self) -> Optional[dict]:
+        """获取价格轴可见范围。
+
+        :return: {'from': float, 'to': float} 或 None
+        """
+        result = self._chart.win.run_script_and_get(
+            f'JSON.stringify({self._ps()}.getVisibleRange())'
+        )
+        return json.loads(result) if result else None
+
+    def set_visible_range(self, range_dict: dict):
+        """设置价格轴可见范围。
+
+        :param range_dict: {'from': float, 'to': float}
+        """
+        self._chart.run_script(
+            f'{self._ps()}.setVisibleRange({js_json(range_dict)})'
+        )
+
+    def set_auto_scale(self, on: bool = True):
+        """设置自动缩放模式。
+
+        :param on: True 启用自动缩放，False 禁用
+        """
+        self._chart.run_script(f'{self._ps()}.setAutoScale({jbool(on)})')

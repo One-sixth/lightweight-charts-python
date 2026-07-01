@@ -182,6 +182,44 @@ The built wheel package will be in the dist directory.
 | `chart.clear_handlers()` | Clear all event handlers |
 | `chart.price_scale(price_format=...)` | Configure price scale, supports price_format to avoid floating-point precision issues |
 
+---
+
+## 🎯 Advanced API: TimeScaleApi & PriceScaleApi
+
+For basic usage (configuration, data setting), the Python functions above are sufficient.  
+For **event callbacks** or **finer control**, use these APIs:
+
+```python
+# Time Scale API
+chart.time_scale_api().scroll_to_real_time()
+chart.time_scale_api().subscribe_visible_logical_range_change(handler)
+
+# Price Scale API (default: right)
+chart.price_scale_api().width()
+chart.price_scale_api().set_auto_scale(True)
+
+# Price Scale API (specified: left)
+chart.price_scale_api('left').apply_options(scale_margin_top=0.1)
+```
+
+| API | Method | Description |
+|-----|--------|-------------|
+| **TimeScaleApi** | `scroll_position()` | Get scroll position |
+| | `scroll_to_position(pos)` | Scroll to position |
+| | `scroll_to_real_time()` | Scroll to real-time data |
+| | `fit_content()` | Fit data to viewport |
+| | `get_visible_range()` | Get visible range |
+| | `set_visible_range(range)` | Set visible range |
+| | `width()` | Get width |
+| | `subscribe_visible_logical_range_change(handler)` | **Subscribe to logical range change** |
+| | `subscribe_visible_time_range_change(handler)` | **Subscribe to time range change** |
+| | `subscribe_size_change(handler)` | **Subscribe to size change** |
+| **PriceScaleApi** | `apply_options(**kwargs)` | Apply options |
+| | `options()` | Get options |
+| | `width()` | Get width |
+| | `set_auto_scale(on)` | Set auto scale |
+
+> 📖 See [QUICK_REFERENCE.md](QUICK_REFERENCE.md) sections 3.8.1 and 3.8.2
 
 ---
 

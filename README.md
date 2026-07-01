@@ -317,6 +317,44 @@ python -m build
 | `chart.clear_handlers()` | 清空所有事件处理器 |
 | `chart.price_scale(price_format=...)` | 配置价格坐标轴，支持 price_format 避免浮点精度问题 |
 
+---
+
+## 🎯 高级 API：TimeScaleApi & PriceScaleApi
+
+基础功能（配置、数据设置）使用上面的 Python 函数即可。  
+如需**事件回调**或**更精细的控制**，请使用以下 API：
+
+```python
+# 时间轴 API
+chart.time_scale_api().scroll_to_real_time()
+chart.time_scale_api().subscribe_visible_logical_range_change(handler)
+
+# 价格轴 API（默认右侧）
+chart.price_scale_api().width()
+chart.price_scale_api().set_auto_scale(True)
+
+# 价格轴 API（指定左侧）
+chart.price_scale_api('left').apply_options(scale_margin_top=0.1)
+```
+
+| API | 方法 | 说明 |
+|-----|------|------|
+| **TimeScaleApi** | `scroll_position()` | 获取滚动位置 |
+| | `scroll_to_position(pos)` | 滚动到指定位置 |
+| | `scroll_to_real_time()` | 滚动到实时数据 |
+| | `fit_content()` | 数据适应视口 |
+| | `get_visible_range()` | 获取可见范围 |
+| | `set_visible_range(range)` | 设置可见范围 |
+| | `width()` | 获取宽度 |
+| | `subscribe_visible_logical_range_change(handler)` | **订阅逻辑范围变化** |
+| | `subscribe_visible_time_range_change(handler)` | **订阅时间范围变化** |
+| | `subscribe_size_change(handler)` | **订阅尺寸变化** |
+| **PriceScaleApi** | `apply_options(**kwargs)` | 应用选项 |
+| | `options()` | 获取选项 |
+| | `width()` | 获取宽度 |
+| | `set_auto_scale(on)` | 设置自动缩放 |
+
+> 📖 详见 [QUICK_REFERENCE.md](QUICK_REFERENCE.md) 的 3.8.1 和 3.8.2 章节
 
 ---
 

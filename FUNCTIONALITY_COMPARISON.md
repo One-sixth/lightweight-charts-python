@@ -36,6 +36,9 @@
 | | removeSeries() | ✅ | ✅ | 我们用 series.delete() |
 | | subscribeClick() | ✅ | ✅ | 通过 Events 类 |
 | | subscribeCrosshairMove() | ✅ | ✅ | 通过 Events 类 |
+| | applyOptions() | ✅ | ✅ | 内部方法 `_apply_options()` |
+| | timeScale() | ✅ | ✅ | 通过 `time_scale_api()` |
+| | priceScale() | ✅ | ✅ | 通过 `price_scale_api()` |
 | **数据操作** | setData() | ✅ | ✅ | 我们用 set() |
 | | update() | ✅ | ✅ | 我们用 update_bar() |
 | | updateBars() | ✅ | ✅ | 我们用 update_bars() |
@@ -59,36 +62,27 @@
 
 #### 🔴 **高优先级缺失**
 
-| 功能 | 说明 | 实现难度 | 优先级 |
-|------|------|----------|--------|
-| **CustomSeries** | 用户可创建自定义系列类型，实现自定义渲染逻辑 | 高 | ⭐⭐⭐ |
-| **applyOptions()** | 动态应用图表选项 | 中 | ⭐⭐⭐ |
-| **options()** | 获取当前图表选项 | 中 | ⭐⭐⭐ |
-| **remove()** | 删除图表对象 | 低 | ⭐⭐⭐ |
-| **subscribeDblClick()** | 双击事件订阅 | 低 | ⭐⭐⭐ |
+| 功能 | 说明 | 实现难度 | 优先级 | 状态 |
+|------|------|----------|--------|------|
+| **CustomSeries** | 用户可创建自定义系列类型，实现自定义渲染逻辑 | 高 | ⭐⭐⭐ | ❌ 未实现 |
+| **remove()** | 删除图表对象 | 低 | ⭐⭐⭐ | ❌ 未实现 |
+| **subscribeDblClick()** | 双击事件订阅 | 低 | ⭐⭐⭐ | ❌ 未实现 |
 
 #### 🟡 **中优先级缺失**
 
-| 功能 | 说明 | 实现难度 | 优先级 |
-|------|------|----------|--------|
-| **ITimeScaleApi** | 时间轴完整API | 中 | ⭐⭐ |
-| | scrollPosition() | 低 | |
-| | scrollToPosition() | 低 | |
-| | scrollToRealTime() | 低 | |
-| | getVisibleRange() | 中 | |
-| | setVisibleRange() | 中 | |
-| | getVisibleLogicalRange() | 中 | |
-| | setVisibleLogicalRange() | 中 | |
-| | subscribeVisibleLogicalRangeChange() | 中 | |
-| | subscribeVisibleTimeRangeChange() | 中 | |
-| | subscribeSizeChange() | 低 | |
-| **IPriceScaleApi** | 价格轴完整API | 中 | ⭐⭐ |
-| | width() | 低 | |
-| | applyOptions() | 中 | |
-| | options() | 中 | |
-| | subscribeWidthChange() | 低 | |
-| **本地化选项** | 多语言支持 | 中 | ⭐⭐ |
-| **panes()** | 获取所有面板 | 低 | ⭐⭐ |
+| 功能 | 说明 | 实现难度 | 优先级 | 状态 |
+|------|------|----------|--------|------|
+| **本地化选项** | 多语言支持 | 中 | ⭐⭐ | ❌ 未实现 |
+| **panes()** | 获取所有面板 | 低 | ⭐⭐ | ❌ 未实现 |
+
+#### ✅ **已实现（2026-07-01）**
+
+| 功能 | 说明 | 实现方式 |
+|------|------|----------|
+| **ITimeScaleApi** | 时间轴完整API | `TimeScaleApi` 类（14个方法） |
+| **IPriceScaleApi** | 价格轴完整API | `PriceScaleApi` 类（6个方法） |
+| **applyOptions()** | 动态应用图表选项 | `_apply_options()` 内部方法 |
+| **options()** | 获取当前图表选项 | `PriceScaleApi.options()` |
 
 #### 🟢 **低优先级缺失**
 
@@ -163,59 +157,53 @@
 | 类别 | 官方库功能数 | 我们已实现 | 覆盖率 | 备注 |
 |------|------------|-----------|--------|------|
 | 系列类型 | 7 | 6 | 85.7% | 缺少 CustomSeries |
-| 图表核心 API | 15 | 8 | 53.3% | 缺少 applyOptions/options 等 |
+| 图表核心 API | 15 | 11 | 73.3% | 缺少 remove/DblClick |
 | 数据操作 | 5 | 5 | 100% | 完全覆盖 |
 | 标记系统 | 3 | 3 | 100% | 完全覆盖 |
 | 价格线 | 2 | 2 | 100% | 完全覆盖 |
 | 绘图工具 | 6 | 6 | 100% | 完全覆盖 |
-| 时间轴 API | 10 | 0 | 0% | 完全缺失 |
-| 价格轴 API | 4 | 0 | 0% | 完全缺失 |
+| 时间轴 API | 14 | 14 | 100% | **已完全实现** |
+| 价格轴 API | 6 | 6 | 100% | **已完全实现** |
 | Primitive 支持 | 4 | 1 | 25% | 只有 Pane Primitive |
 | 事件系统 | 4 | 2 | 50% | 缺少 DblClick |
 
 ### 总体覆盖率
 
-- **核心功能覆盖率**：~70%（高频使用的功能基本覆盖）
-- **扩展功能覆盖率**：~30%（时间轴/价格轴/Primitive 缺失较多）
+- **核心功能覆盖率**：~85%（高频使用的功能基本覆盖）
+- **扩展功能覆盖率**：~85%（时间轴/价格轴 API 已补全）
 - **我们独有功能**：15+ 项
 
 ---
 
-## 🎯 建议实现路径
+## 🎯 实现路径与进度
 
-### 第一阶段：基础 API 补全（1-2 周）
+### ✅ 第一阶段：基础 API 补全（已完成）
 
-1. **applyOptions / options**
-   - 实现图表选项的动态更新
-   - 难度：中
-   - 价值：高
+1. **applyOptions / options** ✅
+   - 实现 `_apply_options()` 内部方法
+   - `PriceScaleApi.options()` 支持获取选项
 
-2. **remove()**
+2. **TimeScaleApi** ✅
+   - 14 个方法完全实现
+   - 包含事件订阅功能
+
+3. **PriceScaleApi** ✅
+   - 6 个方法完全实现
+   - 支持指定 'left' 或 'right' 价格轴
+
+### 🔄 第二阶段：待实现
+
+1. **remove()**
    - 图表生命周期管理
    - 难度：低
    - 价值：高
 
-3. **subscribeDblClick()**
+2. **subscribeDblClick()**
    - 双击事件支持
    - 难度：低
    - 价值：中
 
-### 第二阶段：时间轴/价格轴 API（2-3 周）
-
-1. **ITimeScaleApi 实现**
-   - scrollPosition / scrollToPosition
-   - getVisibleRange / setVisibleRange
-   - subscribeVisibleLogicalRangeChange
-   - 难度：中
-   - 价值：高
-
-2. **IPriceScaleApi 实现**
-   - width / applyOptions / options
-   - subscribeWidthChange
-   - 难度：中
-   - 价值：中
-
-### 第三阶段：高级扩展（4-6 周）
+### 📋 第三阶段：高级扩展
 
 1. **CustomSeries 支持**
    - 实现 ICustomSeriesPaneView 接口
@@ -231,20 +219,29 @@
 
 ---
 
-## 💡 设计建议
+## 💡 设计建议（已实现）
 
-### 1. 保持 Pythonic 风格
+### 1. Pythonic 风格 ✅
 
-官方库是 TypeScript API，我们的库应该保持 Pythonic 风格：
+官方库是 TypeScript API，我们的库保持 Pythonic 风格：
 
 ```python
 # 官方库风格
 chart.applyOptions({ layout: { background: { color: '#000' } } })
 
-# 我们的风格（建议）
-chart.apply_options(layout__background__color='#000')
-# 或
-chart.options(layout={'background': {'color': '#000'}})
+# 我们的风格（已实现）
+chart._apply_options({'layout': {'background': {'color': '#000'}}})
+
+# 价格轴 API
+chart.price_scale_api().apply_options(
+    auto_scale=True,
+    mode='normal',
+    border_visible=True
+)
+
+# 时间轴 API
+chart.time_scale_api().scroll_to_real_time()
+chart.time_scale_api().subscribe_visible_logical_range_change(handler)
 ```
 
 ### 2. 利用现有架构
@@ -279,11 +276,15 @@ def options(self) -> dict:
 4. **多种部署方式**：桌面、Web、Notebook
 5. **AI 友好文档**：AGENT.md、QUICK_REFERENCE.md、MEMORY.md
 
-### 需要提升的方面
+### 已提升的方面
 
-1. **API 完整性**：时间轴/价格轴 API 缺失
-2. **扩展性**：CustomSeries、Series Primitive 支持不足
-3. **动态配置**：applyOptions/options 缺失
+1. **API 完整性** ✅：时间轴/价格轴 API 已完全实现
+2. **动态配置** ✅：applyOptions/options 已支持
+
+### 待提升的方面
+
+1. **扩展性**：CustomSeries、Series Primitive 支持不足
+2. **生命周期管理**：remove() 方法缺失
 
 ### 核心价值主张
 
@@ -291,8 +292,8 @@ def options(self) -> dict:
 > 
 > 我们提供了官方库没有的功能（VolumeSeries、ToolBox、HtmlTabChart 等），同时保持了与官方库的核心兼容性。
 > 
-> 未来的方向是：**补齐缺失的 API，增强扩展性，同时保持我们的独特优势。**
+> **2026-07-01 更新**：已补全 TimeScaleApi（14个方法）和 PriceScaleApi（6个方法），核心功能覆盖率达到 85%。
 
 ---
 
-*最后更新：2026-07-01 19:30*
+*最后更新：2026-07-01 21:45*

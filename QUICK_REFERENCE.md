@@ -990,6 +990,114 @@ chart.set_visible_range(start_time, end_time)
 chart.resize(width=0.8, height=0.6)  # 比例 0~1
 ```
 
+### 3.8.1 时间轴 API — TimeScaleApi
+
+通过 `chart.time_scale_api()` 方法获取，封装 `chart.timeScale()` 的完整 API。
+
+```python
+# 获取时间轴 API
+ts = chart.time_scale_api()
+
+# 滚动控制
+pos = ts.scroll_position()              # 获取滚动位置（0 = 最新 bar 在最右侧）
+ts.scroll_to_position(10, animated=True)  # 滚动到指定位置
+ts.scroll_to_real_time()                 # 滚动到实时数据
+
+# 范围管理
+visible_range = ts.get_visible_range()   # {'from': time, 'to': time}
+ts.set_visible_range({'from': 1609459200, 'to': 1612137600})
+
+logical_range = ts.get_visible_logical_range()  # {'from': float, 'to': float}
+ts.set_visible_logical_range({'from': 0, 'to': 50})
+
+# 尺寸获取
+width = ts.width()                       # 时间轴宽度（像素）
+
+# 事件订阅
+def on_range_change(range_data):
+    print(f'逻辑范围变化: {range_data}')
+
+ts.subscribe_visible_logical_range_change(on_range_change)
+ts.unsubscribe_visible_logical_range_change()
+
+ts.subscribe_visible_time_range_change(handler)
+ts.unsubscribe_visible_time_range_change()
+
+ts.subscribe_size_change(handler)
+ts.unsubscribe_size_change()
+```
+
+### 3.8.2 价格轴 API — PriceScaleApi
+
+通过 `chart.price_scale_api(scale_id)` 方法获取，封装 `chart.priceScale()` 的完整 API。
+
+```python
+# 获取右侧价格轴 API（默认）
+ps = chart.price_scale_api()            # 等同于 chart.price_scale_api('right')
+
+# 获取左侧价格轴 API
+left_ps = chart.price_scale_api('left')
+
+# 选项管理（使用 snake_case 参数）
+ps.apply_options(auto_scale=True, mode='normal', border_visible=True)
+options = ps.options()                  # 获取当前选项字典
+
+# 范围控制
+ps.set_auto_scale(True)                 # 启用自动缩放
+ps.set_visible_range({'from': 100, 'to': 200})
+visible_range = ps.get_visible_range()
+
+# 尺寸获取
+width = ps.width()                      # 价格轴宽度（像素），不可见时返回 0
+```
+
+### 3.8.2.1 方法对比
+
+| 方法 | TimeScaleApi | PriceScaleApi | 说明 |
+|------|:------------:|:-------------:|------|
+| `apply_options(**kwargs)` | - | ✅ | 应用选项 |
+| `options()` | - | ✅ | 获取选项 |
+| `width()` | ✅ | ✅ | 获取宽度 |
+| `get_visible_range()` | ✅ | ✅ | 获取可见范围 |
+| `set_visible_range(range)` | ✅ | ✅ | 设置可见范围 |
+| `set_auto_scale(on)` | - | ✅ | 设置自动缩放 |
+| `scroll_position()` | ✅ | - | 获取滚动位置 |
+| `scroll_to_position(pos)` | ✅ | - | 滚动到位置 |
+| `scroll_to_real_time()` | ✅ | - | 滚动到实时 |
+| `fit_content()` | ✅ | - | 数据适应视口 |
+| `get_visible_logical_range()` | ✅ | - | 获取逻辑范围 |
+| `set_visible_logical_range(range)` | ✅ | - | 设置逻辑范围 |
+| `subscribe_visible_logical_range_change(handler)` | ✅ | - | 订阅逻辑范围变化 |
+| `subscribe_visible_time_range_change(handler)` | ✅ | - | 订阅时间范围变化 |
+| `subscribe_size_change(handler)` | ✅ | - | 订阅尺寸变化 |
+
+> 💡 **使用建议**：
+> - 基础配置用 Python 函数：`chart.price_scale(...)` / `chart.time_scale(...)`
+> - 高级功能用 API：`chart.time_scale_api().subscribe_xxx(handler)`
+
+### 3.8.3 价格轴选项构建 — build_price_scale_options()
+
+纯函数，将 Python snake_case 参数转换为 JS 驼峰格式的选项字典。
+
+```python
+from lightweight_charts.util import build_price_scale_options
+
+# 构建选项字典
+options = build_price_scale_options(
+    auto_scale=True,
+    mode='logarithmic',
+    border_visible=True,
+    border_color='#2B2B43',
+    scale_margin_top=0.1,
+    scale_margin_bottom=0.2
+)
+# options = {'autoScale': True, 'mode': 1, 'borderVisible': True, ...}
+
+# 供 Series 和 Chart 两级 API 共用
+chart.candle.price_scale(**options)      # Series 级别
+chart.price_scale_api().apply_options(**options)  # Chart 级别
+```
+
 ### 3.9 子图表 (Multi-Pane)
 
 ```python
