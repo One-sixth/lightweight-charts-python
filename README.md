@@ -116,168 +116,74 @@ https://github.com/EsIstJosh/lightweight-charts-python
 
 ---
 
-## ⚠️ v2.6.0 破坏性更改：图表同步 API 重写
+## ⚠️ 破坏性更改：v2.5.1 → v3.0
 
-**旧 API（v2.5.x 及更早）**：`create_subchart(sync=chart.id)` — 传入目标图表的 ID（如 `window.Chart_1`），建立 A↔B 两点之间的**配对同步**关系。主图表无法直接参与同步（没有 `sync_id` 参数）。
-
-**新 API（v2.6.0）**：`create_subchart(sync_id='main')` — 传入任意**组名字符串**，所有使用相同组名的图表自动互相同步，无需知道彼此的 ID。主图表通过 `Chart(sync_id='main')` 直接加入组。
-
-```python
-# ❌ 旧写法（v2.5.x）— 链式传递 chart.id，配对同步
-chart = Chart(...)
-sub = chart.create_subchart(sync=chart.id)      # 传入 chart.id
-sub2 = chart.create_subchart(sync=chart.id)     # 每个子图都要传
-
-# ✅ 新写法（v2.6.0）— 组名同步，主图也参与
-chart = Chart(..., sync_id='main')              # 主图表加入 'main' 组
-sub = chart.create_subchart(sync_id='main')     # 子图加入同一组
-sub2 = chart.create_subchart(sync_id='main')    # 自动互相同步
-```
-
-**`sync_id` 参数规则**：
-
-| 输入 | 结果 |
-|------|------|
-| `'main'`（字符串） | 加入名为 `'main'` 的同步组 |
-| `True` | 转为字符串 `'True'` 作为组名 |
-| `False` / `None` | 不同步 |
-| `123` / `[...]` 等 | 抛出 `TypeError` |
-
-
----
-
-## ⚠️ 破坏性更改记录（v2.5.1 → v3.0）
-
-> v3.0 是 lightweight-charts-python 的第一个正式大版本，所有 Breaking Changes 已在 v2.8.x 系列中分阶段完成。  
+> v3.0 是 lightweight-charts-python 的第一个正式大版本，所有 Breaking Changes 已合并为一份清单。  
 > 详细迁移步骤见 [MIGRATION_v2.5_to_v3.0.md](MIGRATION_v2.5_to_v3.0.md)，包含逐项对照和验证清单。
 
-### v2.6.0 — 同步机制重构
-
-`sync=chart.id` → `sync_id='组名'`。详见上方「图表同步 API 重写」章节。
-
-### v2.8.0 — 函数重命名
-
-| 旧名称 | 新名称 | 适用类 |
-|--------|--------|--------|
-| `update_from_tick()` | `update_tick()` | AbstractChart, SeriesCommon, CandleSeries |
-| `update_from_ticks()` | `update_ticks()` | AbstractChart, SeriesCommon, CandleSeries, VolumeSeries, OpenInterestSeries |
-
-旧名称暂时保留为转发包装器，但已标记为废弃，将在未来版本移除。
+### 同步机制：`sync=chart.id` → `sync_id='组名'`
 
 ```python
-# ❌ 旧写法
-chart.update_from_tick(tick)
-chart.update_ticks(ticks_df)
+# ❌ 旧写法 — 链式传递 chart.id，配对同步
+chart = Chart(...)
+sub = chart.create_subchart(sync=chart.id)
 
-# ✅ 新写法
-chart.update_tick(tick)
-chart.update_ticks(ticks_df)
+# ✅ 新写法 — 组名同步，主图也参与
+chart = Chart(..., sync_id='main')
+sub = chart.create_subchart(sync_id='main')
 ```
 
-### v2.8.0 — AbstractChart 不再联动设置 _lines
+### 函数重命名
 
-`chart.set(df)` / `chart.update_bars(df)` / `chart.update_ticks(df)` **不再自动转发数据给 Line/Histogram 系列**。
+| 旧名称 | 新名称 |
+|--------|--------|
+| `update_from_tick()` | `update_tick()` |
+| `update_from_ticks()` | `update_ticks()` |
+| `update()` / `update_bar()` | 统一 `update_bar()` / `update_bars()` |
+| `marker()` | `add_marker()` |
+| `markers()` | `add_markers()` |
+| `markers`（方法） | `markers`（列表属性） |
+| `Line` / `Histogram` 类 | `LineSeries` / `HistogramSeries` |
 
-Line/Histogram 需要各自独立调用 `line.set(df)` / `line.update_bars(df)` 设置数据，DataFrame 必须包含 `time` 和 `value` 列。
-
-```python
-# ❌ 旧写法 — chart.set() 自动填充 sma line
-chart.set(df)  # df 包含 time, OHLC, volume, SMA_5 列
-sma.data  # 自动有数据
-
-# ✅ 新写法 — 手动设置 line
-chart.set(df)  # 只处理 OHLC + volume + OI
-sma.set(sma_df)  # sma_df 包含 time, value 列
-```
-
-### v2.8.0 — Line/Histogram 不再使用 self.name 匹配列名
-
-SeriesCommon（Line / Histogram）的 `set()` / `update_bars()` / `update_ticks()` 不再通过 `self.name` 自动匹配 DataFrame 列名。统一要求输入 DataFrame 包含 `value` 列。
-
-```python
-# ❌ 旧写法 — 用 series name 做列名
-sma = chart.create_line(name='SMA_5')
-df = pd.DataFrame({'time': ..., 'SMA_5': ...})
-sma.set(df)  # 自动匹配 SMA_5 列
-
-# ✅ 新写法 — 统一用 value 列
-sma = chart.create_line(name='SMA_5')
-df = pd.DataFrame({'time': ..., 'value': ...})
-sma.set(df)
-```
-
-### v2.8.0 — normal_df 移除小写转换和 date 列支持
-
-`normal_df()` 不再自动将列名转为小写，也不再自动将 `date` 列重命名为 `time`。
-
-输入 DataFrame 的列名**必须已经是正确的小写形式**（如 `time`, `open`, `high`, `low`, `close`, `value`）。
-
-```python
-# ❌ 旧写法 — normal_df 自动转小写 + date→time
-df = pd.DataFrame({'Date': dates, 'Open': ..., 'Close': ...})
-chart.set(df)  # 自动变成 time, open, close
-
-# ✅ 新写法 — 列名必须是小写 time
-df = pd.DataFrame({'time': dates, 'open': ..., 'close': ...})
-chart.set(df)
-
-# 从 CSV 读取时手动重命名
-df = pd.read_csv('data.csv').rename(columns={'date': 'time'})
-```
-
-### v2.8.0 — VolumeSeries / OpenInterestSeries 统一使用 value 列
-
-VolumeSeries 和 OpenInterestSeries 的 `set()` / `update_bars()` / `update_ticks()` 现在统一要求 `value` 列，不再使用 `volume` / `open_interest` 列名。
-
-AbstractChart 的 `set()` / `update_bars()` / `update_ticks()` 内部自动将 `volume` → `value`、`open_interest` → `value` 后转发，用户通过 chart 调用时无感知。
-
-```python
-# 独立创建时使用 value 列
-vol_df = pd.DataFrame({'time': ..., 'value': [100, 200, 300]})
-vol_series.set(vol_df)
-
-oi_df = pd.DataFrame({'time': ..., 'value': [5000, 6000, 7000]})
-oi_series.set(oi_df)
-```
-
-### v2.8.0 — 移除 AbstractChart.update_ticks 的 cumulative_volume 参数
-
-`chart.update_ticks(df)` 不再接受 `cumulative_volume` 参数。VolumeSeries 内部始终对 tick volume 求和。
-
-```python
-# ❌ 旧写法
-chart.update_ticks(ticks, cumulative_volume=True)
-
-# ✅ 新写法
-chart.update_ticks(ticks)
-```
-
-### v2.8.0 — 类重命名：Line → LineSeries，Histogram → HistogramSeries
-
-所有 Series 类现在统一使用 `XxxSeries` 命名。旧名称保留为别名，但已标记为废弃。
+### 类重命名
 
 | 旧名称 | 新名称 |
 |--------|--------|
 | `Line` | `LineSeries` |
 | `Histogram` | `HistogramSeries` |
 
-工厂方法 `create_line()` / `create_histogram()` 名称不变，但返回类型从 `Line` / `Histogram` 改为 `LineSeries` / `HistogramSeries`。
+工厂方法 `create_line()` / `create_histogram()` 名称不变，返回类型变为 `LineSeries` / `HistogramSeries`。
+
+### AbstractChart 不再联动设置 _lines
+
+`chart.set(df)` / `chart.update_bars(df)` / `chart.update_ticks(df)` **不再自动转发数据给 Line/Histogram 系列**，需手动 `line.set(df)`。
+
+### normal_df 移除小写转换和 date 列支持
+
+列名**必须精确匹配**小写格式（`time`, `open`, `high`, `low`, `close`, `value`），不再自动转换。
 
 ```python
-# ❌ 旧写法
-from lightweight_charts import Line, Histogram
-line: Line = chart.create_line('SMA')
+# ❌ 旧写法 — 依赖自动转换
+df = pd.DataFrame({'Date': dates, 'Open': ..., 'Close': ...})
+chart.set(df)  # 自动转小写
 
-# ✅ 新写法
-from lightweight_charts import LineSeries, HistogramSeries
-line: LineSeries = chart.create_line('SMA')
+# ✅ 新写法 — 列名必须精确
+df = pd.read_csv('data.csv').rename(columns={'date': 'time'})
+chart.set(df)
 ```
 
-### v2.8.0 — VolumeSeries.update_ticks 不再接受 cumulative_volume 参数
+### VolumeSeries / OpenInterestSeries 统一使用 value 列
 
-`VolumeSeries.update_ticks()`（原 `update_from_ticks()`）始终对同一时间窗口内的 tick volume 求和，不再提供 `cumulative_volume` 参数控制行为。
+独立创建时使用 `value` 列（不再用 `volume` / `open_interest` 列名）。通过 chart 调用时自动转发，无感知。
 
-`AbstractChart.update_ticks()` 的 `cumulative_volume` 参数仍然保留，透传给 CandleSeries。
+### 参数移除
+
+| 参数 | 说明 |
+|------|------|
+| `price_scale(perm_width=N)` | 已移除，无替代 |
+| `cumulative_volume` | 已移除，VolumeSeries 始终自动求和 |
+| `toolbox.save_drawings_under()` | 改为 `toolbox.on_change += func` |
+| `toolbox.load_drawings()` / `import_drawings()` / `export_drawings()` | 已移除，用 `on_change` 自行实现 |
 
 ---
 

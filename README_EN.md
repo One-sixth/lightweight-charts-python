@@ -124,35 +124,53 @@ Other repositories are also welcome to use the code as needed.
 
 ## ⚠️ Breaking Changes (v2.5.1 → v3.0)
 
-> v3.0 is the first official major release. All breaking changes were completed in phases during the v2.8.x series.  
+> v3.0 is the first official major release. All breaking changes are consolidated below.  
 > See the complete [Migration Guide v2.5→v3.0](MIGRATION_v2.5_to_v3.0.md) for step-by-step migration and verification checklist.
 
-### v2.6.0 — Chart Sync API Rewrite
-
-**Old API (v2.5.x and earlier)**: `create_subchart(sync=chart.id)` — Pass the target chart's ID (e.g. `window.Chart_1`) to establish **pair sync** between A↔B. The main chart could not participate in sync (no `sync_id` parameter).
-
-**New API (v2.6.0)**: `create_subchart(sync_id='main')` — Pass any **group name string**. All charts using the same group name automatically sync with each other, no need to know each other's IDs. The main chart joins via `Chart(sync_id='main')`.
+### Sync: `sync=chart.id` → `sync_id='group'`
 
 ```python
-# ❌ Old way (v2.5.x) — chain pass chart.id, pair sync
+# ❌ Old way — pair sync via chart.id
 chart = Chart(...)
-sub = chart.create_subchart(sync=chart.id)      # pass chart.id
-sub2 = chart.create_subchart(sync=chart.id)     # every subchart needs it
+sub = chart.create_subchart(sync=chart.id)
 
-# ✅ New way (v2.6.0) — group sync, main chart participates
-chart = Chart(..., sync_id='main')              # main chart joins 'main' group
-sub = chart.create_subchart(sync_id='main')     # subchart joins same group
-sub2 = chart.create_subchart(sync_id='main')    # auto mutual sync
+# ✅ New way — group sync, main chart participates
+chart = Chart(..., sync_id='main')
+sub = chart.create_subchart(sync_id='main')
 ```
 
-**`sync_id` parameter rules**:
+### Function Renames
 
-| Input | Result |
-|-------|--------|
-| `'main'` (string) | Join sync group named `'main'` |
-| `True` | Converted to string `'True'` as group name |
-| `False` / `None` | No sync |
-| `123` / `[...]` etc. | Raises `TypeError` |
+| Old Name | New Name |
+|----------|----------|
+| `update_from_tick()` | `update_tick()` |
+| `update_from_ticks()` | `update_ticks()` |
+| `update()` / `update_bar()` | Unified `update_bar()` / `update_bars()` |
+| `marker()` | `add_marker()` |
+| `markers()` | `add_markers()` |
+| `markers` (method) | `markers` (property) |
+| `Line` / `Histogram` class | `LineSeries` / `HistogramSeries` |
+
+### AbstractChart no longer auto-fills _lines
+
+`chart.set(df)` no longer forwards data to Line/Histogram series. Manual `line.set(df)` required.
+
+### normal_df: no auto lowercase or date→time
+
+Column names must match exactly (`time`, `open`, `high`, `low`, `close`, `value`).
+
+### VolumeSeries / OI use `value` column
+
+Use `value` column directly. Auto-forwarded when calling through `chart.set()`.
+
+### Removed Parameters
+
+| Parameter | Notes |
+|-----------|-------|
+| `price_scale(perm_width=N)` | Removed, no replacement |
+| `cumulative_volume` | Removed, VolumeSeries auto-sums |
+| `toolbox.save_drawings_under()` | Replace with `toolbox.on_change += func` |
+| `toolbox.load_drawings()` etc. | Removed, use `on_change` |
 
 
 ---
