@@ -16,15 +16,18 @@
 
 ### Fixed
 
-- **HtmlTabChart + ToolBox 图表全背景色**：
+- **ReflexChart `_html` 内存泄漏**：`run_script` 每次调用都通过 `super()` 追加到 `self._html`，永不清理。引入 `_html_frozen` 机制，`to_reflex()` 后冻结 `_html`，后续只走 `_pending` 通道。`_html` 恒定 ~28 KB，`_pending` 每次 `flush()` 后清空。
+
+- **HtmlTabChart + ToolBox 图表全背景色**（波及所有静态图表子类）：
   - **根因**：`window.callbackFunction` 在静态 HTML 中未定义。`DrawingTool` 初始化时触发回调调用，抛出 `TypeError`，导致 `setData`/`update` 等数据加载代码未执行，图表数据为 0。
-  - **修复**：`get_html()` 开头加 `window.callbackFunction = function(){};`，静态 HTML 无需与 Python 通信。
+  - **修复**：`StaticLWC.__init__` 统一加 `self.run_script('window.callbackFunction = function(){};')`。`HTMLChart`、`JupyterChart`、`StreamlitChart` 等所有静态图表组件自动受益。
 
 ### Modified Files
 
 | 文件 | 改动 |
 |------|------|
-| `lightweight_charts/widgets.py` | `__init__` 加快照 + `new_window()` 重放 + `get_html()` 加 `callbackFunction` 空函数 |
+| `lightweight_charts/widgets.py` | `StaticLWC.__init__` 加 callbackFunction 空函数 + `HtmlTabChart.__init__` 加快照 + `new_window()` 重放 + `get_html()` 安全网 |
+| `lightweight_charts/reflex_chart.py` | `_build_html()` 将 `messaging` 移到 IIFE 之后 + `_html_frozen` 机制防止 `_html` 无限增长 |
 
 ---
 

@@ -1290,18 +1290,54 @@ HtmlTabChart 切换 tab 后，第一个 tab 的 legend/candle 正常，第二个
 - `setData([])` + `update()` 等数据加载代码**未执行**
 - 图表创建成功但数据为 0 → 显示为全背景色
 
-### 修复
-`widgets.py` `HtmlTabChart.get_html()` 开头加一行：
-```javascript
-window.callbackFunction = function(){};
-```
-静态 HTML 不需要与 Python 通信，设空函数即可。
+### 修复（升级到基类）
+`widgets.py` 中两处配合修复：
+1. **基类** `StaticLWC.__init__`：`self.run_script('window.callbackFunction = function(){};')` — 所有静态图表自动生效
+2. **安全网** `HtmlTabChart.get_html()` 保留相同代码，双重保险
+
+**为什么升级到基类**：泰斗先生提醒后检查发现，`HTMLChart`、`JupyterChart`、`StreamlitChart` 等所有继承 `StaticLWC` 的静态图表，只要启用 `toolbox=True` 都会触发相同错误。基类修复一劳永逸。
 
 ### 验证
-- ✅ 单 tab + toolbox: data=50, tb=true
+- ✅ `HtmlTabChart` + toolbox: data=50, tb=true
 - ✅ 多 tab (new_window) + toolbox: 两 tab 各 50 数据、toolbox 正常
 - ✅ 切换 tab 完美恢复
+- ✅ `HTMLChart` + toolbox: 同样正常
+
+### ReflexChart 特殊处理
+`ReflexChart` 也继承 `StaticLWC`，但它是**动态图表**（通过 iframe + postMessage 与 Reflex 应用通讯）。
+
+**关键区别**：`ReflexChart._build_html()` 主动设置了 `callbackFunction` 为真正的 postMessage 桥接函数。但 `StaticLWC.__init__` 的 `function(){}` 在 IIFE 内部执行，会覆盖这个真正的函数。
+
+**修复**：将 `messaging` 代码块移到 IIFE 之后执行，确保 `function(){}` 只在初始化期间生效，之后由真正的通讯函数接管。
+
+**执行顺序**：
+```
+IIFE 执行 → callbackFunction = function(){}（安全初始化）
+         → 图表代码执行（createToolBox 等）
+IIFE 完成
+messaging 执行 → callbackFunction = postMessage 桥 ✅（接管通讯）
+```
+
+### ReflexChart _html 内存泄漏修复
+**问题**：`ReflexChart.run_script` 调用 `super().run_script()`（即 `StaticLWC.run_script`），每次动态更新都追加到 `self._html`，**永不清理**。
+
+**影响**：1 次/秒更新 → 8.5 MB/天增长。长期运行（特别是高频 Tick 数据）会撑爆内存。
+
+**修复**：引入 `_html_frozen` 标志：
+- `__init__` 中设为 `False`
+- `to_reflex()` 生成 iframe 后设为 `True`
+- `run_script` 中检查：已冻结则跳过 `super().run_script()`，只追加到 `_pending`
+
+**数据流**：
+```
+初始化阶段:  run_script → _html ✅ + _pending ✅
+to_reflex(): 生成 iframe → _html_frozen = True
+动态更新:     run_script → _html ❌(已冻结) + _pending ✅
+flush():                  _pending → postMessage → 清空
+```
+
+**效果**：`_html` 恒定在 ~28 KB，`_pending` 每次 `flush()` 后清空，内存零增长。
 
 ---
 
-*最后更新：2026-07-01（HtmlTabChart + ToolBox 修复、new_window 命令重放）*
+*最后更新：2026-07-01（ReflexChart callbackFunction 顺序修复）*

@@ -106,7 +106,7 @@ def demo():
     # Main chart: 2x1 grid, position=211 (top)
     # ================================================================
     print("[2/4] Subchart 1: K-line + SMA + BB + markers...")
-    chart = HTMLChart(width=1200, height=1200, position=211)
+    chart = HTMLChart(width=1200, height=1200, position=211, toolbox=True)
     chart.set(df)
     chart.legend(visible=True)
 

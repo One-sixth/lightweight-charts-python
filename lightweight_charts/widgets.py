@@ -169,6 +169,9 @@ class StaticLWC(abstract.AbstractChart):
         self.width = width
         self.height = height
 
+        # 静态 HTML 无需与 Python 通信，设空函数防止 DrawingTool 等组件调用时报错
+        self.run_script('window.callbackFunction = function(){};')
+
         # 如果指定了 sync_id，加入同步组
         if sync_id:
             self.join_sync_group(sync_id, sync_crosshairs_only)

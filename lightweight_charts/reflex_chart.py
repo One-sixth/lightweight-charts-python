@@ -48,6 +48,7 @@ class ReflexChart(StaticLWC):
         self._auto_flush = auto_flush
         self._pending = []
         self._output_file = output_file
+        self._html_frozen = False  # to_reflex() 后冻结，防止 _html 无限增长
         super().__init__(width, height, inner_width, inner_height,
                          scale_candles_only, toolbox, autosize=True)
         self._iframe_id = 'lwc-frame'
@@ -78,7 +79,8 @@ class ReflexChart(StaticLWC):
             'JSON.stringify({type:"lwc-callback",payload:msg}),"*")'
             '};'
         )
-        return (f"{html_init}{messaging}  (async ()=> {{\n{self._html}\n}})();\n"
+        return (f"{html_init}  (async ()=> {{\n{self._html}\n}})();\n"
+                f"{messaging}\n"
                 "</script></body></html>")
 
     def _export(self):
@@ -103,7 +105,8 @@ class ReflexChart(StaticLWC):
                 f'}}();'
             )
             script = guard + script
-        super().run_script(script, run_last)
+        if not self._html_frozen:
+            super().run_script(script, run_last)
         if self._auto_flush:
             self._pending.append(script)
 
@@ -146,6 +149,7 @@ class ReflexChart(StaticLWC):
         html_str = self.get_html()
         b64 = base64.b64encode(html_str.encode('utf-8')).decode('utf-8')
         self._pending = []  # 清理 setup 阶段积累的脚本（已包含于 iframe HTML）
+        self._html_frozen = True  # 冻结 _html，后续更新只走 _pending，防止无限增长
 
         style = {'border': 'none', 'width': '100%'}
         if height is not None:
