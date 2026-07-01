@@ -784,6 +784,69 @@ ToolBox 内部维护 `_drawing_list: list[DrawingInfo]`，每次 JS `saveDrawing
 
 ---
 
+## 🎛️ TopBar 生命周期（2026-07-01）
+
+### TopBar 生命周期
+
+```
+TopBar.__init__()  → _created=False, _widgets={}
+  ↓ 第一次 widget 调用触发
+_create()          → _created=True, JS createTopBar() → handler._topBar + DOM 挂载
+  ↓
+clear()            → handlers 清理 + _widgets 清空 + JS 重建空容器（_created 不变）
+  ↓
+_create()          → 无需调用（_created 仍为 True），直接添加新 widget
+  ↓
+delete()           → 调 clear() + _created=False + JS _div.remove() + _topBar=undefined
+  ↓
+_create()          → _created=False guard 通过，JS createTopBar() 重建
+```
+
+### clear() vs delete()
+
+| 方法 | Python handlers | _widgets | _created | JS DOM | JS _topBar |
+|------|----------------|----------|----------|--------|------------|
+| `clear()` | ✅ 移除 | ✅ 清空 | ❌ 不变(True) | 🔄 重建空容器 | ❌ 不变 |
+| `delete()` | ✅ 移除 | ✅ 清空 | → False | ❌ 移除 | → undefined |
+
+- **clear()**：保留顶栏容器，清空内容。适合"换一批控件"场景
+- **delete()**：完全拆除。适合 `reset_sub()` 等需要彻底清理的场景
+
+### clear() 的 JS 实现
+
+```js
+// 重建空 left/right 容器，一次性清掉所有 widget 子元素和分隔符
+var _l = {id}._div.querySelector('.topbar-container');
+var _r = {id}._div.querySelectorAll('.topbar-container')[1];
+_l.innerHTML = '';
+_r.innerHTML = '';
+```
+
+**为什么用 innerHTML='' 而非逐个 remove**：分隔符（`makeSeparator`）创建后未被追踪，无法逐个删除。重建空容器是最干净的方式。
+
+### 回调清理链
+
+```
+Widget.__init__(func) → wrapper 闭包捕获 func + topbar
+                     → self.win.handlers[self.id] = wrapper
+
+clear()/delete() → self.win.handlers.pop(widget.id)  ← 断开 Python→JS 调用链
+                → self._widgets.clear()               ← widget 可 GC → 闭包 GC → func 释放
+                → JS innerHTML=''                      ← DOM 销毁 → JS 事件监听器随元素 GC
+```
+
+### reset_sub() 中的调用
+
+```python
+# 旧：12 行内联清理
+# 新：1 行
+self.topbar.delete()
+```
+
+`delete()` 后 `self.topbar` 对象仍存在（Python 引用未断），用户通过 `widget 方法 → _create()` 复用同一实例重建。
+
+---
+
 ## 🔍 Audit 补充（2026-06-28）
 
 ### Python 端新增
@@ -1167,3 +1230,37 @@ DrawingInfo:
 - **根因**：`create_candle_series(group=...)` 传 `group` 给 `CandleSeries.__init__`，但 `__init__` 不接受此参数
 - **修复**：`CandleSeries.__init__` 加上 `group: str = None`，透传给 `SeriesCommon.__init__`
 - **教训**：新增参数时，调用链上每个环节都要检查
+
+---
+
+## 🔧 v2.8.5 HtmlTabChart 多 tab legend/candle 修复（2026-07-01）
+
+### 问题
+HtmlTabChart 切换 tab 后，第一个 tab 的 legend/candle 正常，第二个及后续 tab 出现：
+1. candle 不可见
+2. legend 完全静态（数字不跳动，但眼睛图标能正常显隐 series）
+3. line series 可见（因为每个 tab 独立创建）
+4. legend 只显示眼睛图标，没有 series 名字
+
+### 根因（三层）
+1. **JS 全局变量残留**：`updateChart(id)` 清空容器（DOM 销毁），但 `window.{prefix}_candle` 等全局变量仍指向旧的已销毁 series 对象
+2. **series 不重建**：`_build()` 只在 `__init__` 中调用一次，后续 tab 的 `set()` 操作不存在的 JS 对象
+3. **handler 引用过期**：`handler.series` 指向旧 series → `legendHandler` return → legend 静态
+
+### 修复（三文件配合）
+| 文件 | 改动 |
+|------|------|
+| `widgets.py` `get_html()` | 切换 tab 前 `delete window.{prefix}_candle/volume/oi` 清理旧全局变量 |
+| `series.py` × 3 `_build()` | `if (!{self.id})` 防重复创建 |
+| `abstract.py` `set()` | 开头调 `_build()` + handler 引用赋值，确保每个 tab 都重建 series |
+| `legend.ts` `makeSeriesRow()` | div 初始内容 `■ 系列名`（解决只有眼睛图标的问题） |
+
+### 教训
+- **HtmlTabChart 多 tab**：所有 tab 共享同一 Python 对象，`__init__` JS 只在第一个 tab
+- **JS 全局变量生命周期**：清空 DOM ≠ 清理 JS 全局变量，需显式 `delete`
+- **`_build()` 必须可重入**：多 tab 场景需 JS 端条件判断防重复
+- **`set()` 要自包含**：不能假设 series 已存在，每次 `set()` 都要确保就绪
+
+---
+
+*最后更新：2026-07-01（TopBar 生命周期：clear/delete）*

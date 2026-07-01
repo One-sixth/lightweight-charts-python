@@ -4,6 +4,26 @@
 
 ---
 
+## [v2.8.5] - 2026-07-01
+
+### Fixed
+
+- **HtmlTabChart 多 tab legend/candle 修复**：切换 tab 后第二个及后续 tab 的 candle 不可见、legend 静态不更新。
+  - **根因**：`updateChart(id)` 清空容器但不清除 JS 全局变量（`window.{prefix}_candle/volume/oi`），新 Handler 创建新 chart 后 series 全局变量仍指向旧的已销毁对象。`_build()` 只在 `__init__` 中调用一次，后续 tab 的 `set()` 无法重建 series。
+  - **修复**：`get_html()` 切换 tab 前先 `delete` 旧全局变量；`_build()` 加 `if (!{id})` 防重复；`set()` 开头调 `_build()` + handler 引用赋值。
+- **HtmlTabChart legend 只显示眼睛图标**：`makeSeriesRow` 创建的 div 为空，只在 `legendHandler`（crosshair 移动）中才填充。后续 tab 切换后 crosshair 未触发，div 一直空着。修复：创建 div 后立即设置初始内容 `■ 系列名`。
+
+### Modified Files
+
+| 文件 | 改动 |
+|------|------|
+| `lightweight_charts/widgets.py` | `get_html()` 新增切换 tab 前清理旧全局变量 |
+| `lightweight_charts/series.py` | CandleSeries/VolumeSeries/OpenInterestSeries `_build()` 加 `if (!{self.id})` |
+| `lightweight_charts/abstract.py` | `set()` 开头调 `_build()` + handler 引用赋值 |
+| `src/general/legend.ts` | `makeSeriesRow()` 设置 div 初始内容 |
+
+---
+
 ## [v2.8.4] - 2026-07-01
 
 ### Added

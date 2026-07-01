@@ -261,10 +261,10 @@ class HTMLChart(StaticLWC):
 
 class HtmlTabChart(StaticLWC):
     """Tab 切换式多策略 HTML 图表，支持多策略切换、交易明细、绩效指标展示。
-    
+
     改自 smalinin/bn_lightweight-charts-python 的 HtmlChart_BN:
     https://github.com/smalinin/bn_lightweight-charts-python
-    
+
     Original author: smalinin
     """
     def __init__(self, width: int = 800, height=350, inner_width=1, inner_height=1,
@@ -434,6 +434,18 @@ class HtmlTabChart(StaticLWC):
         self.subcharts = [self.id]
         self._lines = []
         self.clear_markers(_dont_update=True)
+        # ↓ 新增：为新 tab 重建 candle/volume/oi
+        self.candle._build()
+        self.volume._build()
+        self.oi._build()
+        self.run_script(f'''
+            {self.id}.series = {self.candle.id}.series;
+            {self.id}.volumeSeries = {self.volume.id}.series;
+            {self.id}.openInterestSeries = {self.oi.id}.series;
+            0;
+        ''')
+        if self.toolbox is not None:
+            self.toolbox._build()
 
     def set_name(self, name):
         """设置策略名称，用于侧边栏切换。"""

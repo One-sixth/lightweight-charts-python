@@ -117,6 +117,31 @@ class TopBar(Pane):
         self._created = True
         self.run_script(f'{self.id} = {self._chart.id}.createTopBar()')
 
+    def clear(self):
+        """清除所有控件和回调，保留顶栏容器。"""
+        if not self._created:
+            return
+        for widget in list(self._widgets.values()):
+            self.win.handlers.pop(widget.id, None)
+        self._widgets.clear()
+        self.run_script(f'''
+            var _l = {self.id}._div.querySelector('.topbar-container');
+            var _r = {self.id}._div.querySelectorAll('.topbar-container')[1];
+            _l.innerHTML = '';
+            _r.innerHTML = '';
+        ''')
+
+    def delete(self):
+        """删除顶栏（移除所有控件、DOM、JS 引用）。"""
+        if not self._created:
+            return
+        self.clear()
+        self._created = False
+        self.run_script(f'''
+            {self.id}._div.remove();
+            {self._chart.id}._topBar = undefined;
+        ''')
+
     def __getitem__(self, item):
         """通过名称访问已注册的控件。"""
         if widget := self._widgets.get(item):

@@ -11,6 +11,7 @@ from .table import Table
 from .toolbox import ToolBox
 from .drawings import Box, HorizontalLine, RayLine, TrendLine, VerticalLine, VerticalSpan, PriceLine
 from .series import SeriesCommon, LineSeries, HistogramSeries, VolumeSeries, OpenInterestSeries, CandleSeries, AreaSeries, OHLCBarSeries, BaselineSeries
+from .drawing_series import DrawingSeries
 from .topbar import TopBar
 from .util import (
     BulkRunScript, Pane, Events, IDGen, as_enum, jbool, js_json, TIME, NUM, FLOAT,
@@ -274,7 +275,7 @@ class AbstractChart(Pane):
 
         self._lines = []
         self.subcharts = []
-        self._drawing_series = {}  # {pane_index: DrawingSeries}
+        self._drawing_series: dict[int, DrawingSeries] = {}  # {pane_index: DrawingSeries}
         self._tables = []
         self._price_lines: list['PriceLine'] = []
         self._scale_candles_only = scale_candles_only
@@ -348,7 +349,6 @@ class AbstractChart(Pane):
     def _get_drawing_series(self, pane_index=0):
         """内部方法：获取或创建指定 pane 的 DrawingSeries。"""
         if pane_index not in self._drawing_series:
-            from .drawing_series import DrawingSeries
             self._drawing_series[pane_index] = DrawingSeries(self, pane_index)
         return self._drawing_series[pane_index]
 
@@ -742,46 +742,50 @@ class AbstractChart(Pane):
         if self._is_subchart:
             raise RuntimeError("reset() 只能在主图表上调用，并且会删除所有子图表。子图请使用 reset_sub()。")
 
-        # 0. 销毁 ToolBox（JS toolBox + drawings + 回调 + handler）
-        if self.toolbox is not None:
-            self.toolbox._delete()
-
-        # 1. 删除 candle/volume/oi 的 JS 对象和 Python 数据
-        for series in [self.candle, self.volume, self.oi]:
-            if series is not None:
-                self.run_script(f'''
-                    {self.id}.chart.removeSeries({series.id}.series);
-                    var _idx = {self.id}._seriesList.indexOf({series.id}.series);
-                    if (_idx >= 0) {self.id}._seriesList.splice(_idx, 1);
-                    delete {series.id};
-                ''')
-                series.data = pd.DataFrame()
-                series._last_bar = None
-        self.candle.markers.clear()
-
-        # 2. 重置图表状态
-        self._interval = None
-        self._offset = 0
-        self._period_locked = False
-
-        # 3. 删除所有附属 Line/Histogram 系列
-        for line in list(self._lines):
-            line.delete()
-
-        # 6. 清理子图表
+        # 清理子图表
         for sub_id in list(self.subcharts):
             if sub_id != self.id:
                 self.remove_subchart(sub_id)
         self.subcharts = [self.id]
 
-        # 7. 清理事件处理器（包括子图的 ToolBox/topbar/events 等回调）
+        # 删除 PriceLines
+        for series in list(self._price_lines):
+            series.delete()
+
+        # 删除所有附属 Line/Histogram 系列
+        for line in list(self._lines):
+            line.delete()
+
+        # 销毁 ToolBox（JS toolBox + drawings + 回调 + handler）
+        if self.toolbox is not None:
+            self.toolbox._delete()
+
+        self.topbar.delete()
+
+        # 删除 candle/volume/oi 的 JS 对象和 Python 数据
+        self.candle.delete()
+        self.volume.delete()
+        self.oi.delete()
+
+        self.run_script(f'''
+            {self.id}.series = null;
+            {self.id}.volumeSeries = null;
+            {self.id}.openInterestSeries = null;
+            0;
+        ''')
+
+        # 重置图表状态
+        self._interval = None
+        self._offset = 0
+        self._period_locked = False
+
+        # 清理事件处理器（包括子图的 ToolBox/topbar/events 等回调）
         self._clear_handlers()
 
-        # 9. 重建 candle/volume/oi（始终存在，省去后续所有 None 检查）
-        base = self.id.replace('window.', '')
-        self.candle = CandleSeries(self, _fixed_id=f'window.{base}_candle', _dont_add_list=True, legend=False)
-        self.volume = VolumeSeries(self, _fixed_id=f'window.{base}_volume', _dont_add_list=True, legend=False)
-        self.oi = OpenInterestSeries(self, _fixed_id=f'window.{base}_oi', _dont_add_list=True, legend=False)
+        # 重建 candle/volume/oi（始终存在，省去后续所有 None 检查）
+        self.candle._build()
+        self.volume._build()
+        self.oi._build()
         self.run_script(f'''
             {self.id}.series = {self.candle.id}.series;
             {self.id}.volumeSeries = {self.volume.id}.series;
@@ -789,7 +793,7 @@ class AbstractChart(Pane):
             0;
         ''')
 
-        # 10. 重建 ToolBox（创建 JS toolBox + 注册 handler）
+        # 重建 ToolBox（创建 JS toolBox + 注册 handler）
         if self.toolbox is not None:
             self.toolbox._build()
 
@@ -840,53 +844,66 @@ class AbstractChart(Pane):
         12. handlers 清理
         13. Legend 重建（最后执行，恢复到初始隐藏状态）
         """
-        # 1. K线/成交量/持仓量数据
-        self.clear_data()
 
-        # 2. Line/Histogram 系列
+        # 删除所有表格
+        for t in list(self._tables):
+            t.delete()
+
+        # 销毁 ToolBox （JS toolBox + drawings + 回调 + handler）
+        if self.toolbox is not None:
+            self.toolbox._delete()
+
+        # 销毁 TopBar（JS DOM + handler 引用 + widget 回调）
+        self.topbar.delete()
+
+        # 销毁 Line/Histogram 系列
         for line in list(self._lines):
             line.delete()
 
-        # 3. PriceLine
+        # 销毁 PriceLine
         for pl in list(self._price_lines):
             pl.delete()
 
-        # 4. 标记
-        self.clear_markers()
-
-        # 5. 绘图
+        # 删除所有绘图
         for ds in list(self._drawing_series.values()):
             ds.delete()
         self._drawing_series.clear()
 
-        # 6. 表格
-        for t in list(self._tables):
-            t.delete()
+        # 删除 K线/成交量/持仓量数据
+        self.candle.delete()
+        self.volume.delete()
+        self.oi.delete()
+        self.run_script(f'''
+            {self.id}.series = null;
+            {self.id}.volumeSeries = null;
+            {self.id}.openInterestSeries = null;
+            0;
+        ''')
 
-        # 7. ToolBox 销毁（JS toolBox + drawings + 回调 + handler）
-        if self.toolbox is not None:
-            self.toolbox._delete()
-
-        # 8. TopBar 清理
-        if hasattr(self, 'topbar') and self.topbar._created:
-            for widget in list(self.topbar._widgets.values()):
-                self.win.handlers.pop(widget.id, None)
-            self.topbar._widgets.clear()
-            self.run_script(f'{self.id}._topBar?._div.remove()')
-
-        # 9. Legend 清理
+        # Legend 清理
         self.run_script(f'{self.id}.legend.cleanup()')
 
-        # 10. Events 清理（JSEmitter）
+        # Events 清理（JSEmitter）
         self._cleanup_events()
 
-        # 11. syncCharts 双向解关联 + 重建
+        # syncCharts 双向解关联 + 重建
         self._unsync_all()
 
-        # 12. handlers 清理（salt 匹配）
+        # handlers 清理（salt 匹配）
         self._remove_my_handlers()
 
-        # 13. Legend 重建（最后执行）
+        # candle, volume, oi 重建
+        self.candle._build()
+        self.volume._build()
+        self.oi._build()
+        self.run_script(f'''
+            {self.id}.series = {self.candle.id}.series;
+            {self.id}.volumeSeries = {self.volume.id}.series;
+            {self.id}.openInterestSeries = {self.oi.id}.series;
+            0;
+        ''')
+
+        # Legend 重建（最后执行）
         # cleanup() 的 div.remove() 将 legend DOM 从文档树移除，
         # 但后续 legend()/makeSeriesRow() 仍需要一个在 DOM 中的 div。
         # 放在所有清理之后重建，确保 crosshair 订阅不被后续清理干扰。
@@ -894,7 +911,7 @@ class AbstractChart(Pane):
         # 等待 Python 端 legend(visible=True) 激活。
         self.run_script(f'{self.id}.legend.recreate()')
 
-        # 14. ToolBox 重建（在所有清理之后）
+        # ToolBox 重建（在所有清理之后）
         if self.toolbox is not None:
             self.toolbox._build()
 

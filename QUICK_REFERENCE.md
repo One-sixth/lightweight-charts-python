@@ -418,12 +418,12 @@ chart.oi_data       # 持仓量原始: time, value
 | **PriceLine** | ✅ **保留** | ❌ **清除** |
 | **Table** | ✅ **保留** | ❌ **清除** |
 | **事件 handlers** | ✅ **保留** | ❌ **清除** |
-| **TopBar** | ✅ 保留 | ✅ 保留 |
+| **TopBar** | ✅ 保留 | ❌ **清除**（delete） |
 | **样式配置** | ✅ 保留 | ✅ 保留 |
 
 **`set()` 行为：** 温和替换，只动 K 线/成交量/持仓量，其他一切不动。指标线只更新有匹配列名的，不匹配的保留旧数据。
 
-**`reset()` 行为：** 彻底清空所有资源（K 线 + 指标线 + 标记 + 绘图 + PriceLine + Table + handlers），TopBar 和样式保留。candle/volume/oi 自动重建（始终存在），方便后续 `set()` 直接填充。
+**`reset_sub()` 行为：** 彻底清空所有资源（K 线 + 指标线 + 标记 + 绘图 + PriceLine + Table + handlers + TopBar），candle/volume/oi 自动重建（始终存在），方便后续 `set()` 直接填充。TopBar 销毁后，下次调用 `chart.topbar.switcher(...)` 等方法会自动重建。
 
 ```python
 # 场景 1: 切换股票，保留指标线
@@ -1098,7 +1098,22 @@ chart.topbar['symbol'].set('AAPL') # 设置值
 
 # 更新菜单项
 chart.topbar['menu1'].update_items('opt3', 'opt4')
+
+# 清除所有控件（保留顶栏容器，可直接添加新控件）
+chart.topbar.clear()
+
+# 完全删除顶栏（DOM + JS 引用 + 所有回调）
+chart.topbar.delete()
+# delete 后添加新 widget 会自动重建顶栏：
+chart.topbar.button('btn2', 'New Button')
 ```
+
+**clear() vs delete()：**
+
+| 方法 | 控件/handlers | 顶栏容器 | 下次添加 widget |
+|------|:---:|:---:|:---:|
+| `clear()` | 清除 | 保留 | 直接添加 |
+| `delete()` | 清除 | 销毁 | 自动重建 |
 
 ### 3.13 绘图工具 (ToolBox + Drawings)
 
@@ -1599,7 +1614,7 @@ chart.clear_data()
 chart.reset()
 # 执行后 chart 像刚创建时一样干净，WebView 不销毁
 # 包括: 清空K线 + 删除附加系列 + 清空 markers + 清空 drawings + 清理 handlers
-# TopBar widget 和样式配置保留
+# TopBar DOM 保留，但控件回调清空（_clear_handlers）；样式配置保留
 # 网格布局保持不变
 ```
 
@@ -1653,7 +1668,7 @@ sub.set(new_df)  # 重新填充，子图可继续使用
 | 5 | 绘图 (Drawings) | 遍历 `_drawings` 逐一 `delete()` |
 | 6 | 表格 (Tables) | 遍历 `_tables` 逐一 `delete()` |
 | 7 | ToolBox | JS cleanup + handler 移除（先移 handler 再调 JS，避免 KeyError） |
-| 8 | TopBar | Widget 回调 + DOM 移除 |
+| 8 | TopBar | `topbar.delete()`：handlers + widgets + DOM + JS `_topBar` 引用全清 |
 | 9 | Legend | crosshair 订阅 + DOM 移除 |
 | 10 | Events | JSEmitter 事件订阅清理 |
 | 11 | syncCharts | 双向解关联 + 重建（恢复同步组） |
@@ -1674,7 +1689,7 @@ sub.set(new_df)  # 重新填充，子图可继续使用
 | 方法 | 行为 |
 |------|------|
 | `chart.clear_data()` | 清空 OHLCV 数据，保留 series 对象 |
-| `chart.reset()` | 重置主图：清空所有数据+标记+绘图+handlers，保留 TopBar 和样式 |
+| `chart.reset()` | 重置主图：清空所有数据+标记+绘图+handlers，TopBar DOM 保留但回调清空，样式保留 |
 | `sub.reset_sub()` | 重置子图：清除 13 类资源（数据+系列+标记+绘图+表格+ToolBox+TopBar+Legend+Events+sync+handlers），不影响其他子图 |
 | `chart.clear_handlers()` | 清空所有事件处理器 ⚠️ 多图表共存时禁用，会误删其他图表的 handler |
 | `line.delete()` / `histogram.delete()` | JS+Python 双端清理 |
