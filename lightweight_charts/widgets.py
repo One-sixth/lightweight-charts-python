@@ -282,6 +282,8 @@ class HtmlTabChart(StaticLWC):
         self.performance = []
         self.strat_titles = []
         self.strat_parameters = []
+        # ★ 快照 init 阶段 JS 命令，new_window 重放用
+        self._init_html = self._html
 
     def get_html(self) -> str:
         """获取完整的 HTML 代码。
@@ -430,22 +432,10 @@ class HtmlTabChart(StaticLWC):
     def new_window(self):
         """开始一个新的策略窗口（用于保存当前状态并重置）。"""
         self.js_win.append(self._html)
-        self._html = self._html_chart_init
+        self._html = self._init_html
         self.subcharts = [self.id]
         self._lines = []
         self.clear_markers(_dont_update=True)
-        # ↓ 新增：为新 tab 重建 candle/volume/oi
-        self.candle._build()
-        self.volume._build()
-        self.oi._build()
-        self.run_script(f'''
-            {self.id}.series = {self.candle.id}.series;
-            {self.id}.volumeSeries = {self.volume.id}.series;
-            {self.id}.openInterestSeries = {self.oi.id}.series;
-            0;
-        ''')
-        if self.toolbox is not None:
-            self.toolbox._build()
 
     def set_name(self, name):
         """设置策略名称，用于侧边栏切换。"""

@@ -1263,4 +1263,23 @@ HtmlTabChart 切换 tab 后，第一个 tab 的 legend/candle 正常，第二个
 
 ---
 
-*最后更新：2026-07-01（TopBar 生命周期：clear/delete）*
+## 🆕 HtmlTabChart new_window 命令重放重构（2026-07-01）
+
+### 问题
+`new_window()` 手动调 `candle._build()`、`volume._build()`、`oi._build()`、`toolbox._build()`，每次新增组件都需同步更新。
+
+### 方案：init 快照 + 重放
+- `__init__` 末尾保存 `self._init_html = self._html`（init 阶段全量 JS 快照）
+- `new_window()` 直接 `self._html = self._init_html` 重放完整 init 命令
+
+### 效果
+| 方面 | 改前 | 改后 |
+|------|------|------|
+| 覆盖范围 | candle + vol + oi + toolbox | ✅ **全部 init 组件自动覆盖** |
+| 新增组件支持 | ❌ 需手动 _build | ✅ 自动覆盖 |
+| 介入复杂逻辑 | 6 行手动 _build | 0 行，零介入 |
+| 代码量 | 11 行 | 5 行 |
+
+---
+
+*最后更新：2026-07-01（HtmlTabChart new_window 命令重放）*
