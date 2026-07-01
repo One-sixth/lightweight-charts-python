@@ -1295,7 +1295,7 @@ HtmlTabChart 切换 tab 后，第一个 tab 的 legend/candle 正常，第二个
 1. **基类** `StaticLWC.__init__`：`self.run_script('window.callbackFunction = function(){};')` — 所有静态图表自动生效
 2. **安全网** `HtmlTabChart.get_html()` 保留相同代码，双重保险
 
-**为什么升级到基类**：泰斗先生提醒后检查发现，`HTMLChart`、`JupyterChart`、`StreamlitChart` 等所有继承 `StaticLWC` 的静态图表，只要启用 `toolbox=True` 都会触发相同错误。基类修复一劳永逸。
+**为什么升级到基类**：检查发现，`HTMLChart`、`JupyterChart`、`StreamlitChart` 等所有继承 `StaticLWC` 的静态图表，只要启用 `toolbox=True` 都会触发相同错误。基类修复一劳永逸。
 
 ### 验证
 - ✅ `HtmlTabChart` + toolbox: data=50, tb=true

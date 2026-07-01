@@ -1527,6 +1527,22 @@ class AbstractChart(Pane):
                 {self.id}.chart.applyOptions({js_json(options)})
             ''')
 
+    def _apply_options(self, options: dict):
+        """向 JS 端的 chart.applyOptions() 发送选项字典（内部方法）。
+
+        :param options: 选项字典，键名使用 JS 驼峰格式（如 layout, grid, crosshair）。
+                        None 值会被 js_json 自动过滤。
+        
+        示例::
+
+            chart._apply_options({
+                'layout': {'background': {'color': '#000'}},
+                'grid': {'vertLines': {'visible': False}},
+                'crosshair': {'mode': 0}
+            })
+        """
+        self.run_script(f'{self.id}.chart.applyOptions({js_json(options)})')
+
     def watermark(self, text: str, font_size: int = 44, color: str = 'rgba(180, 180, 200, 0.5)'):
         """
         Adds a watermark to the chart.

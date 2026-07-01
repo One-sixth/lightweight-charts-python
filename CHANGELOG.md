@@ -6,6 +6,10 @@
 
 ## [v2.8.6] - 2026-07-01
 
+### Added
+
+- **AbstractChart `_apply_options(options)` 内部方法**：直接调用 `chart.applyOptions()` 的通用入口，接受 JS 驼峰格式的选项字典。与 Series 级别的 `_apply_options()` 对称，用于图表级选项的灵活设置。
+
 ### Changed
 
 - **HtmlTabChart `new_window()` 重构为 init 快照重放**：
