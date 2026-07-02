@@ -2,6 +2,18 @@
 
 本文件记录 lightweight-charts-onesixth 项目的核心经验、决策和教训。
 
+## 🔧 v3.0.1 修复记录 — 2026-07-02
+
+### `SeriesCommon.pop()` Python 端同步修复
+
+**问题**：`pop()` 只调了 JS 端的 `series.pop(N)`，但 Python 端 `self.data`、`self._last_bar`、`self.markers` 均未同步。
+**修复**：先清理 markers（filter 指向被删时间的条目 + `_update_markers()` 同步 JS），再更新 data + `_last_bar`。
+
+### `_update_markers()` 改进
+
+1. markers 按 `time` 升序排序，避免插入顺序与时间顺序不一导致图表显示异常
+2. 空 markers 时销毁 JS `seriesMarkers` 对象（`destroy()` + `delete`），而非仅 `setMarkers([])`
+
 ---
 
 ## 🎉 v3.0 里程碑

@@ -6,7 +6,7 @@
 ## 一、项目架构
 
 ```
-lightweight-charts-python/          ← v3.0.0
+lightweight-charts-python/
 ├── lightweight_charts/             ← Python 后端 (核心包)
 │   ├── __init__.py                 # 导出 AbstractChart, Chart, CrossProcessChart, JupyterChart,
 │   │                               #        HTMLChart, HtmlTabChart, PolygonChart, ReflexChart,

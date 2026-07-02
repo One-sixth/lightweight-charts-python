@@ -4,6 +4,34 @@
 
 ---
 
+## [v3.0.1] - 2026-07-02
+
+### 🐛 Bug 修复
+
+#### `SeriesCommon.pop()` Python 端数据未同步
+
+**根因**：`pop()` 只调了 JS 端的 `series.pop(N)`，但 Python 端的 `self.data`、`self._last_bar`、`self.markers` 均未同步更新，导致 `chart.data` 等属性与实际渲染不一致。
+
+**修复内容**：
+1. **`self.data`**：同步截断为 `iloc[:keep_count]`
+2. **`self._last_bar`**：同步更新为新的最后一行（全删则置 `None`）
+3. **`self.markers`**：过滤掉指向被删数据的 marker（Python dict + JS 端 `_update_markers()` 双同步）
+4. **清理顺序**：先清理 markers（依附于 series），再清理数据
+
+#### `_update_markers()` 两项改进
+
+1. **markers 按 time 升序排序**：`sorted(list(self.markers.values()), key=lambda m: m['time'])`，避免因 markers 插入顺序与时间顺序不一致导致图表显示异常
+2. **空 markers 时销毁 JS seriesMarkers 对象**：从 `setMarkers([])` 改为 `destroy()` + `delete` 彻底销毁，避免残留
+
+### Modified Files
+
+| 文件 | 改动 |
+|------|------|
+| `lightweight_charts/series.py` | `pop()` 新增 Python 端 data/markers/`_last_bar` 同步；`_update_markers()` 排序 + 销毁 |
+| `pyproject.toml` | 版本号 3.0.0 → 3.0.1 |
+
+---
+
 ## [v3.0.0] - 2026-07-01
 
 ### 🎉 里程碑：v3.0 正式发布

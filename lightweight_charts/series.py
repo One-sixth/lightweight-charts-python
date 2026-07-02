@@ -51,7 +51,21 @@ class SeriesCommon(Pane):
 
     def pop(self, count: int = 1):
         """从系列末尾移除指定数量的数据点。"""
+        if count <= 0 or self.data is None or self.data.empty:
+            return
         self.run_script(f'{self.id}.series.pop({count})')
+        # 先清理 markers（依附于 series，需优先处理）
+        keep_count = len(self.data) - count
+        if keep_count <= 0:
+            self.clear_data()
+        else:
+            # 移除指向被删数据的 markers（data time 和 marker time 均为 int，直接比对）
+            removed_times = set(self.data.iloc[keep_count:]['time'])
+            self.markers = {k: v for k, v in self.markers.items() if v['time'] not in removed_times}
+            self._update_markers()
+            # 最后更新数据
+            self.data = self.data.iloc[:keep_count]
+            self._last_bar = self.data.iloc[-1]
 
     def delete(self):
         """删除此系列（清除标记、重置状态、移除 JS 对象、清理图例）。"""
@@ -196,7 +210,9 @@ class SeriesCommon(Pane):
     def _update_markers(self):
         auto_scale = jbool(self._chart._marker_auto_scale)
         if len(self.markers) > 0:
-            str_markers = json.dumps(list(self.markers.values()))
+            # 按 time 升序排列，确保图表显示顺序正确
+            sorted_markers = sorted(list(self.markers.values()), key=lambda m: m['time'])
+            str_markers = json.dumps(sorted_markers)
             self.run_script(f'''
                 try {{
                     if (!{self.id}.seriesMarkers) {{
@@ -211,7 +227,11 @@ class SeriesCommon(Pane):
             ''')
         else:
             self.run_script(f'''
-                if ({self.id}.seriesMarkers) {self.id}.seriesMarkers.setMarkers([]);
+                if ({self.id}.seriesMarkers) {{
+                    {self.id}.seriesMarkers.setMarkers([]);
+                    {self.id}.seriesMarkers.destroy();
+                    delete {self.id}.seriesMarkers;
+                }}
             ''')
 
     def add_markers(self, markers: list[dict]):
