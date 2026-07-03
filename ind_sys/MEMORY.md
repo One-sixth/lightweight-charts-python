@@ -1,0 +1,233 @@
+# ind_sys 子系统记忆
+
+> **状态**：🚧 开发中（v0.3 最小可用，未完成）
+> **最后更新**：2026-07-03
+> **注意**：此文件是 ind_sys 内部记忆，不写入主 README 等正式文档
+
+---
+
+## 当前状态
+
+| 阶段 | 状态 |
+|------|------|
+| 设计文档 v0.3 | ✅ 完成 |
+| 3 个核心 dataclass | ✅ 完成 |
+| System.build() + SystemLayout | ✅ 完成 |
+| Adapter.render() | ✅ 完成 |
+| 链式 API (SeriesAccessor) | ✅ 完成 |
+| Marker (add_marker/add_markers) | ✅ 完成 |
+| live 动态同步 | ✅ 完成 |
+| 冒烟测试 | ✅ 10+ 项全过 |
+| 示例 | ✅ examples/41_ind_sys/demo.py |
+| Drawing/PriceLine/TopBar/Table | ⏳ 暂不实现 |
+| 回测引擎 self.MC 对接 | ⏳ 待研究 |
+| 序列化 (JSON/YAML) | ⏳ 待研究 |
+
+---
+
+## 文件结构
+
+```
+ind_sys/
+├── __init__.py          # 导出 System/Window/Chart/Series/SeriesType/SeriesAccessor/Adapter/parse_interval
+├── models.py            # 全部 dataclass + build() + SystemLayout + SeriesAccessor + parse_interval
+├── adapter.py           # Adapter.render() + _series_kwargs() + _apply_markers()
+├── IND_SYS_DESIGN.md    # 设计文档 v0.3
+├── IND_SYS_NEXT_STEPS.md# 下一步指南 v0.3
+├── MEMORY.md            # 本文件（子系统专属记忆）
+└── tests/
+    └── smoke_test.py    # 冒烟测试
+```
+
+---
+
+## 核心 API
+
+### 声明结构
+
+```python
+from ind_sys import System, Window, Chart, Series, Adapter
+
+sys_obj = System(
+    windows=[Window(name='main', display_name='Demo')],
+    charts=[
+        Chart(name='price', display_name='Price', window='main',
+              interval='1day', precision=2, position=211, sync_id='main'),
+        Chart(name='ind', display_name='RSI', window='main',
+              interval='1day', precision=4, position=212, sync_id='main'),
+    ],
+    series=[
+        Series(name='candle', display_name='K线', chart='price', pane=0, type='candle'),
+        Series(name='sma50', display_name='SMA50', chart='price', pane=0, type='line', color='#FF6F00'),
+        Series(name='vol', display_name='Volume', chart='price', pane=1, type='volume'),
+        Series(name='rsi', display_name='RSI', chart='ind', pane=0, type='line'),
+    ],
+)
+```
+
+### 数据操作（链式 API）
+
+```python
+sys_obj['candle'].set(df)                    # 设置全量 bar 数据
+sys_obj['candle'].append(df_new)             # 追加（按 time 去重保留最新）
+sys_obj['candle'].pop(2)                     # 从末尾移除 2 根
+sys_obj['candle'].data                       # → DataFrame
+sys_obj['candle'].add_marker(time=..., position='below', shape='arrow_up', text='买入')
+sys_obj['candle'].add_markers([{...}, {...}])
+sys_obj['candle'].markers                    # → list[dict]
+```
+
+### 构建 + 渲染
+
+```python
+layout = sys_obj.build(live=True)            # 构建关系图 + 启动同步线程
+chart = Adapter.render(layout, width=1000, height=800)  # 渲染到主库
+# ... 后续 sys_obj['name'].append() 自动同步到 chart ...
+sys_obj.stop_sync()                          # 停止同步线程
+chart.exit()
+```
+
+---
+
+## 实体类设计
+
+### Window（极简）
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| name | str | — | 标识名 |
+| display_name | str | — | 显示名 |
+
+### Chart
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| name | str | — | 标识名 |
+| display_name | str | — | 显示名 |
+| window | str | — | 所属 Window 引用 |
+| interval | int\|str | — | **必选**。秒数或 '1day'/'5min'/'15sec' |
+| precision | int | 2 | 价格精度 |
+| position | int | 111 | 网格位置 (211=2行1列第1格) |
+| width | float | 1.0 | 相对网格单元宽度 |
+| height | float | 1.0 | 相对网格单元高度 |
+| xy | tuple\|None | None | 绝对坐标 (x,y)，设定后切换 set_position 模式 |
+| sync_id | str\|None | None | 同步组名 |
+
+### Series（8 种类型，全量属性）
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| name | str | — | 标识名 |
+| display_name | str | — | 显示名 |
+| chart | str | — | 所属 Chart 引用 |
+| pane | int | 0 | Pane 编号 |
+| type | str | "line" | candle/ohlc_bar/line/area/baseline/histogram/volume/open_interest |
+| visible | bool | True | |
+| color | str | "#2962FF" | |
+| line_width | int | 2 | |
+| line_style | str | "solid" | |
+| price_scale_id | str\|None | "right" | left/right/None(独立) |
+| price_line | bool | False | |
+| price_label | bool | True | |
+| legend | bool | True | |
+| group | str\|None | None | 图例分组 |
+
+Candle/OHLCBar 独有：up_color, down_color, border_visible, wick_visible, crosshair_marker
+OHLCBar 独有：open_visible, thin_bars
+Area 独有：top_color, bottom_color, relative_gradient, invert_filled_area
+Baseline 独有：base_value, top/bottom_fill_color1/2, top/bottom_line_color
+Histogram 独有：scale_margin_top, scale_margin_bottom（+ data 中 color 列）
+
+**注意**：Series 声明时**不带 data**，数据通过 `sys_obj['name'].set()` 设置。
+
+---
+
+## 设计决策
+
+| # | 决策 | 说明 |
+|---|------|------|
+| 1 | 声明式扁平化 | System 持有同级 Window/Chart/Series 列表，名称引用关联 |
+| 2 | 结构不可变 | 声明后不能增删实体，只能改数据/属性 |
+| 3 | Series 不带 data | 声明时只描述结构，数据通过链式 API 设置 |
+| 4 | interval 必选 | 每个 Chart 必须指定时间级别（int 或 str） |
+| 5 | 每 pane 一个 K线 | build() 中 Indicator 约束验证 |
+| 6 | 统一输入契约 | 所有 Series 统一 time + value 列 |
+| 7 | 其他实体暂不实现 | Marker 已实现（通过 SeriesAccessor），Drawing/PriceLine/TopBar/Table 暂不实现 |
+
+---
+
+## live 动态同步机制
+
+**触发**：`sys_obj.build(live=True)` 启动守护线程
+
+**原理**：
+1. 每次 set/append/pop → `_version += 1`
+2. 同步线程每秒检查 `_version` 是否变化
+3. 有变化 → 遍历 series，比较行数
+   - 行数增加 → `series_obj.update_bars(新增部分)` 增量推送
+   - 行数减少 → `series_obj.set(全量)` 重置
+4. `Adapter.render()` 设置 `_render_chart` + `_series_map`，同步线程检测到后开始工作
+5. `sys_obj.stop_sync()` 停止线程
+
+**关键属性**（System 内部）：
+- `_version: int` — 数据版本号
+- `_sync_state: dict` — {series_name: last_synced_row_count}
+- `_render_chart: object` — 主库 chart 引用（Adapter.render 设置）
+- `_series_map: dict` — {series_name: 主库 series 对象}
+- `_sync_thread / _stop_event` — 线程控制
+
+**容错**：同步失败不影响数据层（try/except）
+
+---
+
+## 适配器翻译规则
+
+| ind_sys | 主库 API |
+|---------|---------|
+| Window | Chart/HtmlTabChart（根据场景） |
+| Chart.position | Chart(position=...) / create_subchart(position=...) |
+| Chart.interval | chart.set_period(parse_interval(interval)) |
+| Chart.precision | chart.price_scale(price_format={...}) |
+| Chart.xy | chart.set_position(x, y, width, height) |
+| Chart.sync_id | Chart(sync_id=...) / create_subchart(sync_id=...) |
+| Series(主K线) | chart.set(df) |
+| Series(volume) | chart.volume.set(df) |
+| Series(open_interest) | chart.oi.set(df) |
+| Series(其他) | chart.create_line/area/...(**kwargs) + .set(df) |
+| Marker | series.add_marker(**marker_dict) |
+| Series.pane | pane_index 参数 |
+
+---
+
+## interval 字符串解析
+
+`parse_interval()` 支持的格式：
+- `'15sec'` / `'15s'` → 15
+- `'5min'` / `'5mins'` → 300
+- `'1hour'` / `'1h'` → 3600
+- `'1day'` / `'1d'` → 86400
+- `'1week'` / `'1w'` → 604800
+- 纯数字 `60` → 60（秒）
+
+---
+
+## 已知限制
+
+1. **Adapter.render 只处理首个 Window**（v0.3 最小可用）
+2. **live 同步只处理 bar 数据**（append/set/pop），不处理 tick
+3. **Marker 只存储不验证**（time 是否在 series 数据范围内不检查）
+4. **子图 interval 继承**：如子图没有主K线，需要 interval 必选（已解决）
+5. **多 Window 场景**未测试
+6. **Drawing/PriceLine/TopBar/Table** 暂不实现
+
+---
+
+## 版本演进
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| v0.1 | 07-03 | 概念探索，11 条决策，5 种 Series |
+| v0.2 | 07-03 | 对齐主库 v3.0.1，12 项差距修复，8 种 Series + Drawing + TopBar/Table |
+| v0.3 | 07-03 | 大幅简化为最小可用：Window 极简 / Chart 精简 / Series 全量 / 其他砍掉 |
+| v0.3+ | 07-03 | 实现：3 个 dataclass + build() + Adapter + 链式 API + Marker + live 同步 |
+
+---
+
+*ind_sys 子系统记忆，泰斗先生 × 小音，2026-07-03*
