@@ -1,6 +1,6 @@
 # ind_sys 下一步指南
 
-> v0.3 — 最小可用版本
+> v0.3+ — 多 Window 渲染已完成
 > 设计文档：`IND_SYS_DESIGN.md`（v0.3）
 
 ---
@@ -10,9 +10,15 @@
 | 阶段 | 状态 |
 |------|------|
 | 设计文档 v0.3 | ✅ 完成 |
-| 3 个 dataclass | ⏳ 待编码 |
-| build() | ⏳ 待编码 |
-| 适配器 | ⏳ 待编码 |
+| 3 个核心 dataclass | ✅ 完成 |
+| build() + SystemLayout | ✅ 完成 |
+| 链式 API (SeriesAccessor) | ✅ 完成 |
+| Marker (add_marker/add_markers) | ✅ 完成 |
+| live 动态同步 | ✅ 互斥锁 + 版本号 + 三路同步 |
+| 多 Window 渲染 | ✅ 遍历全部 Window，单/多返回自适应 |
+| 冒烟测试 | ✅ 10+ 项 |
+| 示例 1 — minimal | ✅ |
+| 示例 2 — demo | ✅ 2 Window 多窗口渲染 |
 
 ---
 

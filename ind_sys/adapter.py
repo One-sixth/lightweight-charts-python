@@ -12,15 +12,21 @@ if TYPE_CHECKING:
 #  Series → 工厂方法参数
 # ═══════════════════════════════════════════════════════════════
 
+# 支持 price_scale_id 参数的工厂方法（histogram 不支持）
+_SUPPORTS_PRICE_SCALE_ID = {"line", "candle", "area", "ohlc_bar", "baseline"}
+
+
 def _series_kwargs(s: 'Series') -> dict:
     """根据 Series.type 生成对应 create_*() 工厂方法的参数"""
     common = dict(
         name=s.display_name,
-        price_scale_id=s.price_scale_id,
         price_line=s.price_line,
         price_label=s.price_label,
         pane_index=s.pane,
     )
+    # price_scale_id 只在支持它的工厂方法中传递
+    if s.type in _SUPPORTS_PRICE_SCALE_ID and s.price_scale_id is not None:
+        common['price_scale_id'] = s.price_scale_id
     t = s.type
     if t == "line":
         return {**common, "color": s.color, "width": s.line_width,
@@ -80,7 +86,9 @@ class Adapter:
     def render(layout: 'SystemLayout', width: int = 800, height: int = 600):
         """
         渲染 SystemLayout，返回主库 Chart 实例。
-        当前只处理首个 Window（v0.3 最小可用）。
+
+        - 如果 System 中只有一个 Window → 返回单个 Chart
+        - 如果有多个 Window → 返回 tuple[Chart, ...]
         """
         from lightweight_charts import Chart as RenderChart
         from .models import parse_interval
@@ -88,55 +96,66 @@ class Adapter:
         if not layout.windows:
             raise ValueError("System 中没有 Window")
 
-        window = layout.windows[0]
-        charts = layout.charts_of(window.name)
-        if not charts:
-            raise ValueError(f"Window '{window.name}' 中没有 Chart")
-
-        primary_chart_name = layout.primary_charts.get(window.name, charts[0].name)
-        primary_chart = next(c for c in charts if c.name == primary_chart_name)
-
-        # ── 1. 创建主图 ──
-        chart = RenderChart(
-            width=width, height=height,
-            position=primary_chart.position,
-            sync_id=primary_chart.sync_id,
-        )
-        chart.legend(visible=True)
-        chart.set_period(parse_interval(primary_chart.interval))
-        chart.price_scale(price_format={'type': 'price',
-                                        'precision': primary_chart.precision})
-        # 绝对坐标模式
-        if primary_chart.xy is not None:
-            x, y = primary_chart.xy
-            chart.set_position(x, y, primary_chart.width, primary_chart.height)
-
-        # ── 2. 主图的 Series ──
         sys_obj = layout._system
-        _render_series(chart, layout, primary_chart_name, sys_obj)
+        result = []
 
-        # ── 3. 子图 ──
-        for c in charts:
-            if c.name == primary_chart_name:
+        for wi, window in enumerate(layout.windows):
+            charts = layout.charts_of(window.name)
+            if not charts:
                 continue
-            sub = chart.create_subchart(
-                position=c.position,
-                width=c.width, height=c.height,
-                sync_id=c.sync_id,
+
+            primary_chart_name = layout.primary_charts.get(window.name, charts[0].name)
+            primary_chart = next(c for c in charts if c.name == primary_chart_name)
+
+            # 窗口偏移，避免多个窗口完全重叠
+            wx, wy = 20 * wi, 20 * wi
+
+            # ── 创建主图（每个 Window 独立窗口）──
+            chart = RenderChart(
+                width=width, height=height,
+                x=wx, y=wy,
+                title=window.display_name,
+                position=primary_chart.position,
+                sync_id=primary_chart.sync_id,
             )
-            sub.legend(visible=True)
-            sub.set_period(parse_interval(c.interval))
-            sub.price_scale(price_format={'type': 'price', 'precision': c.precision})
-            if c.xy is not None:
-                x, y = c.xy
-                sub.set_position(x, y, c.width, c.height)
-            _render_series(sub, layout, c.name, sys_obj)
+            chart.legend(visible=True)
+            chart.set_period(parse_interval(primary_chart.interval))
+            chart.price_scale(price_format={'type': 'price',
+                                            'precision': primary_chart.precision})
+            if primary_chart.xy is not None:
+                x, y = primary_chart.xy
+                chart.set_position(x, y, primary_chart.width, primary_chart.height)
 
-        # ── 4. 激活同步（live 模式下，同步线程检测到 chart 后开始工作）──
+            # ── 主图的 Series ──
+            _render_series(chart, layout, primary_chart_name, sys_obj)
+
+            # ── 子图 ──
+            for c in charts:
+                if c.name == primary_chart_name:
+                    continue
+                sub = chart.create_subchart(
+                    position=c.position,
+                    width=c.width, height=c.height,
+                    sync_id=c.sync_id,
+                )
+                sub.legend(visible=True)
+                sub.set_period(parse_interval(c.interval))
+                sub.price_scale(price_format={'type': 'price',
+                                              'precision': c.precision})
+                if c.xy is not None:
+                    x, y = c.xy
+                    sub.set_position(x, y, c.width, c.height)
+                _render_series(sub, layout, c.name, sys_obj)
+
+            result.append(chart)
+
+        # 激活同步（live 模式下，同步线程检测到就绪后开始工作）
         if sys_obj is not None:
-            sys_obj._render_chart = chart
+            sys_obj._render_ready = True
 
-        return chart
+        if len(result) == 1:
+            return result[0]
+        return tuple(result)
 
 
 def _apply_markers(series_obj, layout: 'SystemLayout', series_name: str):
@@ -147,60 +166,54 @@ def _apply_markers(series_obj, layout: 'SystemLayout', series_name: str):
         series_obj.add_marker(**m_clean)
 
 
+def _create_series_on_chart(chart, s, layout):
+    """在 chart 上创建一个 series 并设置数据，返回 series 对象。"""
+    if s.type == 'volume':
+        chart.volume.set(layout.get_data(s.name))
+        return chart.volume
+    if s.type == 'open_interest':
+        chart.oi.set(layout.get_data(s.name))
+        return chart.oi
+    factory = _FACTORY[s.type]
+    kwargs = _series_kwargs(s)
+    method = getattr(chart, factory)
+    series_obj = method(**kwargs)
+    series_obj.set(layout.get_data(s.name))
+    return series_obj
+
+
 def _render_series(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None):
     """在主库 chart 上渲染 ind_sys Series 列表。"""
     series_list = layout.series_of(chart_name)
-    primary_s = layout.primary_series.get(chart_name)
+    primary_s_name = layout.primary_series.get(chart_name)
+    primary_s_obj = None
 
     for s in series_list:
-        df = layout.get_data(s.name)
-        if df is None or df.empty:
+        data = layout.get_data(s.name)
+        if data is None:
             continue
 
-        # 主K线 → chart.set()
-        if s.name == primary_s:
-            chart.set(df)
-            _apply_markers(chart, layout, s.name)
+        if s.name == primary_s_name:
+            # 主 series：根据类型选择不同的设置方式
+            if s.type == 'candle':
+                chart.set(data)
+                primary_s_obj = chart.candle
+            elif s.type == 'ohlc_bar':
+                primary_s_obj = chart.create_ohlc_bar_series(**_series_kwargs(s))
+                primary_s_obj.set(data)
+            else:
+                primary_s_obj = _create_series_on_chart(chart, s, layout)
             if sys_obj is not None:
-                sys_obj._series_map[s.name] = chart
-                sys_obj._sync_state[s.name] = len(df)
-                sys_obj._sync_last_marker_counts[s.name] = len(sys_obj._markers.get(s.name, []))
-            continue
-
-        # volume → chart.volume
-        if s.type == "volume":
-            chart.volume.set(df)
-            _apply_markers(chart.volume, layout, s.name)
+                sys_obj._series_map[s.name] = primary_s_obj
+        else:
+            series_obj = _create_series_on_chart(chart, s, layout)
             if sys_obj is not None:
-                sys_obj._series_map[s.name] = chart.volume
-                sys_obj._sync_state[s.name] = len(df)
-                sys_obj._sync_last_marker_counts[s.name] = len(sys_obj._markers.get(s.name, []))
-            continue
+                sys_obj._series_map[s.name] = series_obj
 
-        # open_interest → chart.oi
-        if s.type == "open_interest":
-            chart.oi.set(df)
-            _apply_markers(chart.oi, layout, s.name)
-            if sys_obj is not None:
-                sys_obj._series_map[s.name] = chart.oi
-                sys_obj._sync_state[s.name] = len(df)
-                sys_obj._sync_last_marker_counts[s.name] = len(sys_obj._markers.get(s.name, []))
-            continue
-
-        # 其他 → create_*() 工厂方法
-        method_name = _FACTORY.get(s.type)
-        if method_name is None:
-            raise ValueError(f"不支持的 Series type: '{s.type}'")
-
-        factory = getattr(chart, method_name)
-        kwargs = _series_kwargs(s)
-        created = factory(**kwargs)
-        created.set(df)
-        _apply_markers(created, layout, s.name)
-        if sys_obj is not None:
-            sys_obj._series_map[s.name] = created
-            sys_obj._sync_state[s.name] = len(df)
-            sys_obj._sync_last_marker_counts[s.name] = len(sys_obj._markers.get(s.name, []))
-
-        if not s.visible:
-            created._apply_options({'visible': False})
+    # 应用 markers
+    for s in series_list:
+        markers = layout.get_markers(s.name)
+        if markers:
+            series_obj = sys_obj._series_map.get(s.name) if sys_obj else None
+            if series_obj is not None:
+                _apply_markers(series_obj, layout, s.name)
