@@ -53,16 +53,16 @@ assert layout._system is sys_obj
 assert sys_obj._sync_thread is not None
 print(f'sync_thread: {sys_obj._sync_thread}')
 
-# ── 数据操作 + 版本号 ──
-v0 = sys_obj._version
+# ── 数据操作 + 系列版本号 ──
+v0 = sys_obj._series_versions.get('rsi', 0)
 sys_obj['rsi'].append(pd.DataFrame({'time':[4,5], 'value':[65,70]}))
-assert sys_obj._version == v0 + 1
+assert sys_obj._series_versions.get('rsi', 0) == v0 + 1
 assert len(layout.get_data('rsi')) == 5
-print(f'=== append + 版本号: {v0} -> {sys_obj._version} ===')
+print(f'=== append + 版本号: {v0} -> {sys_obj._series_versions.get("rsi", 0)} ===')
 
 sys_obj['rsi'].pop(2)
-assert sys_obj._version == v0 + 2
-print(f'=== pop + 版本号: {sys_obj._version} ===')
+assert sys_obj._series_versions.get('rsi', 0) == v0 + 2
+print(f'=== pop + 版本号: {sys_obj._series_versions.get("rsi", 0)} ===')
 
 # ── Marker ──
 sys_obj['candle'].add_marker(time=2, position='below', shape='arrow_up', color='#00FF00', text='买入')

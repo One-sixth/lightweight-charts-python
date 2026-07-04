@@ -1,4 +1,4 @@
-"""ind_sys 示例 — 声明式描述 + live 动态同步
+"""ind_sys 示例 — 声明式描述 + live 动态同步（完全自包含，不依赖外部数据）
 
 结构：
   Window
@@ -12,14 +12,32 @@ live 模式：build(live=True) 启动同步线程，
 后续 sys_obj['name'].append() 自动同步到渲染层。
 """
 import os
+import sys
 import threading
 import time
+import numpy as np
 import pandas as pd
 
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 from ind_sys import System, Window, Chart, Series, Adapter
+
+
+def generate_data(n: int = 200):
+    """生成模拟 K 线数据"""
+    np.random.seed(42)
+    dates = pd.date_range('2023-01-01', periods=n, freq='D')
+    base = 100.0
+    prices = base + np.cumsum(np.random.randn(n) * 2)
+    df = pd.DataFrame({
+        'time': dates.strftime('%Y-%m-%d'),
+        'open': prices,
+        'high': prices + np.abs(np.random.randn(n) * 2) + 0.5,
+        'low': prices - np.abs(np.random.randn(n) * 2) - 0.5,
+        'close': prices + np.random.randn(n) * 0.8,
+        'volume': np.random.randint(100000, 500000, n),
+    })
+    return df
 
 
 def calculate_sma(df, period: int):
@@ -30,8 +48,7 @@ def calculate_sma(df, period: int):
 
 
 if __name__ == '__main__':
-    csv_path = os.path.join(os.path.dirname(__file__), '..', '4_line_indicators', 'ohlcv.csv')
-    df = pd.read_csv(csv_path).rename(columns={'date': 'time'})
+    df = generate_data(200)
 
     sma50 = calculate_sma(df, 50)
     sma120 = calculate_sma(df, 120)
@@ -46,7 +63,7 @@ if __name__ == '__main__':
             Chart(name='price', display_name='Price', window='main',
                   interval='1day', precision=2, position=211, sync_id='main'),
             Chart(name='indicator', display_name='SMA120', window='main',
-                  interval='1day', precision=2, position=212, sync_id=None),
+                  interval='1day', precision=2, position=212, sync_id='main'),
         ],
         series=[
             Series(name='candle', display_name='K线', chart='price', pane=0, type='candle'),
@@ -80,7 +97,7 @@ if __name__ == '__main__':
     def live_feed():
         last_close = candle_df.iloc[-1]['close']
         last_time = pd.Timestamp(candle_df.iloc[-1]['time'])
-        for i in range(1, 11):
+        for i in range(1, 4):
             time.sleep(2)
             new_time = (last_time + pd.Timedelta(days=i)).strftime('%Y-%m-%d')
             new_close = last_close + i * 0.5
@@ -94,13 +111,13 @@ if __name__ == '__main__':
             sys_obj['sma50'].append(pd.DataFrame({
                 'time': [new_time], 'value': [new_close - 0.3],
             }))
-            print(f'  append #{i}: time={new_time} close={new_close}  (version={sys_obj._version})')
+            print(f'  append #{i}: time={new_time} close={new_close}  '
+                  f'(version={sys_obj._series_versions.get("candle", 0)})')
 
     threading.Thread(target=live_feed, daemon=True).start()
 
-    # ── 显示窗口 12 秒（2 秒后开始追加，共 3 次）──
-    print('show(wait=12) — 观察 K 线每 2 秒自动追加...')
-    chart.show(wait=12)
+    print('show(wait=6) — 观察 K 线每 2 秒自动追加...')
+    chart.show(wait=6)
 
     sys_obj.stop_sync()
     chart.exit()

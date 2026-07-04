@@ -208,9 +208,11 @@ class System:
     series: list[Series]
     _data: dict = field(default_factory=dict, repr=False)  # series_name → DataFrame
     _markers: dict = field(default_factory=dict, repr=False)  # series_name → [marker dict]
-    # ── 动态同步（live 模式）──
-    _version: int = 0                   # 数据版本号，每次 set/append/pop 时 +1
+    # ── 动态同步（live 模式） ──
+    _series_versions: dict = field(default_factory=dict, repr=False)  # series_name → version
     _sync_state: dict = field(default_factory=dict, repr=False)  # series_name → last synced row count
+    _sync_last_versions: dict = field(default_factory=dict, repr=False)  # series_name → last synced version
+    _sync_last_marker_counts: dict = field(default_factory=dict, repr=False)  # series_name → last synced marker count
     _render_chart: object = None        # 主库 chart 引用（Adapter.render 设置）
     _series_map: dict = field(default_factory=dict, repr=False)  # series_name → 主库 series 对象
     _sync_thread: object = None
@@ -230,7 +232,7 @@ class System:
         """一次性设置全量 bar 数据"""
         self._assert_series(series_name)
         self._data[series_name] = df.copy()
-        self._version += 1
+        self._series_versions[series_name] = self._series_versions.get(series_name, 0) + 1
 
     def append_data(self, series_name: str, df: pd.DataFrame) -> None:
         """追加 bar 数据（按 time 去重，保留最新）"""
@@ -243,7 +245,7 @@ class System:
             combined = combined.drop_duplicates(subset='time', keep='last')
             combined = combined.sort_values('time').reset_index(drop=True)
             self._data[series_name] = combined
-        self._version += 1
+        self._series_versions[series_name] = self._series_versions.get(series_name, 0) + 1
 
     def pop_data(self, series_name: str, count: int = 1) -> None:
         """从末尾移除指定数量的 bar"""
@@ -251,7 +253,7 @@ class System:
         existing = self._data.get(series_name)
         if existing is not None and not existing.empty:
             self._data[series_name] = existing.iloc[:-count].copy()
-            self._version += 1
+            self._series_versions[series_name] = self._series_versions.get(series_name, 0) + 1
 
     def get_data(self, series_name: str) -> Optional[pd.DataFrame]:
         """获取某 Series 的数据"""
@@ -262,6 +264,7 @@ class System:
     def _add_marker(self, series_name: str, marker: dict) -> None:
         self._assert_series(series_name)
         self._markers.setdefault(series_name, []).append(marker)
+        self._series_versions[series_name] = self._series_versions.get(series_name, 0) + 1
 
     def get_markers(self, series_name: str) -> list[dict]:
         return self._markers.get(series_name, [])
@@ -348,38 +351,57 @@ class System:
     # ═══ 动态同步（live 模式）═══
 
     def _sync_loop(self):
-        """同步线程主循环：每秒检查数据版本，有变化则同步到渲染层"""
-        last_version = 0
+        """同步线程主循环：每秒检查 series 版本号，有变化的同步到渲染层"""
         while not self._stop_event.is_set():
-            if self._render_chart is not None and self._version != last_version:
+            if self._render_chart is not None:
                 try:
                     self._do_sync()
                 except Exception:
                     pass  # 容错：同步失败不影响数据层
-                last_version = self._version
-            self._stop_event.wait(1.0)  # 等 1 秒或直到 stop
+            self._stop_event.wait(1.0)
 
     def _do_sync(self):
-        """将数据变化同步到渲染层（增量 update_bars）"""
+        """比较每个 series 的版本号，有变化的同步数据和 markers"""
         for s in self.series:
-            df = self._data.get(s.name)
-            if df is None or df.empty:
-                continue
-            last = self._sync_state.get(s.name, 0)
-            curr = len(df)
-            if curr == last:
-                continue  # 无变化
-            series_obj = self._series_map.get(s.name)
+            name = s.name
+            cur = self._series_versions.get(name, 0)
+            last = self._sync_last_versions.get(name, 0)
+            if cur == last:
+                continue  # 此 series 无变化
+
+            series_obj = self._series_map.get(name)
             if series_obj is None:
                 continue
-            if curr > last:
-                # 增量：追加新增部分
-                new_data = df.iloc[last:]
-                series_obj.update_bars(new_data)
-            else:
-                # 数据变少（pop/set）：全量重置
-                series_obj.set(df)
-            self._sync_state[s.name] = curr
+
+            # ── 同步数据 ──
+            df = self._data.get(name)
+            if df is not None and not df.empty:
+                last_rows = self._sync_state.get(name, 0)  # 上次同步的行数
+                curr_rows = len(df)
+                if curr_rows > last_rows:
+                    # 先更新最后一根旧 bar（数据可能被修改了）
+                    if last_rows > 0:
+                        series_obj.update_bar(df.iloc[last_rows - 1])
+                    # 再追加新增部分
+                    series_obj.update_bars(df.iloc[last_rows:])
+                elif curr_rows < last_rows:
+                    # 数据变少（pop/set）：全量重置
+                    series_obj.set(df)
+                else:
+                    # 行数不变但版本变了：更新最后一个 bar
+                    series_obj.update_bar(df.iloc[-1])
+                self._sync_state[name] = curr_rows
+
+            # ── 同步 markers ──
+            markers = self._markers.get(name, [])
+            last_mc = self._sync_last_marker_counts.get(name, 0)
+            if len(markers) > last_mc:
+                for m in markers[last_mc:]:
+                    m_clean = {k: v for k, v in m.items() if v is not None}
+                    series_obj.add_marker(**m_clean)
+                self._sync_last_marker_counts[name] = len(markers)
+
+            self._sync_last_versions[name] = cur
 
     def stop_sync(self):
         """停止同步线程"""

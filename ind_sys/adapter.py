@@ -164,6 +164,7 @@ def _render_series(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None)
             if sys_obj is not None:
                 sys_obj._series_map[s.name] = chart
                 sys_obj._sync_state[s.name] = len(df)
+                sys_obj._sync_last_marker_counts[s.name] = len(sys_obj._markers.get(s.name, []))
             continue
 
         # volume → chart.volume
@@ -173,6 +174,7 @@ def _render_series(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None)
             if sys_obj is not None:
                 sys_obj._series_map[s.name] = chart.volume
                 sys_obj._sync_state[s.name] = len(df)
+                sys_obj._sync_last_marker_counts[s.name] = len(sys_obj._markers.get(s.name, []))
             continue
 
         # open_interest → chart.oi
@@ -182,6 +184,7 @@ def _render_series(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None)
             if sys_obj is not None:
                 sys_obj._series_map[s.name] = chart.oi
                 sys_obj._sync_state[s.name] = len(df)
+                sys_obj._sync_last_marker_counts[s.name] = len(sys_obj._markers.get(s.name, []))
             continue
 
         # 其他 → create_*() 工厂方法
@@ -197,6 +200,7 @@ def _render_series(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None)
         if sys_obj is not None:
             sys_obj._series_map[s.name] = created
             sys_obj._sync_state[s.name] = len(df)
+            sys_obj._sync_last_marker_counts[s.name] = len(sys_obj._markers.get(s.name, []))
 
         if not s.visible:
             created._apply_options({'visible': False})
