@@ -1,6 +1,6 @@
 # ind_sys 下一步指南
 
-> v0.3+ — 多 Window 渲染已完成
+> v0.3+ — 主序列映射 + 多 Window 渲染 + 示例完善已完成
 > 设计文档：`IND_SYS_DESIGN.md`（v0.3）
 
 ---
@@ -16,9 +16,12 @@
 | Marker (add_marker/add_markers) | ✅ 完成 |
 | live 动态同步 | ✅ 互斥锁 + 版本号 + 三路同步 |
 | 多 Window 渲染 | ✅ 遍历全部 Window，单/多返回自适应 |
+| 主序列映射 `_main_mapping` | ✅ 替代 `primary_series`，`chart.candle/volume/oi.set()` 显式操作 |
+| 适配器重写 | ✅ `_render_series()` 使用 `_main_mapping`，移除 `chart.set()` 自动分发 |
+| 同步线程竞态修复 | ✅ `_series_locks` 互斥锁 + 版本号 + 三路同步 |
+| 适配器修复 | ✅ price_scale_id 仅支持的类型传递；ohlc_bar 主 series 用工厂方法 |
+| 示例 2 — demo | ✅ 2 Window 多窗口渲染，26 series（含 volume/oi），全量动态更新 |
 | 冒烟测试 | ✅ 10+ 项 |
-| 示例 1 — minimal | ✅ |
-| 示例 2 — demo | ✅ 2 Window 多窗口渲染 |
 
 ---
 

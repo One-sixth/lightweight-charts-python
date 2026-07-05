@@ -1,7 +1,7 @@
 # ind_sys 子系统记忆
 
-> **状态**：🚧 开发中（v0.3+，多 Window 渲染已支持）
-> **最后更新**：2026-07-04
+> **状态**：🚧 开发中（v0.3+，主序列映射 + 示例完善）
+> **最后更新**：2026-07-06
 > **注意**：此文件是 ind_sys 内部记忆，不写入主 README 等正式文档
 
 ---
@@ -22,6 +22,13 @@
 | 示例 2 — demo | ✅ `examples/2_demo/demo.py`（2Window/5Chart/22Series/30次随机更新，多 Window 渲染） |
 | 多 Window 渲染 | ✅ 遍历全部 Window，单 Window 返回 Chart，多 Window 返回 tuple[Chart, ...] |
 | 同步线程 _render_ready 标志 | ✅ 从 `_render_chart` 改为 `_render_ready: bool`，支持多 chart 同步 |
+| 示例 2 — demo 全更新 | ✅ 22 个 series 全部动态更新（含 MACD + 四品种 candle/OHLCBar） |
+| 同步线程竞态修复 | ✅ `_series_locks` 互斥锁 + 版本号 + 三路同步 |
+| 适配器 price_scale_id 修复 | ✅ `create_histogram` 不再接收 `price_scale_id`，仅支持的类型传递 |
+| 适配器 ohlc_bar 主 series | ✅ 非 K线主 series 用工厂方法创建，不调 `chart.set()` |
+| **主序列映射** | ✅ `_main_mapping` 替代 `primary_series`，`chart.candle/volume/oi.set()` 显式操作 |
+| **示例 2 — stock2/stock3 volume+oi** | ✅ stock2(222) 和 stock3(223) 新增 volume/oi 主序列，动态更新 |
+| **示例 2 — 指标正确计算** | ✅ 全量数据正确计算 SMA/RSI/EMA/MACD，替代随机数 |
 | Drawing/PriceLine/TopBar/Table | ⏳ 暂不实现 |
 | 回测引擎 self.MC 对接 | ⏳ 待研究 |
 | 序列化 (JSON/YAML) | ⏳ 待研究 |
@@ -279,6 +286,10 @@ with lock:
 | v0.3+ | 07-04 | 复杂示例完成：2Window/5Chart/22Series/4pane/EMA品种/随机30次更新 / 数据层唯一数据源 / 同步线程部分修复 |
 | v0.3+ | 07-04 | 修复同步线程竞态：加 `_series_locks` 互斥锁 + 去掉直连 + `chart.show(block=True)` |
 | v0.3+ | 07-04 | append_data 改为 replace-or-append 模式；同步线程检测频率 0.1s；示例交换序号 |
+| v0.3+ | 07-06 | 主序列映射 `_main_mapping`：替代 `primary_series`，`chart.candle/volume/oi.set()` 显式操作 |
+| v0.3+ | 07-06 | 适配器重写：`_render_series()` 使用 `_main_mapping`，移除 `chart.set()` 自动分发 |
+| v0.3+ | 07-06 | demo 完善：stock2/stock3 新增 volume/oi 主序列 + 指标正确计算 + K线随机红绿 |
+| v0.3+ | 07-06 | 修复：live_feed 中 `if idx==2 or idx==3` 缩进错误导致 volume/oi 从未更新 |
 
 ---
 

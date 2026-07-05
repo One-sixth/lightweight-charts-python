@@ -53,6 +53,48 @@ assert layout._system is sys_obj
 assert sys_obj._sync_thread is not None
 print(f'sync_thread: {sys_obj._sync_thread}')
 
+# ── 主序列映射 ──
+main_map = sys_obj._main_mapping
+assert main_map.get('candle') == 'candle', f"candle should map to candle, got {main_map.get('candle')}"
+assert main_map.get('vol') == 'volume', f"vol should map to volume, got {main_map.get('vol')}"
+assert 'rsi' not in main_map, 'rsi should NOT be mapped'
+print(f'=== 主序列映射: {main_map} ===')
+
+# ── 主序列映射（含 oi）──
+sys2 = System(
+    windows=[Window(name='w', display_name='')],
+    charts=[Chart(name='c', display_name='', window='w', interval='1day')],
+    series=[
+        Series(name='candle', display_name='', chart='c', pane=0, type='candle'),
+        Series(name='vol',    display_name='', chart='c', pane=0, type='volume'),
+        Series(name='oi',     display_name='', chart='c', pane=0, type='open_interest'),
+    ],
+)
+sys2['candle'].set(df_candle)
+sys2['vol'].set(df_vol)
+sys2['oi'].set(pd.DataFrame({'time':[1,2,3], 'value':[1000,1200,1100]}))
+layout2 = sys2.build()
+m2 = sys2._main_mapping
+assert m2.get('candle') == 'candle', f"{m2}"
+assert m2.get('vol') == 'volume', f"{m2}"
+assert m2.get('oi') == 'oi', f"{m2}"
+print(f'=== 主序列映射（含oi）: {m2} ===')
+
+# ── 重复名称检测 ──
+try:
+    sys3 = System(
+        windows=[Window(name='w', display_name='')],
+        charts=[Chart(name='c', display_name='', window='w', interval='1day')],
+        series=[
+            Series(name='s1', display_name='', chart='c', pane=0, type='line'),
+            Series(name='s1', display_name='', chart='c', pane=0, type='line'),
+        ],
+    )
+    sys3.build()  # build() 中触发名称唯一性检查
+    print('ERROR: 重复名称未报错')
+except ValueError as e:
+    print(f'=== 重复名称检测通过: {e} ===')
+
 # ── 数据操作 + 系列版本号 ──
 v0 = sys_obj._series_versions.get('rsi', 0)
 sys_obj['rsi'].append(pd.DataFrame({'time':[4,5], 'value':[65,70]}))

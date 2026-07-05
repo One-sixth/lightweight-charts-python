@@ -167,13 +167,7 @@ def _apply_markers(series_obj, layout: 'SystemLayout', series_name: str):
 
 
 def _create_series_on_chart(chart, s, layout):
-    """在 chart 上创建一个 series 并设置数据，返回 series 对象。"""
-    if s.type == 'volume':
-        chart.volume.set(layout.get_data(s.name))
-        return chart.volume
-    if s.type == 'open_interest':
-        chart.oi.set(layout.get_data(s.name))
-        return chart.oi
+    """在 chart 上创建一个额外 series（非主序列）并设置数据。"""
     factory = _FACTORY[s.type]
     kwargs = _series_kwargs(s)
     method = getattr(chart, factory)
@@ -183,32 +177,37 @@ def _create_series_on_chart(chart, s, layout):
 
 
 def _render_series(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None):
-    """在主库 chart 上渲染 ind_sys Series 列表。"""
+    """在主库 chart 上渲染 ind_sys Series。
+
+    使用 ``_main_mapping`` 决定主序列映射：
+      - 映射为 'candle' → chart.candle.set()
+      - 映射为 'volume' → chart.volume.set()
+      - 映射为 'oi'     → chart.oi.set()
+      - 未映射的        → create_*() 工厂方法
+    """
     series_list = layout.series_of(chart_name)
-    primary_s_name = layout.primary_series.get(chart_name)
-    primary_s_obj = None
+    main_map = getattr(layout._system, '_main_mapping', {})
 
     for s in series_list:
         data = layout.get_data(s.name)
         if data is None:
             continue
 
-        if s.name == primary_s_name:
-            # 主 series：根据类型选择不同的设置方式
-            if s.type == 'candle':
-                chart.set(data)
-                primary_s_obj = chart.candle
-            elif s.type == 'ohlc_bar':
-                primary_s_obj = chart.create_ohlc_bar_series(**_series_kwargs(s))
-                primary_s_obj.set(data)
-            else:
-                primary_s_obj = _create_series_on_chart(chart, s, layout)
-            if sys_obj is not None:
-                sys_obj._series_map[s.name] = primary_s_obj
+        main_key = main_map.get(s.name)
+        if main_key == 'candle':
+            chart.candle.set(data)
+            series_obj = chart.candle
+        elif main_key == 'volume':
+            chart.volume.set(data)
+            series_obj = chart.volume
+        elif main_key == 'oi':
+            chart.oi.set(data)
+            series_obj = chart.oi
         else:
             series_obj = _create_series_on_chart(chart, s, layout)
-            if sys_obj is not None:
-                sys_obj._series_map[s.name] = series_obj
+
+        if sys_obj is not None:
+            sys_obj._series_map[s.name] = series_obj
 
     # 应用 markers
     for s in series_list:

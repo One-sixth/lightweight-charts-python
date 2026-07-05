@@ -172,7 +172,7 @@ class SystemLayout:
     window_charts: dict[str, list[Chart]]            # window_name → [charts]
     chart_series: dict[str, list[Series]]            # chart_name → [series]
     primary_charts: dict[str, str]                   # window_name → 主 chart name
-    primary_series: dict[str, str]                   # chart_name → 主 series name
+    _main_mapping: dict[str, str] = field(default_factory=dict, repr=False)  # series_name → 'candle'|'volume'|'oi'
     _data: dict = field(default_factory=dict, repr=False)  # series_name → DataFrame
     _markers: dict = field(default_factory=dict, repr=False)  # series_name → [marker dict]
     _system: object = None  # System 引用（build 时设置，适配器用）
@@ -253,7 +253,8 @@ class System:
                 self._data[series_name] = pd.concat(
                     [existing, df], ignore_index=True
                 )
-        self._series_versions[series_name] = self._series_versions.get(series_name, 0) + 1
+        old_v = self._series_versions.get(series_name, 0)
+        self._series_versions[series_name] = old_v + 1
 
     def pop_data(self, series_name: str, count: int = 1) -> None:
         """从末尾移除指定数量的 bar"""
@@ -325,14 +326,17 @@ class System:
             if charts_in_win:
                 primary_charts[w.name] = charts_in_win[0].name
 
-        # 9. 主 series：pane 0 首个 candle/ohlc_bar
-        primary_series: dict[str, str] = {}
-        for chart_name, panes in pane_info.items():
-            pane0 = panes.get(0, [])
-            for s in pane0:
-                if s.type in KLINE_TYPES:
-                    primary_series[chart_name] = s.name
-                    break
+        # 9. 主序列映射：每 chart 内首个 candle/volume/open_interest → chart.candle/volume/oi
+        main_mapping: dict[str, str] = {}
+        for chart_name, s_list in chart_series.items():
+            seen = set()
+            for s in s_list:
+                if s.type in ('candle', 'volume', 'open_interest') and s.type not in seen:
+                    key = {'candle': 'candle', 'volume': 'volume', 'open_interest': 'oi'}[s.type]
+                    main_mapping[s.name] = key
+                    seen.add(s.type)
+
+        self._main_mapping = main_mapping
 
         layout = SystemLayout(
             windows=self.windows,
@@ -342,7 +346,6 @@ class System:
             window_charts=window_charts,
             chart_series=chart_series,
             primary_charts=primary_charts,
-            primary_series=primary_series,
             _data=self._data,
             _markers=self._markers,
             _system=self,
@@ -364,8 +367,10 @@ class System:
             if self._render_ready:
                 try:
                     self._do_sync()
-                except Exception:
-                    pass  # 容错：同步失败不影响数据层
+                except Exception as e:
+                    import traceback
+                    print(f'[sync] EXCEPTION: {e}')
+                    traceback.print_exc()
             self._stop_event.wait(0.1)
 
     def _do_sync(self):
@@ -392,13 +397,10 @@ class System:
                     last_rows = self._sync_state.get(name, 0)
                     curr_rows = len(df)
                     if curr_rows > last_rows:
-                        # 追加新增部分（主库 update_bars 自动处理替换/追加）
                         series_obj.update_bars(df.iloc[last_rows:])
                     elif curr_rows < last_rows:
-                        # 数据变少（pop/set）：全量重置
                         series_obj.set(df)
                     else:
-                        # 行数不变但版本变了：更新最后一个 bar
                         series_obj.update_bar(df.iloc[-1])
                     self._sync_state[name] = curr_rows
 
