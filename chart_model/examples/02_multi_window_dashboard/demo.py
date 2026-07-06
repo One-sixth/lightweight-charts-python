@@ -1,4 +1,4 @@
-"""ind_sys 复杂示例 — 2 Window × 多 pane × EMA 均线 × 动态更新
+"""chart_model 复杂示例 — 2 Window × 多 pane × EMA 均线 × 动态更新
 
 Window 1: 主窗口（1 chart × 4 pane）
   ├── pane 0: K线 (candle) + SMA50 + SMA200
@@ -21,7 +21,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
-from ind_sys import System, Window, Chart, Series, Adapter
+from chart_model import Model, Window, Chart, Series, Adapter
 
 
 def generate_kline(n=200, seed=42):
@@ -92,8 +92,8 @@ def live_feed():
         main_data = pd.concat([main_data, new_bar], ignore_index=True)
 
         # ── 更新数据层（K线 + 成交量）──
-        sys_obj['candle'].append(new_bar[['time', 'open', 'high', 'low', 'close']])
-        sys_obj['volume'].append(new_bar[['time', 'open', 'close']].assign(value=vol))
+        model['candle'].append(new_bar[['time', 'open', 'high', 'low', 'close']])
+        model['volume'].append(new_bar[['time', 'open', 'close']].assign(value=vol))
 
         # ── 从全量 close 数据正确计算 SMA50 / SMA200 / SMA100 ──
         close_all = main_data['close']
@@ -111,10 +111,10 @@ def live_feed():
         else:
             r = 50.0
 
-        sys_obj['sma50'].append(pd.DataFrame({'time': [t], 'value': [s50]}))
-        sys_obj['sma200'].append(pd.DataFrame({'time': [t], 'value': [s200]}))
-        sys_obj['sma_area'].append(pd.DataFrame({'time': [t], 'value': [sa]}))
-        sys_obj['rsi'].append(pd.DataFrame({'time': [t], 'value': [r]}))
+        model['sma50'].append(pd.DataFrame({'time': [t], 'value': [s50]}))
+        model['sma200'].append(pd.DataFrame({'time': [t], 'value': [s200]}))
+        model['sma_area'].append(pd.DataFrame({'time': [t], 'value': [sa]}))
+        model['rsi'].append(pd.DataFrame({'time': [t], 'value': [r]}))
 
         # ── 更新 4 个品种的 K线、均线和 MACD（全量数据正确计算）──
         for i in range(4):
@@ -137,9 +137,9 @@ def live_feed():
 
             # 品种 K线
             if idx <= 2:
-                sys_obj[f'candle{idx}'].append(new_sc_bar[['time', 'open', 'high', 'low', 'close']])
+                model[f'candle{idx}'].append(new_sc_bar[['time', 'open', 'high', 'low', 'close']])
             else:
-                sys_obj[f'candle{idx}'].append(pd.DataFrame({'time': [t], 'value': [sc]}))
+                model[f'candle{idx}'].append(pd.DataFrame({'time': [t], 'value': [sc]}))
 
             # 从全量数据正确计算 EMA12 / EMA26 / MACD
             s_close = stock_data[i]['close']
@@ -149,18 +149,18 @@ def live_feed():
             signal = macd_line.ewm(span=9, adjust=False).mean()
             hist_val = (macd_line - signal).iloc[-1]
 
-            sys_obj[f'ema12_{idx}'].append(pd.DataFrame({'time': [t], 'value': [e12]}))
-            sys_obj[f'ema26_{idx}'].append(pd.DataFrame({'time': [t], 'value': [e26]}))
-            sys_obj[f'macd_{idx}'].append(pd.DataFrame({'time': [t], 'value': [hist_val]}))
+            model[f'ema12_{idx}'].append(pd.DataFrame({'time': [t], 'value': [e12]}))
+            model[f'ema26_{idx}'].append(pd.DataFrame({'time': [t], 'value': [e26]}))
+            model[f'macd_{idx}'].append(pd.DataFrame({'time': [t], 'value': [hist_val]}))
 
             # stock2 (idx=2) 和 stock3 (idx=3) 的 volume/oi 更新
             if idx == 2 or idx == 3:
                 s_vol = int(max(30000, abs(np.random.randn() * 150000 + 150000)))
                 s_oi  = int(max(2000, abs(np.random.randn() * 8000 + 8000)))
-                sys_obj[f'volume{idx}'].append(pd.DataFrame({
+                model[f'volume{idx}'].append(pd.DataFrame({
                     'time': [t], 'value': [s_vol], 'open': [so], 'close': [sc]
                 }))
-                sys_obj[f'oi{idx}'].append(pd.DataFrame({'time': [t], 'value': [s_oi]}))
+                model[f'oi{idx}'].append(pd.DataFrame({'time': [t], 'value': [s_oi]}))
 
         print(f'  [{n:2d}/30] t={t} close={nc:.2f} RSI={r:.1f}')
 
@@ -192,7 +192,7 @@ if __name__ == '__main__':
     stocks = [build_stock(s) for s in [43, 44, 45, 46]]
 
     # ═══ 系统声明 ═══
-    sys_obj = System(
+    model = Model(
         windows=[Window(name='main', display_name='主窗口'),
                  Window(name='multi', display_name='多品种')],
         charts=[
@@ -235,42 +235,42 @@ if __name__ == '__main__':
     )
 
     # ═══ 设置数据 ═══
-    sys_obj['candle'].set(candle_df)
+    model['candle'].set(candle_df)
     for name, data in [('sma50', sma50_data), ('sma200', sma200_data),
                        ('volume', vol_df), ('sma_area', sma_area_data), ('rsi', rsi_data)]:
-        sys_obj[name].set(data)
+        model[name].set(data)
 
     for i, s in enumerate(stocks, 1):
         if i <= 2:  # stock1=candle, stock2=candle — 传完整 OHLC
-            sys_obj[f'candle{i}'].set(s['candle'])
+            model[f'candle{i}'].set(s['candle'])
         else:  # stock3, stock4: line — 传收盘价
-            sys_obj[f'candle{i}'].set(s['candle'][['time']].assign(value=s['candle']['close']))
-        sys_obj[f'ema12_{i}'].set(s['ema12'])
-        sys_obj[f'ema26_{i}'].set(s['ema26'])
+            model[f'candle{i}'].set(s['candle'][['time']].assign(value=s['candle']['close']))
+        model[f'ema12_{i}'].set(s['ema12'])
+        model[f'ema26_{i}'].set(s['ema26'])
         macd_df = s['macd'][['time']].copy()
         macd_df['value'] = s['macd']['histogram']
-        sys_obj[f'macd_{i}'].set(macd_df)
+        model[f'macd_{i}'].set(macd_df)
 
     # stock2 的 volume/oi 初始数据
     s2 = stocks[1]
     vol2_df = s2['candle'][['time', 'open', 'close']].copy()
     vol2_df['value'] = np.random.randint(80000, 400000, len(s2['candle']))
-    sys_obj['volume2'].set(vol2_df)
-    sys_obj['oi2'].set(s2['candle'][['time']].assign(value=np.random.randint(5000, 20000, len(s2['candle']))))
+    model['volume2'].set(vol2_df)
+    model['oi2'].set(s2['candle'][['time']].assign(value=np.random.randint(5000, 20000, len(s2['candle']))))
 
     # stock3 的 volume/oi 初始数据
     s3 = stocks[2]
     vol3_df = s3['candle'][['time', 'open', 'close']].copy()
     vol3_df['value'] = np.random.randint(80000, 400000, len(s3['candle']))
-    sys_obj['volume3'].set(vol3_df)
-    sys_obj['oi3'].set(s3['candle'][['time']].assign(value=np.random.randint(5000, 20000, len(s3['candle']))))
+    model['volume3'].set(vol3_df)
+    model['oi3'].set(s3['candle'][['time']].assign(value=np.random.randint(5000, 20000, len(s3['candle']))))
 
-    sys_obj['candle'].add_marker(time=sma50_data.iloc[0]['time'], position='below',
+    model['candle'].add_marker(time=sma50_data.iloc[0]['time'], position='below',
                                  shape='arrow_up', color='#00C853', text='金叉')
 
     # ═══ 构建 + 渲染 ═══
-    layout = sys_obj.build(live=True)
-    print(f'build(live=True) OK  sync_thread={sys_obj._sync_thread}')
+    layout = model.build(live=True)
+    print(f'build(live=True) OK  sync_thread={model._sync_thread}')
     print(f'  总 Window: {len(layout.windows)}')
     print(f'  总 Chart:  {len(layout.charts)}')
     print(f'  总 Series: {len(layout.series)}')
@@ -300,6 +300,6 @@ if __name__ == '__main__':
         print('show(block=True) — 同步线程自动推送，约 30 秒...')
         chart.show(block=True)
 
-    sys_obj.stop_sync()
+    model.stop_sync()
     feed_thread.join()
-    print(f'done — 最终版本: candle={sys_obj._series_versions.get("candle")}')
+    print(f'done — 最终版本: candle={model._series_versions.get("candle")}')

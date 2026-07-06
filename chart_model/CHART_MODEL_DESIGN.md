@@ -1,4 +1,4 @@
-# 指标系统（ind_sys）设计文档
+# 指标系统（chart_model）设计文档
 
 > **版本**：0.3（最小可用版本）
 > **日期**：2026-07-03
@@ -62,7 +62,7 @@
 
 ## 三、核心类设计
 
-### 3.1 `System` — 根容器
+### 3.1 `Model` — 根容器
 
 ```python
 @dataclass
@@ -244,7 +244,7 @@ def build(self) -> "SystemLayout":
     )
 ```
 
-### SystemLayout
+### ModelLayout
 
 ```python
 @dataclass
@@ -293,7 +293,7 @@ class Adapter:
 
 **翻译规则（精简版）：**
 
-| ind_sys | 主库 API |
+| chart_model | 主库 API |
 |---------|---------|
 | `Window.tile` | `Chart(position=...)` 网格布局 |
 | `Chart.precision` | `chart.price_scale(price_format={...})` |
@@ -313,7 +313,7 @@ class Adapter:
 | 事项 | 状态 |
 |------|------|
 | 3 个 dataclass（Window/Chart/Series） | ⏳ 待编码 |
-| SystemLayout + build() | ⏳ 待编码 |
+| ModelLayout + build() | ⏳ 待编码 |
 | 适配器 Adapter.render() | ⏳ 待编码 |
 | self.MC 简易/详细模式格式 | 🟡 待确认属性全集 |
 

@@ -849,7 +849,12 @@ class CandleSeries(SeriesCommon):
         self.border_down_color = border_down_color if border_down_color else down_color
         self.wick_up_color = wick_up_color if wick_up_color else up_color
         self.wick_down_color = wick_down_color if wick_down_color else down_color
-        self._apply_options({k: v for k, v in locals().items() if k != 'self'})
+        self._apply_options(dict(
+            up_color=self.up_color, down_color=self.down_color,
+            wick_visible=self.wick_visible, border_visible=self.border_visible,
+            border_up_color=self.border_up_color, border_down_color=self.border_down_color,
+            wick_up_color=self.wick_up_color, wick_down_color=self.wick_down_color,
+        ))
 
     def clear_data(self):
         """清空所有 K 线数据和标记。"""

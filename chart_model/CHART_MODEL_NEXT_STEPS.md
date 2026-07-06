@@ -1,4 +1,4 @@
-# ind_sys 下一步指南
+# chart_model 下一步指南
 
 > v0.3+ — 主序列映射 + 多 Window 渲染 + 示例完善已完成
 > 设计文档：`IND_SYS_DESIGN.md`（v0.3）
@@ -30,11 +30,11 @@
 ### 文件结构
 
 ```
-ind_sys/
+chart_model/
 ├── __init__.py          # 导出公开类
 ├── models.py            # Window, Chart, Series, System（全部 dataclass）
-├── layout.py            # SystemLayout
-├── builder.py           # System.build()
+├── layout.py            # ModelLayout
+├── builder.py           # Model.build()
 ├── enums.py             # SeriesType 等常量
 ├── adapter.py           # 适配器（翻译 → lightweight-charts）
 ├── IND_SYS_DESIGN.md    # 设计文档（v0.3 ✅）
@@ -51,7 +51,7 @@ ind_sys/
 |------|------|------|
 | 1 | `enums.py` | SeriesType(8种) / LineStyle |
 | 2 | `models.py` | Window / Chart / Series / System |
-| 3 | `layout.py` | SystemLayout |
+| 3 | `layout.py` | ModelLayout |
 | 4 | `builder.py` | build() — 7 步（§4） |
 | 5 | `__init__.py` | 统一导出 |
 | 6 | `adapter.py` | Adapter.render() |
@@ -62,7 +62,7 @@ ind_sys/
 ## 快速开始（伪代码）
 
 ```python
-from lightweight_charts.ind_sys import System, Window, Chart, Series
+from lightweight_charts.chart_model import System, Window, Chart, Series
 
 sys = System(
     windows=[

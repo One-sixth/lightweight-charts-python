@@ -1,6 +1,6 @@
-"""ind_sys 冒烟测试"""
+"""chart_model 冒烟测试"""
 import pandas as pd
-from ind_sys import System, Window, Chart, Series, SeriesType, SystemLayout, parse_interval
+from chart_model import Model, Window, Chart, Series, SeriesType, SystemLayout, parse_interval
 
 # ── parse_interval 测试 ──
 assert parse_interval(60) == 60
@@ -25,7 +25,7 @@ df_vol = pd.DataFrame({'time':[1,2,3], 'value':[100,200,150], 'open':[10,11,12],
 df_rsi = pd.DataFrame({'time':[1,2,3], 'value':[55,45,60]})
 
 # ── 正常构建（interval 字符串）──
-sys_obj = System(
+model = Model(
     windows=[Window(name='main', display_name='主窗口')],
     charts=[
         Chart(name='price', display_name='价格', window='main', interval='1hour', precision=2, position=211),
@@ -40,28 +40,28 @@ sys_obj = System(
 )
 
 # ── 链式 API ──
-sys_obj['candle'].set(df_candle)
-sys_obj['sma20'].set(df_sma)
-sys_obj['vol'].set(df_vol)
-sys_obj['rsi'].set(df_rsi)
+model['candle'].set(df_candle)
+model['sma20'].set(df_sma)
+model['vol'].set(df_vol)
+model['rsi'].set(df_rsi)
 
 # ── build(live=True) 测试 ──
-layout = sys_obj.build(live=True)
+layout = model.build(live=True)
 print('=== build(live=True) 成功 ===')
 print(f'primary_charts: {layout.primary_charts}')
-assert layout._system is sys_obj
-assert sys_obj._sync_thread is not None
-print(f'sync_thread: {sys_obj._sync_thread}')
+assert layout._system is model
+assert model._sync_thread is not None
+print(f'sync_thread: {model._sync_thread}')
 
 # ── 主序列映射 ──
-main_map = sys_obj._main_mapping
+main_map = model._main_mapping
 assert main_map.get('candle') == 'candle', f"candle should map to candle, got {main_map.get('candle')}"
 assert main_map.get('vol') == 'volume', f"vol should map to volume, got {main_map.get('vol')}"
 assert 'rsi' not in main_map, 'rsi should NOT be mapped'
 print(f'=== 主序列映射: {main_map} ===')
 
 # ── 主序列映射（含 oi）──
-sys2 = System(
+sys2 = Model(
     windows=[Window(name='w', display_name='')],
     charts=[Chart(name='c', display_name='', window='w', interval='1day')],
     series=[
@@ -82,7 +82,7 @@ print(f'=== 主序列映射（含oi）: {m2} ===')
 
 # ── 重复名称检测 ──
 try:
-    sys3 = System(
+    sys3 = Model(
         windows=[Window(name='w', display_name='')],
         charts=[Chart(name='c', display_name='', window='w', interval='1day')],
         series=[
@@ -96,31 +96,31 @@ except ValueError as e:
     print(f'=== 重复名称检测通过: {e} ===')
 
 # ── 数据操作 + 系列版本号 ──
-v0 = sys_obj._series_versions.get('rsi', 0)
-sys_obj['rsi'].append(pd.DataFrame({'time':[4,5], 'value':[65,70]}))
-assert sys_obj._series_versions.get('rsi', 0) == v0 + 1
+v0 = model._series_versions.get('rsi', 0)
+model['rsi'].append(pd.DataFrame({'time':[4,5], 'value':[65,70]}))
+assert model._series_versions.get('rsi', 0) == v0 + 1
 assert len(layout.get_data('rsi')) == 5
-print(f'=== append + 版本号: {v0} -> {sys_obj._series_versions.get("rsi", 0)} ===')
+print(f'=== append + 版本号: {v0} -> {model._series_versions.get("rsi", 0)} ===')
 
-sys_obj['rsi'].pop(2)
-assert sys_obj._series_versions.get('rsi', 0) == v0 + 2
-print(f'=== pop + 版本号: {sys_obj._series_versions.get("rsi", 0)} ===')
+model['rsi'].pop(2)
+assert model._series_versions.get('rsi', 0) == v0 + 2
+print(f'=== pop + 版本号: {model._series_versions.get("rsi", 0)} ===')
 
 # ── Marker ──
-sys_obj['candle'].add_marker(time=2, position='below', shape='arrow_up', color='#00FF00', text='买入')
-sys_obj['candle'].add_markers([{'time':3, 'position':'above', 'shape':'arrow_down', 'color':'#FF0000'}])
+model['candle'].add_marker(time=2, position='below', shape='arrow_up', color='#00FF00', text='买入')
+model['candle'].add_markers([{'time':3, 'position':'above', 'shape':'arrow_down', 'color':'#FF0000'}])
 assert len(layout.get_markers('candle')) == 2
 print('=== add_marker + add_markers: 2 markers ===')
 
 # ── stop_sync ──
-sys_obj.stop_sync()
-assert sys_obj._sync_thread is None
+model.stop_sync()
+assert model._sync_thread is None
 print('=== stop_sync 成功 ===')
 print()
 
 # ── Indicator 约束 ──
 try:
-    System(
+    Model(
         windows=[Window(name='w', display_name='w')],
         charts=[Chart(name='c', display_name='c', window='w', interval='1min')],
         series=[

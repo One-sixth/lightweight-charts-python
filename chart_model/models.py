@@ -1,4 +1,4 @@
-"""ind_sys 核心数据模型 — Window / Chart / Series / System + SystemLayout"""
+"""chart_model 核心数据模型 — Window / Chart / Series / Model + SystemLayout"""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -160,6 +160,80 @@ class Series:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  DrawingData — drawing 纯数据表示（内部使用）
+# ═══════════════════════════════════════════════════════════════
+
+@dataclass
+class DrawingData:
+    """drawing 的纯数据表示（内部使用，不可变语义）"""
+    name: str
+    chart: str
+    type: str              # horizontal_line / trend_line / ray_line / vertical_line / box
+    pane: int = 0
+
+    # ── 几何参数（各 type 按需使用） ──
+    price: Optional[float] = None                    # HorizontalLine
+    time: Optional[Union[int, str, float]] = None    # VerticalLine
+    start_time: Optional[Union[int, str, float]] = None   # TrendLine / RayLine / Box
+    end_time: Optional[Union[int, str, float]] = None     # TrendLine / Box
+    start_price: Optional[float] = None              # TrendLine / Box
+    end_price: Optional[float] = None                # TrendLine / Box
+    value: Optional[float] = None                    # RayLine
+    round: bool = False                              # TrendLine / RayLine / Box
+
+    # ── 样式 ──
+    color: str = "#1E80F0"
+    fill_color: str = "rgba(255, 255, 255, 0.2)"    # Box 专用
+    width: int = 2
+    style: str = "solid"      # solid / dotted / dashed / large_dashed / sparse_dotted
+    text: str = ""
+    axis_label_visible: bool = True                  # HorizontalLine 专用
+
+
+# 各 type 的完整参数 schema（必选 + 可选）
+_DRAWING_SCHEMA = {
+    "horizontal_line": {
+        "required": ["price"],
+        "optional": ["color", "width", "style", "text", "axis_label_visible"],
+    },
+    "vertical_line": {
+        "required": ["time"],
+        "optional": ["color", "width", "style", "text"],
+    },
+    "trend_line": {
+        "required": ["start_time", "start_price", "end_time", "end_price"],
+        "optional": ["color", "width", "style", "round"],
+    },
+    "ray_line": {
+        "required": ["start_time", "value"],
+        "optional": ["color", "width", "style", "text", "round"],
+    },
+    "box": {
+        "required": ["start_time", "start_price", "end_time", "end_price"],
+        "optional": ["color", "fill_color", "width", "style", "round"],
+    },
+}
+
+# 所有合法参数名（用于校验未知参数）
+_DRAWING_ALL_PARAMS = set()
+for _schema in _DRAWING_SCHEMA.values():
+    _DRAWING_ALL_PARAMS.update(_schema["required"])
+    _DRAWING_ALL_PARAMS.update(_schema["optional"])
+
+
+def _drawing_type_help(type_name: str) -> str:
+    """返回某个 drawing type 的参数提示文本"""
+    schema = _DRAWING_SCHEMA.get(type_name)
+    if schema is None:
+        return ""
+    req = ", ".join(schema["required"])
+    opt = ", ".join(schema["optional"])
+    return (f"  {type_name} 支持以下参数:\n"
+            f"    必选: {req}\n"
+            f"    可选: {opt}")
+
+
+# ═══════════════════════════════════════════════════════════════
 #  SystemLayout — build() 只读结果
 # ═══════════════════════════════════════════════════════════════
 
@@ -175,7 +249,8 @@ class SystemLayout:
     _main_mapping: dict[str, str] = field(default_factory=dict, repr=False)  # series_name → 'candle'|'volume'|'oi'
     _data: dict = field(default_factory=dict, repr=False)  # series_name → DataFrame
     _markers: dict = field(default_factory=dict, repr=False)  # series_name → [marker dict]
-    _system: object = None  # System 引用（build 时设置，适配器用）
+    drawings: list[DrawingData] = field(default_factory=list, repr=False)  # 🆕 drawing 列表
+    _system: object = None  # Model 引用（build 时设置，适配器用）
 
     def series_of(self, chart_name: str) -> list[Series]:
         """返回某 Chart 下的全部 Series"""
@@ -197,13 +272,17 @@ class SystemLayout:
         """获取某 Series 的标记列表"""
         return self._markers.get(series_name, [])
 
+    def drawings_of(self, chart_name: str) -> list[DrawingData]:
+        """返回某 Chart 下的全部 Drawing"""
+        return [d for d in self.drawings if d.chart == chart_name]
+
 
 # ═══════════════════════════════════════════════════════════════
-#  System — 根容器
+#  Model — 根容器
 # ═══════════════════════════════════════════════════════════════
 
 @dataclass
-class System:
+class Model:
     windows: list[Window]
     charts: list[Chart]
     series: list[Series]
@@ -219,6 +298,22 @@ class System:
     _series_locks: dict = field(default_factory=lambda: defaultdict(threading.Lock), repr=False)  # series_name → Lock
     _sync_thread: object = None
     _stop_event: object = None
+
+    # ── Drawing（通过 sys_obj.drawing 管理） ──
+    _drawings: dict = field(default_factory=dict, repr=False)           # name → DrawingData
+    _drawing_version: int = 0                                           # 版本号，增删时 +1
+    _render_drawings: dict = field(default_factory=dict, repr=False)    # name → 渲染层 drawing 对象
+    _sync_last_drawing_version: int = 0                                 # 上次同步的 drawing 版本
+    _chart_map: dict = field(default_factory=dict, repr=False)          # chart_name → 主库 chart 对象
+
+    @property
+    def drawing(self) -> 'DrawingManager':
+        """返回 DrawingManager 访问器。"""
+        return DrawingManager(self)
+
+    def _mark_drawing_change(self) -> None:
+        """标记 drawing 发生了变更（add / del 时调用）"""
+        self._drawing_version += 1
 
     def _assert_series(self, series_name: str):
         names = {s.name for s in self.series}
@@ -348,6 +443,7 @@ class System:
             primary_charts=primary_charts,
             _data=self._data,
             _markers=self._markers,
+            drawings=list(self._drawings.values()),
             _system=self,
         )
 
@@ -415,6 +511,37 @@ class System:
 
                 self._sync_last_versions[name] = cur
 
+        # ── 同步 drawings（增量 diff） ──
+        drawing_ver = self._drawing_version
+        if drawing_ver != self._sync_last_drawing_version:
+            current = set(self._drawings.keys())
+            rendered = set(self._render_drawings.keys())
+
+            # 🆕 新增：数据层有，渲染层还没有
+            for name in current - rendered:
+                d = self._drawings[name]
+                chart_obj = self._chart_map.get(d.chart)
+                if chart_obj is None:
+                    # chart 未就绪（可能是另一个 Window），跳过
+                    continue
+                if not hasattr(chart_obj, '_drawing_series'):
+                    continue  # 不支持的 chart 类型
+                ds = chart_obj._get_drawing_series(d.pane)
+                from .adapter import _DRAWING_FACTORY, _drawing_to_kwargs
+                method = getattr(ds, _DRAWING_FACTORY[d.type])
+                obj = method(**_drawing_to_kwargs(d))
+                self._render_drawings[name] = obj
+
+            # 🗑️ 删除：渲染层有，数据层已移除
+            for name in rendered - current:
+                obj = self._render_drawings.pop(name)
+                try:
+                    obj.delete()
+                except Exception:
+                    pass  # 容错：JS 层面可能已清理
+
+            self._sync_last_drawing_version = drawing_ver
+
     def stop_sync(self):
         """停止同步线程"""
         if self._stop_event is not None:
@@ -442,7 +569,7 @@ class SeriesAccessor:
 
     __slots__ = ('_sys', '_name')
 
-    def __init__(self, system: System, series_name: str):
+    def __init__(self, system: Model, series_name: str):
         self._sys = system
         self._name = series_name
 
@@ -489,3 +616,121 @@ class SeriesAccessor:
     def markers(self) -> list[dict]:
         """获取当前标记列表"""
         return self._sys.get_markers(self._name)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  DrawingManager — sys_obj.drawing 访问器
+# ═══════════════════════════════════════════════════════════════
+
+class DrawingManager:
+    """通过 sys_obj.drawing 访问，提供 drawing 增删操作。
+
+    用法:
+        sys_obj.drawing.add('支撑位', chart='price', pane=0,
+                             type='horizontal_line', price=5000, color='#FF0000')
+        sys_obj.drawing.delete('支撑位')
+        del sys_obj.drawing['支撑位']
+        'name' in sys_obj.drawing
+        len(sys_obj.drawing)
+        sys_obj.drawing.names
+    """
+
+    def __init__(self, system: 'Model'):
+        self._sys = system
+
+    def add(self, name: str, chart: str, type: str,
+            pane: int = 0, **params) -> None:
+        """添加一个 drawing。
+
+        必要参数由 type 决定：
+          horizontal_line → price
+          vertical_line   → time
+          trend_line      → start_time, start_price, end_time, end_price
+          ray_line        → start_time, value
+          box             → start_time, start_price, end_time, end_price
+
+        可选样式参数：color, fill_color, width, style, text, axis_label_visible, round
+        """
+        # 1. 校验 type 是否有效
+        schema = _DRAWING_SCHEMA.get(type)
+        if schema is None:
+            types_list = "\n".join(
+                f"  {t}" for t in _DRAWING_SCHEMA)
+            raise ValueError(
+                f"不支持的 Drawing type: '{type}'。\n"
+                f"支持的 type:\n{types_list}\n"
+                f"使用 sys_obj.drawing.help('{type}') 查看参数详情")
+
+        # 2. 校验 name 唯一
+        if name in self._sys._drawings:
+            raise ValueError(f"Drawing name 重复: '{name}'")
+
+        # 3. 校验 chart 存在
+        chart_names = {c.name for c in self._sys.charts}
+        if chart not in chart_names:
+            raise ValueError(f"Chart '{chart}' 不存在，可用: {sorted(chart_names)}")
+
+        # 4. 校验必选参数
+        required = schema["required"]
+        missing = [f for f in required if f not in params]
+        if missing:
+            raise ValueError(
+                f"Drawing '{name}' type='{type}' 缺少必选参数: {missing}\n"
+                f"{_drawing_type_help(type)}")
+
+        # 5. 校验无未知字段
+        all_valid = _DRAWING_ALL_PARAMS
+        unknown = set(params) - all_valid
+        if unknown:
+            raise ValueError(
+                f"Drawing '{name}' 中有未知参数: {unknown}\n"
+                f"{_drawing_type_help(type)}")
+
+        # 6. 构建 DrawingData
+        kwargs = {k: params.get(k, getattr(DrawingData, k))
+                  for k in all_valid}
+        data = DrawingData(
+            name=name, chart=chart, type=type, pane=pane, **kwargs)
+        self._sys._drawings[name] = data
+        self._sys._mark_drawing_change()
+
+    def _del(self, name: str) -> None:
+        """内部删除方法"""
+        if name not in self._sys._drawings:
+            raise KeyError(f"Drawing '{name}' 不存在")
+        del self._sys._drawings[name]
+        self._sys._mark_drawing_change()
+
+    def delete(self, name: str) -> None:
+        """删除指定名称的 drawing。"""
+        self._del(name)
+
+    def __delitem__(self, name: str) -> None:
+        """del sys_obj.drawing['name']"""
+        self._del(name)
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._sys._drawings
+
+    def __len__(self) -> int:
+        return len(self._sys._drawings)
+
+    @property
+    def names(self) -> list[str]:
+        return sorted(self._sys._drawings.keys())
+
+    @staticmethod
+    def help(type_name: str) -> str:
+        """查看某个 drawing type 的参数说明。
+
+        用法:
+            print(sys_obj.drawing.help('trend_line'))
+            print(DrawingManager.help('horizontal_line'))
+        """
+        help_text = _drawing_type_help(type_name)
+        if not help_text:
+            types_list = "\n".join(
+                f"  {t}" for t in _DRAWING_SCHEMA)
+            return (f"不支持的 type: '{type_name}'。支持的 type:\n"
+                    f"{types_list}")
+        return help_text

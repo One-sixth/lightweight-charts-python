@@ -1,4 +1,4 @@
-"""ind_sys 适配器 — 将 SystemLayout 翻译为 lightweight-charts 渲染实例"""
+"""chart_model 适配器 — 将 SystemLayout 翻译为 lightweight-charts 渲染实例"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -76,7 +76,66 @@ _FACTORY = {
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Adapter
+#  Drawing 渲染
+# ═══════════════════════════════════════════════════════════════
+
+# Drawing type → DrawingSeries 工厂方法名
+_DRAWING_FACTORY = {
+    "horizontal_line": "horizontal_line",
+    "vertical_line":   "vertical_line",
+    "trend_line":      "trend_line",
+    "ray_line":        "ray_line",
+    "box":             "box",
+}
+
+
+def _drawing_to_kwargs(d: 'DrawingData') -> dict:
+    """将 DrawingData → DrawingSeries 工厂方法的 kwargs
+
+    每种 type 按实际方法签名返回，不混入多余参数。
+    """
+    if d.type == "horizontal_line":
+        return dict(price=d.price, color=d.color, width=d.width,
+                    style=d.style, text=d.text,
+                    axis_label_visible=d.axis_label_visible)
+    if d.type == "vertical_line":
+        return dict(time=d.time, color=d.color, width=d.width,
+                    style=d.style, text=d.text)
+    if d.type == "trend_line":
+        return dict(start_time=d.start_time, start_value=d.start_price,
+                    end_time=d.end_time, end_value=d.end_price,
+                    round=d.round, line_color=d.color,
+                    width=d.width, style=d.style)
+    if d.type == "ray_line":
+        return dict(start_time=d.start_time, value=d.value,
+                    round=d.round, color=d.color,
+                    width=d.width, style=d.style, text=d.text)
+    if d.type == "box":
+        return dict(start_time=d.start_time, start_value=d.start_price,
+                    end_time=d.end_time, end_value=d.end_price,
+                    round=d.round, color=d.color,
+                    fill_color=d.fill_color, width=d.width, style=d.style)
+    raise ValueError(f"不支持的 Drawing type: '{d.type}'")
+
+
+def _render_drawings(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None):
+    """在 chart 上渲染指定 Chart 的全部 drawing。
+
+    逐一创建 drawing 对象并存入 sys_obj._render_drawings。
+    """
+    drawings = layout.drawings_of(chart_name)
+    if not drawings:
+        return
+
+    for d in drawings:
+        if not hasattr(chart, '_drawing_series'):
+            continue  # 不支持的 chart 类型
+        # 获取/创建 DrawingSeries（惰性）
+        ds = chart._get_drawing_series(d.pane)
+        method = getattr(ds, _DRAWING_FACTORY[d.type])
+        obj = method(**_drawing_to_kwargs(d))
+        if sys_obj is not None:
+            sys_obj._render_drawings[d.name] = obj
 # ═══════════════════════════════════════════════════════════════
 
 class Adapter:
@@ -87,14 +146,14 @@ class Adapter:
         """
         渲染 SystemLayout，返回主库 Chart 实例。
 
-        - 如果 System 中只有一个 Window → 返回单个 Chart
+        - 如果 Model 中只有一个 Window → 返回单个 Chart
         - 如果有多个 Window → 返回 tuple[Chart, ...]
         """
         from lightweight_charts import Chart as RenderChart
         from .models import parse_interval
 
         if not layout.windows:
-            raise ValueError("System 中没有 Window")
+            raise ValueError("Model 中没有 Window")
 
         sys_obj = layout._system
         result = []
@@ -129,6 +188,11 @@ class Adapter:
             # ── 主图的 Series ──
             _render_series(chart, layout, primary_chart_name, sys_obj)
 
+            # ── 主图的 drawings ──
+            if sys_obj is not None:
+                sys_obj._chart_map[primary_chart_name] = chart
+            _render_drawings(chart, layout, primary_chart_name, sys_obj)
+
             # ── 子图 ──
             for c in charts:
                 if c.name == primary_chart_name:
@@ -146,6 +210,9 @@ class Adapter:
                     x, y = c.xy
                     sub.set_position(x, y, c.width, c.height)
                 _render_series(sub, layout, c.name, sys_obj)
+                if sys_obj is not None:
+                    sys_obj._chart_map[c.name] = sub
+                _render_drawings(sub, layout, c.name, sys_obj)
 
             result.append(chart)
 
@@ -159,7 +226,7 @@ class Adapter:
 
 
 def _apply_markers(series_obj, layout: 'SystemLayout', series_name: str):
-    """将 ind_sys markers 应用到主库 series 上"""
+    """将 chart_model markers 应用到主库 series 上"""
     markers = layout.get_markers(series_name)
     for m in markers:
         m_clean = {k: v for k, v in m.items() if v is not None}
@@ -177,7 +244,7 @@ def _create_series_on_chart(chart, s, layout):
 
 
 def _render_series(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None):
-    """在主库 chart 上渲染 ind_sys Series。
+    """在主库 chart 上渲染 chart_model Series。
 
     使用 ``_main_mapping`` 决定主序列映射：
       - 映射为 'candle' → chart.candle.set()
@@ -196,6 +263,7 @@ def _render_series(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None)
         main_key = main_map.get(s.name)
         if main_key == 'candle':
             chart.candle.set(data)
+            chart.candle.candle_style(up_color=s.up_color, down_color=s.down_color)
             series_obj = chart.candle
         elif main_key == 'volume':
             chart.volume.set(data)
@@ -208,6 +276,9 @@ def _render_series(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None)
 
         if sys_obj is not None:
             sys_obj._series_map[s.name] = series_obj
+            # 初始化同步状态，避免同步线程重复发送已渲染的初始数据
+            sys_obj._sync_state[s.name] = len(data)
+            sys_obj._sync_last_versions[s.name] = sys_obj._series_versions.get(s.name, 0)
 
     # 应用 markers
     for s in series_list:

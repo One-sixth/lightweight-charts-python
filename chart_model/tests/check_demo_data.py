@@ -2,7 +2,7 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
-from ind_sys import System, Window, Chart, Series, Adapter
+from chart_model import Model, Window, Chart, Series, Adapter
 import numpy as np, pandas as pd
 
 def generate_kline(n=200, seed=42):
@@ -40,7 +40,7 @@ sma_area_data = sma(df, 100); rsi_data = rsi(df, 14)
 macd_data = macd(df, 12, 26, 9)
 
 # 构造系统
-sys_obj = System(
+model = Model(
     windows=[Window(name='main', display_name='主窗口'),
              Window(name='multi', display_name='多品种')],
     charts=[
@@ -69,9 +69,9 @@ sys_obj = System(
 )
 
 # 设置数据
-sys_obj['candle'].set(candle_df)
+model['candle'].set(candle_df)
 for name, data in [('sma50',sma50_data),('sma200',sma200_data),('volume',vol_df),('sma_area',sma_area_data),('rsi',rsi_data)]:
-    sys_obj[name].set(data)
+    model[name].set(data)
 
 def build_stock(seed):
     d = generate_kline(200, seed)
@@ -83,22 +83,22 @@ def build_stock(seed):
 stocks = [build_stock(s) for s in [43, 44, 45, 46]]
 
 for i, s in enumerate(stocks, 1):
-    sys_obj[f'candle{i}'].set(s['close_line'])
-    sys_obj[f'ema12_{i}'].set(s['ema12'])
-    sys_obj[f'ema26_{i}'].set(s['ema26'])
+    model[f'candle{i}'].set(s['close_line'])
+    model[f'ema12_{i}'].set(s['ema12'])
+    model[f'ema26_{i}'].set(s['ema26'])
 
-layout = sys_obj.build(live=True)
+layout = model.build(live=True)
 print(f'build OK — {len(layout.windows)} Window, {len(layout.charts)} Chart, {len(layout.series)} Series')
 
 # 验证所有 series 数据完整性
 for name in ['candle','sma50','sma200','volume','sma_area','rsi']:
-    d = sys_obj.get_data(name)
+    d = model.get_data(name)
     assert d is not None and not d.empty, f'{name} 数据为空'
 for i in range(1,5):
     for n in [f'candle{i}', f'ema12_{i}', f'ema26_{i}']:
-        d = sys_obj.get_data(n)
+        d = model.get_data(n)
         assert d is not None and not d.empty, f'{n} 数据为空'
 
 print('数据完整性验证通过 ✓')
-sys_obj.stop_sync()
+model.stop_sync()
 print('全部检查通过，可以启动 demo！')
