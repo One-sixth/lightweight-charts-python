@@ -1,7 +1,7 @@
 # chart_model 子系统记忆
 
-> **状态**：🚧 开发中（v0.3+，主序列映射 + 示例完善）
-> **最后更新**：2026-07-06（Drawing 支持 + 参数提示 + bug 修复）
+> **状态**：🚧 开发中（v0.3+，v3.1.0 并入主库）
+> **最后更新**：2026-07-07（并入主库 v3.1.0：ind_sys→chart_model、System→Model、SystemLayout→Layout、示例目录更名、candle_style引线颜色修复）
 > **注意**：此文件是 chart_model 内部记忆，不写入主 README 等正式文档
 
 ---
@@ -300,4 +300,4 @@ with lock:
 
 ---
 
-*chart_model 子系统记忆，泰斗先生 × 小音，2026-07-04*
+*chart_model 子系统记忆，2026-07-07*

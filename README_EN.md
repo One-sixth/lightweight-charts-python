@@ -318,20 +318,12 @@ layout = model.build(live=True)
 chart = Adapter.render(layout)
 ```
 
-### 💡 Recommended Usage
+### 💡 Design Philosophy
 
-When your own project needs a **chart data layer architecture**, have your AI coding assistant **reference `chart_model/`'s design patterns and implementation approach**, and **generate a tailored version** for your specific project needs — rather than directly depending on this simple template.
-
-Benefits:
-- ✅ Declarative structure definition (Model / Window / Chart / Series)
-- ✅ Data-rendering decoupling (pure data layer → Adapter bridge)
-- ✅ Real-time sync mechanism (version tracking + incremental push)
-- ✅ Drawing management (5 types: create/delete/sync)
-
-And you:
-- ✅ Keep full control of your own code
-- ✅ Customize classes and fields as needed
-- ✅ Avoid external dependency
+> **⚠️ Note:** `chart_model` currently only provides basic functionality. The API may not be finalized and could change in the future.
+>
+> It's recommended to reference its implementation ideas and design patterns to understand how to organize a chart data layer, but **direct usage is not recommended**.
+> If your project needs a chart data layer architecture, have AI reference this implementation and generate a more suitable version tailored to your needs.
 
 > 📍 Location: `chart_model/` (subdirectory of this repo)  
 > 📄 Design doc: `chart_model/CHART_MODEL_DESIGN.md`  

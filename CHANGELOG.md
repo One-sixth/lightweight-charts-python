@@ -4,6 +4,72 @@
 
 ---
 
+## [v3.1.0] - 2026-07-07
+
+### 🎉 新增子包：chart_model — 纯数据图表模型
+
+新增 `chart_model/` 子包，提供一个**声明式、扁平化、引用式的纯数据图表模型**，与渲染层完全解耦。
+
+#### 核心功能
+
+| 功能 | 说明 |
+|------|------|
+| **Model / Window / Chart / Series** | 声明式结构定义，dataclass 实现 |
+| **Layout** | `build()` 构建只读关系图，含 pane 分组、主序列映射、引用校验 |
+| **Adapter.render()** | 将 Layout 翻译为 lightweight-charts 渲染实例，支持单/多 Window |
+| **SeriesAccessor** | `model['name'].set/append/pop/add_marker` 链式数据操作 |
+| **DrawingManager** | `model.drawing.add/delete/help` 5 种画线类型管理 |
+| **live 同步** | 版本号追踪 + 互斥锁 + 三路同步（增量/全量/单条） |
+| **8 种 Series 类型** | candle / ohlc_bar / line / area / baseline / histogram / volume / open_interest |
+
+#### 示例
+
+| 示例 | 说明 |
+|------|------|
+| `examples/01_hello_world/` | 最小闭环：1 Chart × 2 pane + live 同步 |
+| `examples/02_multi_window_dashboard/` | 多窗口仪表盘：2 Window × 5 Chart × 22 Series |
+| `examples/03_drawing_live/` | 画线工具：5 种类型 + 动态增删同步 |
+
+#### 设计理念
+
+- 目前只提供了基本功能支持，API 可能尚未定型
+- 建议参考使用，不太推荐直接使用
+- 详见 `chart_model/CHART_MODEL_DESIGN.md`
+
+### 🐛 Bug 修复
+
+#### `candle_style()` 引线颜色为黑色
+
+**根因**：`candle_style()` 中 `_apply_options` 使用 `locals()` 获取参数值，但 `wick_up_color` / `wick_down_color` 等参数默认值为 `''`（空字符串）。方法正确计算了 `self.wick_up_color = wick_up_color if wick_up_color else up_color` 回退值，但 `locals()` 中仍是原始空字符串，导致 JS 端收到 `"wickUpColor": ""`，渲染为黑色。
+
+**修复**：`_apply_options` 改为使用 `self.` 实例属性值，确保回退值被正确发送到 JS 端。
+
+### 🔄 重构
+
+| 重构 | 说明 |
+|------|------|
+| `ind_sys` → `chart_model` | 子包包名更名（indicator system → chart model） |
+| `System` → `Model` | 根类更名，与包名一致 |
+| `SystemLayout` → `Layout` | 构建结果类名精简 |
+| 示例目录更名 | `1_minimal` → `01_hello_world`，`2_demo` → `02_multi_window_dashboard`，`3_drawing` → `03_drawing_live` |
+
+### 📝 文档
+
+- 主 README 新增 `chart_model` 子包介绍，说明其作为参考原型而非可依赖库的定位
+- 中英文 README 同步更新
+- 所有文档文件中的残留旧引用已清理
+
+### Modified Files
+
+| 文件 | 改动 |
+|------|------|
+| `pyproject.toml` | 版本号 3.0.1 → 3.1.0 |
+| `lightweight_charts/series.py` | `candle_style()` 修复空字符串引线颜色 bug |
+| `chart_model/` (新子包) | 全部文件（~20 个 .py/.md，完整子包） |
+| `README.md` / `README_EN.md` | 新增 chart_model 章节 |
+
+---
+
 ## [v3.0.1] - 2026-07-02
 
 ### 🐛 Bug 修复

@@ -94,4 +94,4 @@ candle / ohlc_bar / line / area / baseline / histogram / volume / open_interest
 
 ---
 
-*泰斗先生 × 小音，2026-07-04*
+*2026-07-04*
