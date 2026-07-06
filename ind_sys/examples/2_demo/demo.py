@@ -60,8 +60,116 @@ def macd(df, fast=12, slow=26, signal=9):
     return df[['time']].assign(macd=m, signal=s, histogram=h).dropna()
 
 
+def live_feed():
+    """只更新数据层，渲染由同步线程自动完成。所有指标从全量数据正确计算。"""
+    # 自动更新
+
+    # 追踪主图全量数据（含 volume），用于正确计算指标
+    main_data = df.copy()
+    # 追踪 4 个品种的 K线数据
+    stock_data = [s['candle'].copy() for s in stocks]
+
+    for n in range(1, 31):
+        time.sleep(1)
+        t = (lt + pd.Timedelta(days=n)).strftime('%Y-%m-%d')
+
+        # ── 生成新 K线（随机红绿）──
+        last = main_data.iloc[-1]
+        nc = last['close'] + np.random.randn() * 2
+        vol = int(max(50000, last['volume'] + np.random.randn() * 50000))
+        up = np.random.rand() < 0.5
+        body = abs(np.random.rand() * 2)
+        if np.random.rand() < 0.5:
+            o, c = nc - body, nc  # 阳线（close > open）
+        else:
+            o, c = nc + body, nc - body  # 阴线（close < open）
+        h = max(o, c) + abs(np.random.rand() * 2)
+        l = min(o, c) - abs(np.random.rand() * 2)
+
+        new_bar = pd.DataFrame([{
+            'time': t, 'open': o, 'high': h, 'low': l, 'close': nc, 'volume': vol
+        }])
+        main_data = pd.concat([main_data, new_bar], ignore_index=True)
+
+        # ── 更新数据层（K线 + 成交量）──
+        sys_obj['candle'].append(new_bar[['time', 'open', 'high', 'low', 'close']])
+        sys_obj['volume'].append(new_bar[['time', 'open', 'close']].assign(value=vol))
+
+        # ── 从全量 close 数据正确计算 SMA50 / SMA200 / SMA100 ──
+        close_all = main_data['close']
+        s50 = close_all.tail(50).mean()
+        s200 = close_all.tail(200).mean()
+        sa = close_all.tail(100).mean()
+
+        # ── 从全量数据正确计算 RSI(14) ──
+        delta = close_all.diff()
+        gain = delta.clip(lower=0).rolling(14).mean().iloc[-1]
+        loss = (-delta.clip(upper=0)).rolling(14).mean().iloc[-1]
+        if loss != 0:
+            rs = gain / loss
+            r = 100 - 100 / (1 + rs)
+        else:
+            r = 50.0
+
+        sys_obj['sma50'].append(pd.DataFrame({'time': [t], 'value': [s50]}))
+        sys_obj['sma200'].append(pd.DataFrame({'time': [t], 'value': [s200]}))
+        sys_obj['sma_area'].append(pd.DataFrame({'time': [t], 'value': [sa]}))
+        sys_obj['rsi'].append(pd.DataFrame({'time': [t], 'value': [r]}))
+
+        # ── 更新 4 个品种的 K线、均线和 MACD（全量数据正确计算）──
+        for i in range(4):
+            idx = i + 1
+            sc_df = stock_data[i]
+            last_sc = sc_df.iloc[-1]
+            sc_base = last_sc['close'] + np.random.randn() * 2
+
+            body = abs(np.random.rand() * 2)
+            if np.random.rand() < 0.5:
+                so, sc = sc_base - body, sc_base  # 阳线
+            else:
+                so, sc = sc_base + body, sc_base - body  # 阴线
+            sh = max(so, sc) + abs(np.random.rand() * 2)
+            sl = min(so, sc) - abs(np.random.rand() * 2)
+            new_sc_bar = pd.DataFrame([{
+                'time': t, 'open': so, 'high': sh, 'low': sl, 'close': sc
+            }])
+            stock_data[i] = pd.concat([sc_df, new_sc_bar], ignore_index=True)
+
+            # 品种 K线
+            if idx <= 2:
+                sys_obj[f'candle{idx}'].append(new_sc_bar[['time', 'open', 'high', 'low', 'close']])
+            else:
+                sys_obj[f'candle{idx}'].append(pd.DataFrame({'time': [t], 'value': [sc]}))
+
+            # 从全量数据正确计算 EMA12 / EMA26 / MACD
+            s_close = stock_data[i]['close']
+            e12 = s_close.ewm(span=12, adjust=False).mean().iloc[-1]
+            e26 = s_close.ewm(span=26, adjust=False).mean().iloc[-1]
+            macd_line = s_close.ewm(span=12, adjust=False).mean() - s_close.ewm(span=26, adjust=False).mean()
+            signal = macd_line.ewm(span=9, adjust=False).mean()
+            hist_val = (macd_line - signal).iloc[-1]
+
+            sys_obj[f'ema12_{idx}'].append(pd.DataFrame({'time': [t], 'value': [e12]}))
+            sys_obj[f'ema26_{idx}'].append(pd.DataFrame({'time': [t], 'value': [e26]}))
+            sys_obj[f'macd_{idx}'].append(pd.DataFrame({'time': [t], 'value': [hist_val]}))
+
+            # stock2 (idx=2) 和 stock3 (idx=3) 的 volume/oi 更新
+            if idx == 2 or idx == 3:
+                s_vol = int(max(30000, abs(np.random.randn() * 150000 + 150000)))
+                s_oi  = int(max(2000, abs(np.random.randn() * 8000 + 8000)))
+                sys_obj[f'volume{idx}'].append(pd.DataFrame({
+                    'time': [t], 'value': [s_vol], 'open': [so], 'close': [sc]
+                }))
+                sys_obj[f'oi{idx}'].append(pd.DataFrame({'time': [t], 'value': [s_oi]}))
+
+        print(f'  [{n:2d}/30] t={t} close={nc:.2f} RSI={r:.1f}')
+
+    print('live_feed: 数据更新完成')
+
+
+
 if __name__ == '__main__':
-    # ═══ 数据生成 ═══
+    # ═══ 初始数据生成 ═══
     df = generate_kline(200)
 
     sma50_data = sma(df, 50)
@@ -174,113 +282,6 @@ if __name__ == '__main__':
 
     # ═══ 动态更新（只用同步线程，不直连渲染层）═══
     lt = pd.Timestamp(candle_df.iloc[-1]['time'])
-
-    def live_feed():
-        """只更新数据层，渲染由同步线程自动完成。所有指标从全量数据正确计算。"""
-        np.random.seed(int(time.time()))
-
-        # 追踪主图全量数据（含 volume），用于正确计算指标
-        main_data = df.copy()
-        # 追踪 4 个品种的 K线数据
-        stock_data = [s['candle'].copy() for s in stocks]
-
-        for n in range(1, 31):
-            time.sleep(1)
-            t = (lt + pd.Timedelta(days=n)).strftime('%Y-%m-%d')
-
-            # ── 生成新 K线（随机红绿）──
-            last = main_data.iloc[-1]
-            nc = last['close'] + np.random.randn() * 2
-            vol = int(max(50000, last['volume'] + np.random.randn() * 50000))
-            up = np.random.rand() < 0.5
-            body = abs(np.random.rand() * 2)
-            if np.random.rand() < 0.5:
-                o, c = nc - body, nc  # 阳线（close > open）
-            else:
-                o, c = nc + body, nc - body  # 阴线（close < open）
-            h = max(o, c) + abs(np.random.rand() * 2)
-            l = min(o, c) - abs(np.random.rand() * 2)
-
-            new_bar = pd.DataFrame([{
-                'time': t, 'open': o, 'high': h, 'low': l, 'close': nc, 'volume': vol
-            }])
-            main_data = pd.concat([main_data, new_bar], ignore_index=True)
-
-            # ── 更新数据层（K线 + 成交量）──
-            sys_obj['candle'].append(new_bar[['time', 'open', 'high', 'low', 'close']])
-            sys_obj['volume'].append(new_bar[['time', 'open', 'close']].assign(value=vol))
-
-            # ── 从全量 close 数据正确计算 SMA50 / SMA200 / SMA100 ──
-            close_all = main_data['close']
-            s50 = close_all.tail(50).mean()
-            s200 = close_all.tail(200).mean()
-            sa = close_all.tail(100).mean()
-
-            # ── 从全量数据正确计算 RSI(14) ──
-            delta = close_all.diff()
-            gain = delta.clip(lower=0).rolling(14).mean().iloc[-1]
-            loss = (-delta.clip(upper=0)).rolling(14).mean().iloc[-1]
-            if loss != 0:
-                rs = gain / loss
-                r = 100 - 100 / (1 + rs)
-            else:
-                r = 50.0
-
-            sys_obj['sma50'].append(pd.DataFrame({'time': [t], 'value': [s50]}))
-            sys_obj['sma200'].append(pd.DataFrame({'time': [t], 'value': [s200]}))
-            sys_obj['sma_area'].append(pd.DataFrame({'time': [t], 'value': [sa]}))
-            sys_obj['rsi'].append(pd.DataFrame({'time': [t], 'value': [r]}))
-
-            # ── 更新 4 个品种的 K线、均线和 MACD（全量数据正确计算）──
-            for i in range(4):
-                idx = i + 1
-                sc_df = stock_data[i]
-                last_sc = sc_df.iloc[-1]
-                sc_base = last_sc['close'] + np.random.randn() * 2
-
-                body = abs(np.random.rand() * 2)
-                if np.random.rand() < 0.5:
-                    so, sc = sc_base - body, sc_base  # 阳线
-                else:
-                    so, sc = sc_base + body, sc_base - body  # 阴线
-                sh = max(so, sc) + abs(np.random.rand() * 2)
-                sl = min(so, sc) - abs(np.random.rand() * 2)
-                new_sc_bar = pd.DataFrame([{
-                    'time': t, 'open': so, 'high': sh, 'low': sl, 'close': sc
-                }])
-                stock_data[i] = pd.concat([sc_df, new_sc_bar], ignore_index=True)
-
-                # 品种 K线
-                if idx <= 2:
-                    sys_obj[f'candle{idx}'].append(new_sc_bar[['time', 'open', 'high', 'low', 'close']])
-                else:
-                    sys_obj[f'candle{idx}'].append(pd.DataFrame({'time': [t], 'value': [sc]}))
-
-                # 从全量数据正确计算 EMA12 / EMA26 / MACD
-                s_close = stock_data[i]['close']
-                e12 = s_close.ewm(span=12, adjust=False).mean().iloc[-1]
-                e26 = s_close.ewm(span=26, adjust=False).mean().iloc[-1]
-                macd_line = s_close.ewm(span=12, adjust=False).mean() - s_close.ewm(span=26, adjust=False).mean()
-                signal = macd_line.ewm(span=9, adjust=False).mean()
-                hist_val = (macd_line - signal).iloc[-1]
-
-                sys_obj[f'ema12_{idx}'].append(pd.DataFrame({'time': [t], 'value': [e12]}))
-                sys_obj[f'ema26_{idx}'].append(pd.DataFrame({'time': [t], 'value': [e26]}))
-                sys_obj[f'macd_{idx}'].append(pd.DataFrame({'time': [t], 'value': [hist_val]}))
-
-                # stock2 (idx=2) 和 stock3 (idx=3) 的 volume/oi 更新
-                if idx == 2 or idx == 3:
-                    s_vol = int(max(30000, abs(np.random.randn() * 150000 + 150000)))
-                    s_oi  = int(max(2000, abs(np.random.randn() * 8000 + 8000)))
-                    sys_obj[f'volume{idx}'].append(pd.DataFrame({
-                        'time': [t], 'value': [s_vol], 'open': [so], 'close': [sc]
-                    }))
-                    sys_obj[f'oi{idx}'].append(pd.DataFrame({'time': [t], 'value': [s_oi]}))
-
-            print(f'  [{n:2d}/30] t={t} close={nc:.2f} RSI={r:.1f}')
-
-        print('live_feed: 数据更新完成')
-
     feed_thread = threading.Thread(target=live_feed)
     feed_thread.start()
 
