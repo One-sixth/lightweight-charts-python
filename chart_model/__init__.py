@@ -5,10 +5,10 @@
 """
 from __future__ import annotations
 
-from .models import Model, Window, Chart, Series, SystemLayout, SeriesType, SeriesAccessor, DrawingManager, parse_interval
+from .models import Model, Window, Chart, Series, Layout, SeriesType, SeriesAccessor, DrawingManager, parse_interval
 from .adapter import Adapter
 
 __all__ = [
-    'Model', 'Window', 'Chart', 'Series', 'SystemLayout',
+    'Model', 'Window', 'Chart', 'Series', 'Layout',
     'SeriesType', 'SeriesAccessor', 'DrawingManager', 'Adapter', 'parse_interval',
 ]

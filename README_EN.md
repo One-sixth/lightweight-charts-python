@@ -299,6 +299,46 @@ Learning through examples is recommended. There is extensive reference code and 
 
 ---
 
+## 📦 chart_model — Chart Data Model Reference Implementation (Prototype)
+
+> The `chart_model/` subpackage in this repo is a **declarative chart data model reference implementation** at the pure-data layer.
+
+It is **not** meant to be installed via pip and imported as a dependency. Instead, it provides a **simple reference prototype**:
+
+```python
+from chart_model import Model, Window, Chart, Series, Adapter
+
+model = Model(
+    windows=[Window(name='main', display_name='Main Window')],
+    charts=[Chart(name='price', display_name='Price', window='main', interval='1day')],
+    series=[Series(name='candle', display_name='K-Line', chart='price', pane=0, type='candle')],
+)
+model['candle'].set(df)
+layout = model.build(live=True)
+chart = Adapter.render(layout)
+```
+
+### 💡 Recommended Usage
+
+When your own project needs a **chart data layer architecture**, have your AI coding assistant **reference `chart_model/`'s design patterns and implementation approach**, and **generate a tailored version** for your specific project needs — rather than directly depending on this simple template.
+
+Benefits:
+- ✅ Declarative structure definition (Model / Window / Chart / Series)
+- ✅ Data-rendering decoupling (pure data layer → Adapter bridge)
+- ✅ Real-time sync mechanism (version tracking + incremental push)
+- ✅ Drawing management (5 types: create/delete/sync)
+
+And you:
+- ✅ Keep full control of your own code
+- ✅ Customize classes and fields as needed
+- ✅ Avoid external dependency
+
+> 📍 Location: `chart_model/` (subdirectory of this repo)  
+> 📄 Design doc: `chart_model/CHART_MODEL_DESIGN.md`  
+> ⚡ 3 examples: `01_hello_world` / `02_multi_window_dashboard` / `03_drawing_live`
+
+---
+
 ## Complete Example Directory
 
 | No. | Example Name | Description |

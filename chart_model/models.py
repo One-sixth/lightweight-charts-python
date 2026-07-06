@@ -1,4 +1,4 @@
-"""chart_model 核心数据模型 — Window / Chart / Series / Model + SystemLayout"""
+"""chart_model 核心数据模型 — Window / Chart / Series / Model + Layout"""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -234,11 +234,11 @@ def _drawing_type_help(type_name: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  SystemLayout — build() 只读结果
+#  Layout — build() 只读结果
 # ═══════════════════════════════════════════════════════════════
 
 @dataclass
-class SystemLayout:
+class Layout:
     windows: list[Window]
     charts: list[Chart]
     series: list[Series]
@@ -375,7 +375,7 @@ class Model:
 
     # ═══ 构建关系图 ═══
 
-    def build(self, live: bool = False) -> SystemLayout:
+    def build(self, live: bool = False) -> Layout:
         # 1. 名称唯一性
         _assert_unique(self.windows, "window")
         _assert_unique(self.charts, "chart")
@@ -433,7 +433,7 @@ class Model:
 
         self._main_mapping = main_mapping
 
-        layout = SystemLayout(
+        layout = Layout(
             windows=self.windows,
             charts=self.charts,
             series=self.series,

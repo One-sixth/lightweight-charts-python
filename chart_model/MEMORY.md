@@ -12,7 +12,7 @@
 |------|------|
 | 设计文档 v0.3 | ✅ 完成 |
 | 3 个核心 dataclass | ✅ 完成 |
-| Model.build() + SystemLayout | ✅ 完成 |
+| Model.build() + Layout | ✅ 完成 |
 | Adapter.render() | ✅ 完成 |
 | 链式 API (SeriesAccessor) | ✅ 完成 |
 | Marker (add_marker/add_markers) | ✅ 完成 |
@@ -45,11 +45,11 @@
 ```
 chart_model/
 ├── __init__.py          # 导出 System/Window/Chart/Series/SeriesType/SeriesAccessor/Adapter/parse_interval
-├── models.py            # 全部 dataclass + build() + SystemLayout + SeriesAccessor + parse_interval
+├── models.py            # 全部 dataclass + build() + Layout + SeriesAccessor + parse_interval
 ├── adapter.py           # Adapter.render() + _series_kwargs() + _apply_markers() + _render_drawings()
 ├── AGENTS.md            # 给未来 agent 的指引
-├── IND_SYS_DESIGN.md    # 设计文档 v0.3
-├── IND_SYS_NEXT_STEPS.md# 下一步指南 v0.3
+├── CHART_MODEL_DESIGN.md    # 设计文档 v0.3
+├── CHART_MODEL_NEXT_STEPS.md# 下一步指南 v0.3
 ├── MEMORY.md            # 本文件（子系统专属记忆）
 ├── examples/
 │   ├── 01_hello_world/

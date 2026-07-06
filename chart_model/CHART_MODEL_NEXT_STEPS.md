@@ -1,7 +1,7 @@
 # chart_model 下一步指南
 
 > v0.3+ — 主序列映射 + 多 Window 渲染 + 示例完善已完成
-> 设计文档：`IND_SYS_DESIGN.md`（v0.3）
+> 设计文档：`CHART_MODEL_DESIGN.md`（v0.3）
 
 ---
 
@@ -11,7 +11,7 @@
 |------|------|
 | 设计文档 v0.3 | ✅ 完成 |
 | 3 个核心 dataclass | ✅ 完成 |
-| build() + SystemLayout | ✅ 完成 |
+| build() + Layout | ✅ 完成 |
 | 链式 API (SeriesAccessor) | ✅ 完成 |
 | Marker (add_marker/add_markers) | ✅ 完成 |
 | live 动态同步 | ✅ 互斥锁 + 版本号 + 三路同步 |
@@ -37,8 +37,8 @@ chart_model/
 ├── builder.py           # Model.build()
 ├── enums.py             # SeriesType 等常量
 ├── adapter.py           # 适配器（翻译 → lightweight-charts）
-├── IND_SYS_DESIGN.md    # 设计文档（v0.3 ✅）
-├── IND_SYS_NEXT_STEPS.md# 本文件
+├── CHART_MODEL_DESIGN.md    # 设计文档（v0.3 ✅）
+├── CHART_MODEL_NEXT_STEPS.md# 本文件
 └── tests/
     ├── test_models.py
     ├── test_builder.py

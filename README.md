@@ -313,6 +313,46 @@ chart.price_scale_api('left').apply_options(scale_margin_top=0.1)
 
 ---
 
+## 📦 chart_model — 图表数据模型简易实现模板（原型）
+
+> 本仓库的 `chart_model/` 子包是一个**纯数据层的图表模型声明式实现模板**。
+
+它不是供你直接 pip install 使用的库，而是提供一个**简易可参考的原型实现**：
+
+```python
+from chart_model import Model, Window, Chart, Series, Adapter
+
+model = Model(
+    windows=[Window(name='main', display_name='主窗口')],
+    charts=[Chart(name='price', display_name='价格', window='main', interval='1day')],
+    series=[Series(name='candle', display_name='K线', chart='price', pane=0, type='candle')],
+)
+model['candle'].set(df)
+layout = model.build(live=True)
+chart = Adapter.render(layout)
+```
+
+### 💡 推荐使用方式
+
+当你在自己的项目中需要一个**图表数据层架构**时，建议让 AI 编程助手**参考 `chart_model/` 的实现思路和设计模式**，按你的项目需求**自行生成一份量身定做的版本**，而不是直接引用这个简易模板。
+
+这样你既能获得：
+- ✅ 声明式结构定义（Model / Window / Chart / Series）
+- ✅ 数据与渲染解耦（纯数据层 → Adapter 桥接）
+- ✅ 实时同步机制（版本号追踪 + 增量推送）
+- ✅ Drawing 画线管理（5 种类型的创建/删除/同步）
+
+又能：
+- ✅ 完全掌控自己的代码
+- ✅ 按需调整类和字段
+- ✅ 避免外部依赖
+
+> 📍 位置：`chart_model/`（本仓库子目录）  
+> 📄 设计文档：`chart_model/CHART_MODEL_DESIGN.md`  
+> ⚡ 3 个示例：`01_hello_world` / `02_multi_window_dashboard` / `03_drawing_live`
+
+---
+
 ## 完整示例目录
 
 | 序号 | 示例名称 | 功能说明 |

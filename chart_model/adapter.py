@@ -1,10 +1,10 @@
-"""chart_model 适配器 — 将 SystemLayout 翻译为 lightweight-charts 渲染实例"""
+"""chart_model 适配器 — 将 Layout 翻译为 lightweight-charts 渲染实例"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .models import SystemLayout, Series, Chart
+    from .models import Layout, Series, Chart
     from .models import parse_interval, Chart
 
 
@@ -118,7 +118,7 @@ def _drawing_to_kwargs(d: 'DrawingData') -> dict:
     raise ValueError(f"不支持的 Drawing type: '{d.type}'")
 
 
-def _render_drawings(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None):
+def _render_drawings(chart, layout: 'Layout', chart_name: str, sys_obj=None):
     """在 chart 上渲染指定 Chart 的全部 drawing。
 
     逐一创建 drawing 对象并存入 sys_obj._render_drawings。
@@ -139,12 +139,12 @@ def _render_drawings(chart, layout: 'SystemLayout', chart_name: str, sys_obj=Non
 # ═══════════════════════════════════════════════════════════════
 
 class Adapter:
-    """将 SystemLayout 翻译为 lightweight-charts 渲染实例。"""
+    """将 Layout 翻译为 lightweight-charts 渲染实例。"""
 
     @staticmethod
-    def render(layout: 'SystemLayout', width: int = 800, height: int = 600):
+    def render(layout: 'Layout', width: int = 800, height: int = 600):
         """
-        渲染 SystemLayout，返回主库 Chart 实例。
+        渲染 Layout，返回主库 Chart 实例。
 
         - 如果 Model 中只有一个 Window → 返回单个 Chart
         - 如果有多个 Window → 返回 tuple[Chart, ...]
@@ -225,7 +225,7 @@ class Adapter:
         return tuple(result)
 
 
-def _apply_markers(series_obj, layout: 'SystemLayout', series_name: str):
+def _apply_markers(series_obj, layout: 'Layout', series_name: str):
     """将 chart_model markers 应用到主库 series 上"""
     markers = layout.get_markers(series_name)
     for m in markers:
@@ -243,7 +243,7 @@ def _create_series_on_chart(chart, s, layout):
     return series_obj
 
 
-def _render_series(chart, layout: 'SystemLayout', chart_name: str, sys_obj=None):
+def _render_series(chart, layout: 'Layout', chart_name: str, sys_obj=None):
     """在主库 chart 上渲染 chart_model Series。
 
     使用 ``_main_mapping`` 决定主序列映射：

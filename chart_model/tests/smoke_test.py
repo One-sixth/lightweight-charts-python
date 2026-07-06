@@ -1,6 +1,6 @@
 """chart_model 冒烟测试"""
 import pandas as pd
-from chart_model import Model, Window, Chart, Series, SeriesType, SystemLayout, parse_interval
+from chart_model import Model, Window, Chart, Series, SeriesType, Layout, parse_interval
 
 # ── parse_interval 测试 ──
 assert parse_interval(60) == 60

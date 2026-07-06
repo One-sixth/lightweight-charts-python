@@ -33,7 +33,7 @@ candle / ohlc_bar / line / area / baseline / histogram / volume / open_interest
 
 | 模块 | 状态 |
 |------|------|
-| 3 dataclass + build() + SystemLayout | ✅ |
+| 3 dataclass + build() + Layout | ✅ |
 | 链式 API（set/append/pop/add_marker） | ✅ |
 | Adapter.render() → 主库 Chart | ✅（只处理首个 Window） |
 | live 同步线程（互斥锁 + 0.1s检测） | ✅ |
@@ -73,7 +73,7 @@ candle / ohlc_bar / line / area / baseline / histogram / volume / open_interest
 
 | 文件 | 说明 |
 |------|------|
-| `models.py` | Model/Window/Chart/Series + SystemLayout + SeriesAccessor + parse_interval |
+| `models.py` | Model/Window/Chart/Series + Layout + SeriesAccessor + parse_interval |
 | `adapter.py` | Adapter.render() + _series_kwargs() |
 | `CHART_MODEL_DESIGN.md` | 设计文档 v0.3 |
 | `CHART_MODEL_NEXT_STEPS.md` | 下一步指南 |

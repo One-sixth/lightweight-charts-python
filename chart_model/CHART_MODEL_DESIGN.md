@@ -73,7 +73,7 @@ class System:
 
     def set_data(self, series_name: str, data) -> None: ...   # 预留
     def update(self, series_name: str, data) -> None: ...     # 预留
-    def build(self) -> "SystemLayout": ...
+    def build(self) -> "Layout": ...
 ```
 
 ### 3.2 `Window` — 窗口（极简）
@@ -193,14 +193,14 @@ class Series:
 | TopBar | `chart.topbar.textbox()` 等 | 低 | 顶栏组件 |
 | Table | `chart.create_table()` | 低 | 浮动表格 |
 
-> v0.2 中有这些实体的完整设计，恢复时可参考 `IND_SYS_NEXT_STEPS.md` 的 v0.2 归档。
+> v0.2 中有这些实体的完整设计，恢复时可参考 `CHART_MODEL_NEXT_STEPS.md` 的 v0.2 归档。
 
 ---
 
 ## 四、关系解析机制
 
 ```python
-def build(self) -> "SystemLayout":
+def build(self) -> "Layout":
     # 1. 验证名称唯一性
     assert_unique_names(self.windows, "window")
     assert_unique_names(self.charts, "chart")
@@ -236,7 +236,7 @@ def build(self) -> "SystemLayout":
         if candle:
             primary_series[chart_name] = candle.name
 
-    return SystemLayout(
+    return Layout(
         windows=self.windows, charts=self.charts, series=self.series,
         pane_info=pane_info,
         primary_charts=primary_charts,
@@ -248,7 +248,7 @@ def build(self) -> "SystemLayout":
 
 ```python
 @dataclass
-class SystemLayout:
+class Layout:
     windows: list[Window]
     charts: list[Chart]
     series: list[Series]
@@ -264,8 +264,8 @@ class SystemLayout:
 ```python
 class Adapter:
     @staticmethod
-    def render(layout: SystemLayout):
-        """翻译 SystemLayout → lightweight-charts 渲染实例。"""
+    def render(layout: Layout):
+        """翻译 Layout → lightweight-charts 渲染实例。"""
         for window in layout.windows:
             # 1. 创建窗口（Chart / HtmlTabChart）
             chart = Chart(width=..., height=...)
@@ -338,7 +338,7 @@ class Adapter:
 3. **Python 环境**：`D:\Software\miniconda3\envs\normal\python.exe`
 4. **主库 API 参考**：`QUICK_REFERENCE.md`
 5. **下一步**：用 dataclass 实现 3 个类 + build() + 适配器
-6. **v0.2 完整设计**（含 Marker/Drawing/TopBar/Table）：见 `IND_SYS_NEXT_STEPS.md` 归档
+6. **v0.2 完整设计**（含 Marker/Drawing/TopBar/Table）：见 `CHART_MODEL_NEXT_STEPS.md` 归档
 
 ### v0.2 → v0.3 变更摘要
 
