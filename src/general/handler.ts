@@ -624,7 +624,9 @@ export class Handler {
           const pad = (n: number) => n.toString().padStart(2, '0');
           const dateStr = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
           if (this._interval >= 86400) return dateStr;
-          return `${dateStr} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+          const timeStr = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+          if (this._interval < 60) return `${dateStr} ${timeStr}:${pad(d.getUTCSeconds())}`;
+          return `${dateStr} ${timeStr}`;
         },
       },
       crosshair: {

@@ -1421,4 +1421,31 @@ flush():                  _pending → postMessage → 清空
 
 ---
 
-*最后更新：2026-07-01（v2.8.6 API 补全：TimeScaleApi、PriceScaleApi、build_price_scale_options、price_scale 重构）*
+## 🔧 v3.1.1 修复记录 — 2026-07-08
+
+### 时间轴不显示时分秒
+
+**问题**：设定分钟级/秒级 K 线时，时间轴只显示日期不显示时间。
+
+**根因**：
+- JS 端 `_interval` 初始化为 `86400`（1天）后**从未更新**
+- `timeFormatter` 中 `this._interval >= 86400` 永远为真，始终走"只显示日期"分支
+- `secondsVisible: false`，即使时间轴显示时分，也不显示秒
+
+**修复**：
+1. `abstract.py` — 新增 `_sync_interval_to_js()` 方法，在 `set_period()` 和 `set()` 中调用，将 `self._interval` 同步到 JS 端并动态设置 `secondsVisible`
+2. `bundle.js` — `timeFormatter` 新增秒级分支，`_interval < 60` 时显示 `HH:MM:SS`
+
+**时间格式一览**：
+
+| 时间级别 | 间隔 | `secondsVisible` | 标签格式 |
+|---------|------|:----------------:|---------|
+| 日线+ | `>= 86400s` | `false` | `2026-07-08` |
+| 分钟级 | `60~86399s` | `false` | `2026-07-08 14:30` |
+| 秒级 | `< 60s` | `true` | `2026-07-08 14:30:45` |
+
+**经验教训**：JS 端 `_interval` 与 Python 端 `self._interval` 存在数据同步缺口，任何需要 JS 端感知的 Python 配置变更都必须通过 `run_script` 显式推送。
+
+---
+
+*最后更新：2026-07-08（v3.1.1：时间轴时分秒修复）*

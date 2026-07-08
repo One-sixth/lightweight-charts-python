@@ -501,6 +501,15 @@ class AbstractChart(Pane):
         df = merge_value_by_time(df)
         return df
 
+    def _sync_interval_to_js(self):
+        """将 _interval 同步到 JS 端，让 timeFormatter 正确显示时间格式。"""
+        interval = self._interval if self._interval is not None else 86400
+        show_seconds = str(interval < 60).lower()
+        self.run_script(
+            f'{self.id}._interval = {interval};'
+            f'{self.id}.chart.applyOptions({{timeScale: {{secondsVisible: {show_seconds}}}}})'
+        )
+
     def set_period(self, seconds: Optional[int] = None):
         """
         锁定/解锁图表的时间间隔。
@@ -520,6 +529,7 @@ class AbstractChart(Pane):
             self._period_locked = True
         else:
             self._period_locked = False
+        self._sync_interval_to_js()
 
     # ── 高频数据方法（显式委托，IDE 友好）──
 
@@ -540,6 +550,7 @@ class AbstractChart(Pane):
             df = normal_df(df)
             self._set_interval(df)
             self.update_bars(df)
+            self._sync_interval_to_js()
 
     def update_bar(self, series):
         """更新最新一根 bar 或追加新 bar。"""
